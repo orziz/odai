@@ -52,6 +52,11 @@ npx skills add https://github.com/orziz/AISkills
 
 这里是指令触发，推荐放这吧，如 `使用三审六部来审查XXX`
 
+## 效果展示
+
+[!图片](./assets/image_0.png)
+[!图片](./assets/image_1.png)
+
 ## 其他
 
 如果大家有什么好玩的，也欢迎 star 和 PR
