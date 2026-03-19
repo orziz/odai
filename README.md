@@ -4,9 +4,9 @@
 
 ## 如何使用
 
-### 推荐方式
+### 自动安装
 
-直接使用：
+直接使用（copilot无法自动安装，cluade也推荐手动安装）：
 
 ```bash
 npx skills add https://github.com/orziz/AISkills
@@ -20,32 +20,34 @@ npx skills add https://github.com/orziz/AISkills
 
 - `skills/sslb/SKILL.md`
 
-### claude（推荐手动安装方式）
+### 手动安装
+
+#### claude（推荐手动安装方式）
 
 手动安装时，放进同名文件夹下即可，如 `.claude/commands/sslb.md`。
 
 如果使用 `npx skills add`，则读取仓库内的标准 skill 目录：`skills/sslb/SKILL.md`。
 
-#### commands
+##### commands
 
 由 claude 的指令触发，输入框输入 `/指令名` 即可，如 `/sslb`。
 
 （如路径正确却没有对应指令，可以重启一下claude终端或编辑器重试）
 
-### copilot
+#### copilot
 
 将 `.github/skills` 下面的内容，酌情复制到 `.github/copilot-instructions.md` 里即可
 > 因为copilot会自行读 `.github/copilot-instructions.md` 所以无需其他操作
 
-### trae
+#### trae
 
 放进同名文件夹下即可，`rules` 和 `skills` 二选一
 
-### rules
+###### rules
 
 这里每次对话都会读，自行决定是否放在这
 
-### skills
+###### skills
 
 这里是指令触发，推荐放这吧，如 `使用三审六部来审查XXX`
 
