@@ -17,4 +17,4 @@
 > 因为copilot会自行读 `.github/copilot-instructions.md` 所以无需其他操作
 
 ## 其他
-如果大家有什么好玩的，也欢迎PR
+如果大家有什么好玩的，也欢迎 star 和 PR
