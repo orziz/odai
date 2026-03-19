@@ -21,4 +21,13 @@
 放进同名文件夹下即可
 
 ## 其他
+
 如果大家有什么好玩的，也欢迎 star 和 PR
+
+### 灵感来源
+
+确实有看到一些其他 repo 产生的想法，觉得好玩，就搞了个编程相关的自用。
+
+灵感来源（不一一列举）：
+[https://github.com/cft0808/edict](https://github.com/cft0808/edict)
+[https://github.com/wanikua/danghuangshang](https://github.com/wanikua/danghuangshang)
