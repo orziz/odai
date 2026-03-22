@@ -30,23 +30,16 @@
 
 本仓库当前提供以下 skills：
 
-| Skill | 简介 | 适用场景 |
-| --- | --- | --- |
-| `sslb` | 三省六部式代码审查，分阶段输出结构化结论 | 需要更正式、更有层次地做代码 review |
-| `hgsc` | 后宫分位式代码审查，用角色分工输出审查意见 | 想让代码 review 更有风格，但仍保持专业判断 |
-| `ribao` | 根据工作内容、总结或 git 变更生成成果描述 | 写日报、commit message、PR message |
-| `xzskill` | 基于标准 `skills` 目录生成手动安装版本并同步 README | 维护或新增 skill 时做多端同步 |
+| Skill | 简介 | 适用场景 | 对应文件 |
+| --- | --- | --- | --- |
+| `sslb` | 三省六部式代码审查，分阶段输出结构化结论 | 需要更正式、更有层次地做代码 review | `skills/sslb/SKILL.md` |
+| `hgsc` | 后宫分位式代码审查，用角色分工输出审查意见 | 想让代码 review 更有风格，但仍保持专业判断 | `skills/hgsc/SKILL.md` |
+| `ribao` | 根据工作内容、总结或 git 变更生成成果描述 | 写日报、commit message、PR message | `skills/ribao/SKILL.md` |
+| `xzskill` | 基于标准 `skills` 目录生成手动安装版本并同步 README | 维护或新增 skill 时做多端同步 | `skills/xzskill/SKILL.md` |
 
 标准安装入口：
 
 - `skills/<skill-name>/SKILL.md`
-
-当前对应文件：
-
-- `skills/sslb/SKILL.md`
-- `skills/hgsc/SKILL.md`
-- `skills/ribao/SKILL.md`
-- `skills/xzskill/SKILL.md`
 
 ---
 
