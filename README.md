@@ -33,13 +33,16 @@
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
 | `xzskill` | 基于标准 `skills` 目录生成手动安装版本并同步 README | 维护或新增 skill 时做多端同步（现由本地 Node 脚本执行） | `skills/xzskill/SKILL.md` |
-| `feature-plan` | 在功能设计与问题诊断阶段分析需求并形成可执行方案，分别输出面向用户与面向 AI 的行动文档 | 功能设计、需求澄清、方案规划与 bug 诊断 | `skills/feature-plan/SKILL.md` |
 | `ribao` | 根据工作内容、总结或 git 变更生成成果描述 | 写日报、commit message、PR message | `skills/ribao/SKILL.md` |
+| `feature-plan` | 在功能设计与问题诊断阶段分析需求并形成可执行方案，分别输出面向用户与面向 AI 的行动文档 | 功能设计、需求澄清、方案规划与 bug 诊断 | `skills/feature-plan/SKILL.md` |
 | `review-sslb` | 三省六部式代码审查，分阶段输出结构化结论 | 需要更正式、更有层次地做代码 review | `skills/review-sslb/SKILL.md` |
 | `review-hgsc` | 后宫分位式代码审查，用角色分工输出审查意见 | 想让代码 review 更有风格，但仍保持专业判断 | `skills/review-hgsc/SKILL.md` |
 | `review-gal` | gal 路线分支式代码审查，用路线分歧与 true end 输出结构化结论 | 需要比较实现路线、收束方案分歧时的 review | `skills/review-gal/SKILL.md` |
 | `review-band` | 少女乐队分工式代码审查，用成员分轨点评输出结构化结论 | 想做更有角色感、但仍专业可执行的 PR review | `skills/review-band/SKILL.md` |
 | `review-anime` | anime 多角色连续对话式代码审查，用强角色互动输出带自然技术锚点的审查意见 | 想要更放飞、更有演出感，但又不想看模板化结论的 code review | `skills/review-anime/SKILL.md` |
+| `harness-sslb` | 将 feature-plan 的需求收敛、review-sslb 的结构化复核与推进裁决串成单次工作流，先起草、再过堂、后定案 | 需求不清但要尽快推进、方案评审、复杂任务实施前复核、问题诊断收口 | `skills/harness-sslb/SKILL.md` |
+
+- `harness-sslb` 是独立 skill，可单独安装使用；内部借用 `feature-plan` 与 `review-sslb` 的方法论，但不要求同时安装它们。
 
 标准安装入口：
 
