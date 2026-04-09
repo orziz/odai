@@ -3,10 +3,9 @@
 const fs = require('fs')
 const path = require('path')
 
-const SELF_SKILL = 'xzskill'
 const README_TABLE_HEADER = '| Skill | 简介 | 适用场景 | 对应文件 |'
 const README_ROW_TEMPLATE = '| `{name}` | {description} | {scenario} | `skills/{name}/SKILL.md` |'
-const DEFAULT_SCENARIO = '维护或新增 skill 时做多端同步'
+const DEFAULT_SCENARIO = 'skill 定稿后的多端同步'
 const CLAUDE_ARGUMENT_BLOCK = '\n用户输入：\n$ARGUMENTS\n\n'
 const BUNDLED_RESOURCE_DIRS = ['references', 'assets', 'scripts']
 const TARGETS = [
@@ -48,8 +47,7 @@ const TARGETS = [
   },
 ]
 const MISSING_SOURCE_TEMPLATE = '错误：skills/{name}/SKILL.md 不存在，无法生成手动安装版本。'
-const SELF_REFERENCE_ERROR = '错误：xzskill 不支持生成自身的手动安装版本，请改为处理其他 skill。'
-const USAGE_ERROR = '错误：请至少传入一个 skill 名称，例如：xzskill review-sslb harness-sslb'
+const USAGE_ERROR = '错误：请至少传入一个 skill 名称，例如：skill-sync review-sslb harness-sslb'
 
 function main() {
   const skillNames = parseSkillNames(process.argv.slice(2))
@@ -127,9 +125,6 @@ function parseSkillNames(args) {
     const skillName = rawArg.trim()
     if (!skillName || /\s/.test(skillName)) {
       fail(USAGE_ERROR)
-    }
-    if (skillName === SELF_SKILL) {
-      fail(SELF_REFERENCE_ERROR)
     }
     if (seen.has(skillName)) {
       continue
