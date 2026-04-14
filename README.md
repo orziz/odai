@@ -181,10 +181,10 @@ npx skills add https://github.com/orziz/AISkills
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `harness-dev` | 把开发相关需求理解到位、结构化复核、执行裁决与结果总结串成理解优先的完整工作流 | 开发需求、方案评审、复杂实现推进、代码问题诊断与持续推进 | `skills/harness-dev/SKILL.md` |
-| `feature-plan` | 在功能设计与问题诊断阶段理解用户真实需求、收敛方案，并按需输出面向用户与 AI 的文本草案 | 功能设计、需求理解、方案规划与 bug 诊断 | `skills/feature-plan/SKILL.md` |
-| `design-spec` | 把需求、页面、模块、流程、视觉与体验想法收敛成可落地的产品、交互、界面与视觉设计说明 | 页面设计、模块设计、交互设计、视觉设计、UI/UX 优化、信息架构、状态设计、设计说明文档整理 | `skills/design-spec/SKILL.md` |
-| `implement-code` | 在边界明确时直接落地代码、测试与必要文档，并以最少打断完成实现和结果总结 | 新功能实现、bug 修复、重构落地、补测试、按既有方案编码 | `skills/implement-code/SKILL.md` |
+| `harness-dev` | 把开发相关需求理解到位，并在 SDD / BDD / TDD 之间做结构化裁决、推进与总结 | 开发需求、方案评审、复杂实现推进、代码问题诊断与持续推进 | `skills/harness-dev/SKILL.md` |
+| `feature-plan` | 在功能设计与问题诊断阶段理解用户真实需求，收敛成规格、方案与执行前提草案 | 功能设计、需求理解、方案规划与 bug 诊断 | `skills/feature-plan/SKILL.md` |
+| `design-spec` | 把需求、页面、模块、流程与体验想法收敛成可交接的行为、交互与界面设计说明 | 页面设计、模块设计、交互设计、视觉设计、UI/UX 优化、信息架构、状态设计、设计说明文档整理 | `skills/design-spec/SKILL.md` |
+| `implement-code` | 在边界明确时落地代码、测试与必要文档，并在需要时按 TDD 推进实现 | 新功能实现、bug 修复、重构落地、补测试、按既有方案编码 | `skills/implement-code/SKILL.md` |
 | `project-guide` | 归纳整个项目的目标、结构、约束、命名与协作规则，形成可复用的项目级说明文档 | 新项目接手、项目规范整理、README/规则文档整理、AI 上下文基线整理 | `skills/project-guide/SKILL.md` |
 | `ribao` | 根据当天工作内容、总结或 git 变更，生成一份可复用的结构化成果描述；可直接用于日报、git commit message 或 git PR message | 写日报、commit message、PR message | `skills/ribao/SKILL.md` |
 
