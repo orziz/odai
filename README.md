@@ -212,7 +212,7 @@ npx skills add https://github.com/orziz/AISkills
 
 1. 用 `skill-author` 模块新增或改写 `skills/odai/references/modules/<module-name>.md`
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`
-3. 确认 unified source 稳定后，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`
+3. 确认 unified source 稳定后，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线与禁用旧口径
 
 标准安装入口：
 

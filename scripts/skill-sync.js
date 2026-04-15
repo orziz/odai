@@ -13,6 +13,58 @@ const README_SECTION_HEADINGS = {
 }
 const CLAUDE_ARGUMENT_BLOCK = '\n用户输入：\n$ARGUMENTS\n\n'
 const BUNDLED_RESOURCE_DIRS = ['references', 'assets', 'scripts']
+const VALIDATED_TEXT_EXTENSIONS = new Set(['.md'])
+const SOURCE_VALIDATION_RULES = {
+  odai: {
+    requiredRelativePaths: ['references/dao/terminology-baseline.md'],
+    bannedPhrases: [
+      {
+        phrase: '问题定义候选',
+        guidance: '改成“已知事实 / 未确认点 / 冲突点 / 必须确认的问题”',
+      },
+      {
+        phrase: '目标候选',
+        guidance: '改成“已知事实”或“待确认点”',
+      },
+      {
+        phrase: '候选理解',
+        guidance: '改成“未确认点”或直接提问，不要代替用户确认',
+      },
+      {
+        phrase: '候选路线',
+        guidance: '改成“已确认路径 / 待确认路径”',
+      },
+      {
+        phrase: '候选选项',
+        guidance: '改成“待确认问题、待验证项或风险项”',
+      },
+      {
+        phrase: '推荐路径',
+        guidance: '改成“已确认路径 / 待确认路径”',
+      },
+      {
+        phrase: '推荐方向',
+        guidance: '改成“待确认路径”或“必须确认的问题”',
+      },
+      {
+        phrase: '推荐默认项',
+        guidance: '改成“必须确认的问题”，不要预设默认答案',
+      },
+      {
+        phrase: '推荐方案',
+        guidance: '改成“已确认方案”或“待确认方案草案”',
+      },
+      {
+        phrase: '默认路线',
+        guidance: '改成“未经确认的继续方向”或“继续依据”',
+      },
+      {
+        phrase: '推断项',
+        guidance: '改成“待验证项 / 待确认项 / 风险项”',
+      },
+    ],
+  },
+}
 const TARGETS = [
   {
     key: 'claude',
@@ -185,6 +237,8 @@ function loadSkillPayload(repoRoot, skillName) {
   const existingClaudeText = fs.existsSync(existingClaudePath) ? readNormalized(existingClaudePath) : null
   const existingClaude = existingClaudeText ? splitClaudeWrapper(existingClaudeText) : null
 
+  validateSkillSource({ repoRoot, skillName, sourceDir })
+
   return {
     skillName,
     sourceDir,
@@ -197,6 +251,93 @@ function loadSkillPayload(repoRoot, skillName) {
     bundledResourceDirs,
     existingClaude,
   }
+}
+
+function validateSkillSource({ repoRoot, skillName, sourceDir }) {
+  const rules = SOURCE_VALIDATION_RULES[skillName]
+  if (!rules) {
+    return
+  }
+
+  const missingPaths = (rules.requiredRelativePaths || []).filter(
+    (relativePath) => !fs.existsSync(path.join(sourceDir, relativePath))
+  )
+  const violations = collectSourceValidationViolations({
+    repoRoot,
+    sourceDir,
+    bannedPhrases: rules.bannedPhrases || [],
+  })
+
+  if (missingPaths.length === 0 && violations.length === 0) {
+    return
+  }
+
+  const messageLines = [`错误：skills/${skillName}/ 下的源文件未通过同步前校验。`]
+
+  if (missingPaths.length > 0) {
+    messageLines.push('缺少必备文件：')
+    for (const relativePath of missingPaths) {
+      messageLines.push(`- skills/${skillName}/${relativePath}`)
+    }
+  }
+
+  if (violations.length > 0) {
+    messageLines.push('命中禁用旧口径：')
+    for (const violation of violations) {
+      messageLines.push(
+        `- ${violation.relativePath}:${violation.lineNumber} 含“${violation.phrase}”，请${violation.guidance}`
+      )
+    }
+  }
+
+  fail(messageLines.join('\n'))
+}
+
+function collectSourceValidationViolations({ repoRoot, sourceDir, bannedPhrases }) {
+  if (bannedPhrases.length === 0) {
+    return []
+  }
+
+  const violations = []
+  for (const filePath of walkFiles(sourceDir)) {
+    if (!VALIDATED_TEXT_EXTENSIONS.has(path.extname(filePath))) {
+      continue
+    }
+
+    const lines = readNormalized(filePath).split('\n')
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]
+      for (const rule of bannedPhrases) {
+        if (!line.includes(rule.phrase)) {
+          continue
+        }
+
+        violations.push({
+          relativePath: path.relative(repoRoot, filePath),
+          lineNumber: index + 1,
+          phrase: rule.phrase,
+          guidance: rule.guidance,
+        })
+      }
+    }
+  }
+
+  return violations
+}
+
+function walkFiles(dirPath) {
+  const files = []
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(fullPath))
+      continue
+    }
+    if (entry.isFile()) {
+      files.push(fullPath)
+    }
+  }
+  return files
 }
 
 function fail(message) {
