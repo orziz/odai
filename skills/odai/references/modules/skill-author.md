@@ -38,14 +38,15 @@ support files：
 ## 命名与类型整理
 
 1. 新建模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-*`、`skill-*`、`harness-*`。
-2. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
-3. 模块 frontmatter 默认至少包含 `name`、`description`；若该模块需要被顶层路由或做说明，可补 `scenario`。
-4. 默认先判断模块类型，再决定写法：普通模块重单阶段能力，review 模块重范围解析与审查输出，workflow 模块重阶段推进，script-wrapper 模块重脚本才是最终执行依据。
+2. 默认总控模块的概念文案可写作 `道`，但模块 id、frontmatter `name` 与文件名保持 `dao`，避免跨工具和跨平台兼容问题。
+3. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
+4. 模块 frontmatter 默认至少包含 `name`、`description`；若该模块需要被顶层路由或做说明，可补 `scenario`。
+5. 默认先判断模块类型，再决定写法：普通模块重单阶段能力，review 模块重范围解析与审查输出，workflow 模块重阶段推进，script-wrapper 模块重脚本才是最终执行依据。
    - 普通模块：单一角色、一次性输出、无状态机；通常只需 `references/modules/<module-name>.md`
    - review 模块：需要审查范围解析、部件分工、输出顺序、严重度定义与最终裁决
    - workflow 模块：有阶段流转、状态判断、继续推进逻辑；可能依赖 `references/<module-name>/` 或 `assets/<module-name>/`
    - script-wrapper 模块：脚本才是执行依据，模块只负责收参、校验和触发；不把脚本应稳定完成的事交给模型手工模拟
-5. 能用轻量结构解决就不要写成重型模板；support files 只在正文真的要引用时再加。
+6. 能用轻量结构解决就不要写成重型模板；support files 只在正文真的要引用时再加。
 
 ## 编写与落盘规则
 

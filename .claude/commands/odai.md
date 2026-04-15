@@ -1,6 +1,6 @@
 ---
 name: odai
-description: 以 dao 为总控，把规划、设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块
+description: 以道为总控，把规划、设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块
 ---
 
 用户输入：
@@ -8,19 +8,19 @@ $ARGUMENTS
 
 你是这个仓库唯一对外暴露的统一入口 skill。
 
-你的职责不是把所有规则硬拼成一篇超长 prompt，而是先理解用户语义、目标、约束、担心点与想法，再由 `dao` 判断当前应该调用哪个内部模块、该产出什么形态，并把任务持续推进到当前范围内的可交付结果。
+你的职责不是把所有规则硬拼成一篇超长 prompt，而是先理解用户语义、目标、约束、担心点与想法，再由 `道` 判断当前应该调用哪个内部模块、该产出什么形态，并把任务持续推进到当前范围内的可交付结果。
 
 ## 总原则
 
 1. 单一入口，内部路由：对外只有 `odai`；对内按任务阶段、目标和边界读取对应模块资源。
 2. 不把内部模块当外部依赖：当你需要 `harness-dev`、`feature-plan`、`review-sslb` 等能力时，不调用外部同名 skill，而是读取本 skill 内的模块文件。
-3. `dao` 统一裁决：什么时候该走哪个模块、做到什么产出形态，都先由 `dao` 根据用户语义和想法判断；只有语义已经非常明确时，才可直接命中单个模块。
-4. 拿不准就结构化提问：只要模块选择、交付形态、边界或优先级仍有歧义，就由 `dao` 一次性用结构化问题问清，不做拍脑袋路由。
-5. 路由后不中断：一旦 `dao` 定下主路，默认继续推进，不把阶段交接丢回给用户。
+3. `道` 统一裁决：默认先读 `道`，由它根据用户语义和想法判断走哪个模块、产出什么形态；用户明确点名模块时视为强信号，但 `道` 仍保留补问权。
+4. 拿不准就结构化提问：只要模块选择、交付形态、边界或优先级仍有歧义，就由 `道` 一次性用结构化问题问清，不做拍脑袋路由。
+5. 路由后不中断：一旦 `道` 定下主路，默认继续推进，不把阶段交接丢回给用户。
 
 ## 模块映射
 
-- `dao`：`odai/references/modules/dao.md`
+- `dao`（概念文案：`道`）：`odai/references/modules/dao.md`
 - `harness-dev`：`odai/references/modules/harness-dev.md`
 - `feature-plan`：`odai/references/modules/feature-plan.md`
 - `design-spec`：`odai/references/modules/design-spec.md`
@@ -35,18 +35,12 @@ $ARGUMENTS
 - `skill-author`：`odai/references/modules/skill-author.md`
 - `skill-sync`：`odai/references/modules/skill-sync.md`
 
-## 默认路由规则
-
-1. 默认先读取 `dao`，由它根据用户语义决定是否继续停在总控层，或转入 `harness-dev`、`feature-plan`、`design-spec`、`implement-code`、`project-guide`、`review-*`、`ribao`、`skill-author`、`skill-sync`。
-2. 若用户明确点名某个模块，先把该点名视为强信号；但是否直接采用、还是需要先补问，仍由 `dao` 根据语义和边界判断。
-3. 若用户表达模糊、语义跨层、目标与手段混写，或看起来同时命中多个模块，必须先回到 `dao` 做裁决，不直接猜测。
-
 ## 内部调用约定
 
 1. 当内部模块正文出现“调用 `feature-plan` / `design-spec` / `implement-code` / review 家族”等说法时，一律解释为：读取当前 skill 内对应的模块文件并以内置模块方式继续，不调用外部 skill。
 2. 当内部模块正文出现 `odai/references/...`、`odai/assets/...`、`scripts/...` 路径时，一律以当前统一 skill 目录为根；若模块已改成 namespaced 路径，就按改写后的路径读取。
 3. 默认优先少切换：只有当前主模块不足以继续时，才切到相邻模块；切换前先说明当前判断。
-4. 用户明确点名 `dao` 时直接走 `dao`；用户若使用旧称呼描述“道、术、法总控”，也按 `dao` 理解。
+4. 用户明确点名 `道` 或 `dao` 时都走同一总控模块；对外概念文案统一写 `道`，模块 id 与文件名保持 `dao`。
 
 ## 维护约束
 

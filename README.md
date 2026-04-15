@@ -2,7 +2,7 @@
 
 一个把规划、设计、审查、实现、总结与仓库维护收束成单一入口 skill 的仓库。
 
-这个仓库对外只有一个安装入口：`odai`。什么时候该走哪个模块、做到什么产物形态，都先由 `dao` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
+这个仓库对外只有一个安装入口：`odai`。什么时候该走哪个模块、做到什么产物形态，都先由 `道` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
 
 ## 快速导航
 
@@ -23,11 +23,11 @@
 npx skills add https://github.com/orziz/AISkills
 ```
 
-2. 直接用 `odai` 接任务；首轮输入尽量带上 `目标`、`材料`、`约束`。如果你还说不清具体要走哪个模块，也没关系，`dao` 会先判断。
+2. 直接用 `odai` 接任务；首轮输入尽量带上 `目标`、`材料`、`约束`。如果你还说不清具体要走哪个模块，也没关系，`道` 会先判断。
 3. 如果你已经知道自己想走哪种内部模块，也可以在指令里直说：
 
 - “用 `odai` 接这个需求，先判断该走哪个模块，如果拿不准就结构化问我。”
-- “用 `odai` 走 `dao` 看这个需求，先定边界和主路。”
+- “用 `odai` 走 `道` 看这个需求，先定边界和主路。”
 - “用 `odai` 接这个需求，按 `harness-dev` 路线推进到结果总结。”
 - “用 `odai` 按 `review-sslb` 风格审这个 PR。”
 - “用 `odai` 用 `ribao` 模块整理今天的产出。”
@@ -35,7 +35,7 @@ npx skills add https://github.com/orziz/AISkills
 ## 当前结构
 
 - 对外安装和触发都只认 `odai`。
-- `dao` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
+- `道` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
 - 源文件结构以 `skills/odai/` 为唯一 source-of-truth，模块正文与 support files 都收进这个目录下。
 - 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致。
 
@@ -57,10 +57,10 @@ npx skills add https://github.com/orziz/AISkills
 - 对外只有 `skills/odai/SKILL.md` 这一个标准入口
 - 内部模块正文放在 `skills/odai/references/modules/`
 - 模块级规则、模板和脚本按模块名收在 `references/<module-name>/`、`assets/<module-name>/`、`scripts/<module-name>/`
-- `dao` 是默认总控；`harness-dev` 是偏开发推进的总控 workflow
+- `道` 是默认总控；`harness-dev` 是偏开发推进的总控 workflow
 - 多端手动安装版本仍由统一脚本同步生成，尽量避免各端长期分叉
 
-如果你把它理解成“一个先由 dao 决定路由和产物，再按需调用内部模块的 skill 工具箱”，会更贴近现在的结构。
+如果你把它理解成“一个先由道决定路由和产物，再按需调用内部模块的 skill 工具箱”，会更贴近现在的结构。
 
 ## 如何安装
 
@@ -118,11 +118,11 @@ npx skills add https://github.com/orziz/AISkills
 
 ## `odai` 怎么用更顺
 
-`odai` 不是把所有模块机械串起来，而是先由 `dao` 判断你当前真正缺的是哪一层、该调用哪个模块、该产出什么形态，再读取对应内部模块继续工作。
+`odai` 不是把所有模块机械串起来，而是先由 `道` 判断你当前真正缺的是哪一层、该调用哪个模块、该产出什么形态，再读取对应内部模块继续工作。
 
 它内部保留两条主 workflow：
 
-- `dao`：默认总控，更适合“先定方向、边界、主路与先手”，也负责判断模块选择和产物形态
+- `道`：默认总控，更适合“先定方向、边界、主路与先手”，也负责判断模块选择和产物形态
 - `harness-dev`：偏开发推进，更适合“接住一整段开发任务并持续推进”
 
 除此之外，你也可以直接点名单阶段模块或工具模块：
@@ -138,7 +138,7 @@ npx skills add https://github.com/orziz/AISkills
 推荐触发方式：
 
 - “用 `odai` 接这个需求：先判断该走哪个模块和产物形态，拿不准就结构化问我。”
-- “用 `odai` 接这个需求：先用 `dao` 定边界、主路和关键风险，再继续推进。”
+- “用 `odai` 接这个需求：先用 `道` 定边界、主路和关键风险，再继续推进。”
 - “用 `odai` 按 `harness-dev` 路线处理这个实现问题，推进到结果总结。”
 - “用 `odai` 按 `review-band` 风格审这个分支。”
 - “用 `odai` 用 `project-guide` 模块整理这个仓库的 AI 接手基线。”
@@ -159,15 +159,15 @@ npx skills add https://github.com/orziz/AISkills
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `odai` | 以 dao 为总控，把规划、设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、设计说明、代码实现、代码审查、成果整理与 skill 仓库维护 | `skills/odai/SKILL.md` |
+| `odai` | 以道为总控，把规划、设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、设计说明、代码实现、代码审查、成果整理与 skill 仓库维护 | `skills/odai/SKILL.md` |
 
 ### 内置模块
 
-这些名字仍然可以在提示词里点名，但模块选择和产物形态仍优先由 `dao` 根据语义做裁决。
+这些名字仍然可以在提示词里点名，但模块选择和产物形态仍优先由 `道` 根据语义做裁决。
 
 | 模块 | 作用 | 对应文件 |
 | --- | --- | --- |
-| `dao` | 默认总控 workflow，负责方向、边界、主路、先手与复核 | `skills/odai/references/modules/dao.md` |
+| `dao`（文案写作 `道`） | 默认总控 workflow，负责方向、边界、主路、先手与复核 | `skills/odai/references/modules/dao.md` |
 | `harness-dev` | 开发类总控 workflow，负责按 SDD / BDD / TDD 判断主驱动并持续推进 | `skills/odai/references/modules/harness-dev.md` |
 | `feature-plan` | 规格规划、方案取舍、bug 诊断 | `skills/odai/references/modules/feature-plan.md` |
 | `design-spec` | 页面、交互、状态、视觉与体验说明 | `skills/odai/references/modules/design-spec.md` |
@@ -202,6 +202,7 @@ npx skills add https://github.com/orziz/AISkills
 补充约定：
 
 - 模块 id 默认使用小写 kebab-case 英文，便于跨工具、跨平台和路径复用
+- 默认总控模块的概念文案统一写 `道`；模块 id、frontmatter `name` 与文件名保持 `dao`；提示词里 `道` 和 `dao` 都算命中同一模块
 - 面向人读的说明、分类和文案，优先用中文表达职责与场景
 - 不再新增第二个对外 skill；新增能力默认收进 `odai` 的内部模块资源
 

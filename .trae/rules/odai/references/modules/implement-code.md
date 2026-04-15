@@ -1,7 +1,6 @@
 ---
 name: implement-code
 readme-section: main
-replaces: code-implement
 description: 在边界明确时落地代码、测试与必要文档，并在需要时按 TDD 推进实现
 scenario: 新功能实现、bug 修复、重构落地、补测试、按既有方案编码
 ---
