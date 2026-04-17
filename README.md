@@ -1,4 +1,4 @@
-# AISkills
+# odai
 
 一个偏中文语境、偏实战使用的 AI 编程 skill 与工作流仓库。
 
@@ -29,7 +29,7 @@
 1. 先把整套 skill 接进当前环境：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills
+npx skills add https://github.com/orziz/odai#old
 ```
 
 2. 不知道先用哪个时，先看你现在更缺哪一种能力：路线大致有了，想让 AI 接住任务并持续推进，用 `harness-dev`；方向、边界、主路、先手，甚至“该不该现在动手”都还没定，用 `harness-dao`。默认按你当前安装或当前明确调用的那一个 workflow 独立工作，不把两者串成前后接力。
@@ -75,7 +75,7 @@ npx skills add https://github.com/orziz/AISkills
 如果你使用支持 `skills add` 的方式，默认更推荐直接这样装：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills
+npx skills add https://github.com/orziz/odai#old
 ```
 
 仓库中的标准 skill 安装入口为：
