@@ -28,7 +28,7 @@ npx skills add https://github.com/orziz/AISkills
 如果你要继续使用分离出来的旧多 skill 结构，可以改装 `old` 分支：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills/tree/old
+npx skills add https://github.com/orziz/AISkills#old
 ```
 
 2. 直接用 `odai` 接任务；首轮输入尽量带上 `目标`、`材料`、`约束`。如果你还说不清具体要走哪个模块，也没关系，`道` 会先判断。
