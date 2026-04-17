@@ -1,6 +1,6 @@
-# AISkills
+# odai
 
-一个把规划、游戏策划、游戏视觉设计、通用设计、审查、实现、总结与仓库维护收束成单一入口 skill 的仓库。
+一个把规划、通用设计、审查、实现、总结、游戏策划、游戏视觉设计与仓库维护收束成单一入口 skill 的仓库。
 
 这个仓库对外只有一个安装入口：`odai`。什么时候该走哪个模块、做到什么产物形态，都先由 `道` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
 
@@ -22,13 +22,13 @@
 1. 先把统一入口 skill 接进当前环境：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills
+npx skills add https://github.com/orziz/odai
 ```
 
 如果你要继续使用分离出来的旧多 skill 结构，可以改装 `old` 分支：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills#old
+npx skills add https://github.com/orziz/odai#old
 ```
 
 2. 直接用 `odai` 接任务；首轮输入尽量带上 `目标`、`材料`、`约束`。如果你还说不清具体要走哪个模块，也没关系，`道` 会先判断。
@@ -76,7 +76,7 @@ npx skills add https://github.com/orziz/AISkills#old
 ### 1. 自动安装（推荐）
 
 ```bash
-npx skills add https://github.com/orziz/AISkills
+npx skills add https://github.com/orziz/odai
 ```
 
 适合场景：
@@ -88,7 +88,7 @@ npx skills add https://github.com/orziz/AISkills
 如果你要安装分离出来的旧多 skill 版本，请使用 `old` 分支：
 
 ```bash
-npx skills add https://github.com/orziz/AISkills/tree/old
+npx skills add https://github.com/orziz/odai#old
 ```
 
 适合场景：
