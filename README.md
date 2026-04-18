@@ -45,6 +45,7 @@ npx skills add https://github.com/orziz/odai#old
 - 对外安装和触发都只认 `odai`。
 - `道` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
 - 源文件结构以 `skills/odai/` 为唯一 source-of-truth，模块正文与 support files 都收进这个目录下。
+- 仓库结构、source-of-truth 与同步流程属于维护者说明，统一放在 README 和维护模块里，不再混写进 `odai` 入口技能正文。
 - 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致。
 - 旧的多 skill 布局已分离到 `old` 分支，供仍需旧结构的安装场景继续使用。
 
@@ -233,6 +234,10 @@ npx skills add https://github.com/orziz/odai#old
 - 不再新增第二个对外 skill；新增能力默认收进 `odai` 的内部模块资源
 
 ### 维护流程
+
+这一节承接维护者信息；`skills/odai/SKILL.md` 只保留运行时路由与调用约定，不再重复仓库结构约束。
+
+内部模块正文优先只写本域职责、交付骨架、边界和 support file 触发条件；入口、README、并行手册、术语基线和同步模块里已经定义的全局规则、维护说明与脚本细则，优先引用，不再重复拷回模块正文。
 
 推荐顺序：
 
