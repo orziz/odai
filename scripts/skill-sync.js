@@ -77,6 +77,26 @@ const SOURCE_VALIDATION_RULES = {
         phrase: '不降级为零碎文本盘问',
         guidance: '改成“先明确说明‘当前环境不支持’，再改用文字提问”',
       },
+      {
+        phrase: '结构化提问（即调用 `vscode_askQuestions`）',
+        guidance: '改成“结构化提问（调用宿主提问工具）”，并把 VS Code 示例留在宿主映射里',
+      },
+      {
+        phrase: '结构化提问专指调用 `vscode_askQuestions`',
+        guidance: '改成“结构化提问专指调用宿主提问工具”',
+      },
+      {
+        phrase: '结构化提问即调用 `vscode_askQuestions`',
+        guidance: '改成“结构化提问即调用宿主提问工具”',
+      },
+      {
+        phrase: '必须调用 `vscode_askQuestions`',
+        guidance: '改成“必须调用宿主提问工具”',
+      },
+      {
+        phrase: '可用时调用 `vscode_askQuestions`',
+        guidance: '改成“可用时调用宿主提问工具”',
+      },
     ],
   },
 }

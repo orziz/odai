@@ -14,6 +14,7 @@
 - [这是什么](#这是什么)
 - [如何安装](#如何安装)
 - [`odai` 怎么用更顺](#odai-怎么用更顺)
+- [默认交互方式](#默认交互方式)
 - [Skills 一览](#skills-一览)
 - [面向维护者](#面向维护者)
 
@@ -46,7 +47,7 @@ npx skills add https://github.com/orziz/odai#old
 - `道` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
 - 源文件结构以 `skills/odai/` 为唯一 source-of-truth，模块正文与 support files 都收进这个目录下。
 - 仓库结构、source-of-truth 与同步流程属于维护者说明，统一放在 README 和维护模块里，不再混写进 `odai` 入口技能正文。
-- 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致。
+- 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致；Codex 暂无专用出包，故源正文保持宿主无关。
 - 旧的多 skill 布局已分离到 `old` 分支，供仍需旧结构的安装场景继续使用。
 
 ## 适合谁用
@@ -58,7 +59,7 @@ npx skills add https://github.com/orziz/odai#old
 - 想先由一个总控判断方向、边界、主路和先手，再切到下游模块
 - 想保留不同审查风格和不同 workflow，但不想继续维护多个并列安装入口
 - 想整理项目 README、规则、AI 接手基线或日报 / commit / PR 描述
-- 想同时兼顾 Claude、Copilot、Trae 等不同入口，并保持安装结构一致
+- 想同时兼顾 Claude、Copilot、Trae、Codex 等不同入口，并保持安装结构一致
 
 ## 这是什么
 
@@ -138,6 +139,11 @@ npx skills add https://github.com/orziz/odai#old
 - 通过指令或自然语言触发
 - 更适合按任务临时点名内部模块的场景
 
+#### Codex
+
+- 当前仓库暂无 Codex 专用出包目录
+- 但 `skills/odai/` 下的标准源正文已按宿主无关口径编写；若后续接入 Codex，应直接复用该正文规则，不得把 VS Code 工具名写死成唯一口径
+
 ## `odai` 怎么用更顺
 
 `odai` 不机械串模块；先由 `道` 判你当前缺哪层/该调何模块/该产何形态，再读对应内部模块续推。
@@ -171,9 +177,10 @@ npx skills add https://github.com/orziz/odai#old
 
 本仓库里会主动向用户补关键信息的内部模块，默认都遵守同一条交互约定：
 
-- 提问时若当前环境支持结构化提问，必须使用结构化提问组件，例如选项、单选、多选，或“选项 + 自由补充”
+- 结构化提问默认调用宿主提问工具；VS Code / Copilot 为 `vscode_askQuestions`，Claude Code、Codex、Trae 等用各自原生提问工具
+- 提问时若当前环境支持结构化提问，必须使用其原生结构化组件，例如选项、单选、多选，或“选项 + 自由补充”
 - 收到你的回答后，默认直接继续当前阶段，不额外等一句“继续”
-- 若当前环境不支持结构化提问，必须先明确说明“当前环境不支持”，再改用文字提问
+- 若当前宿主连提问工具都不支持，必须先明确说明“当前环境不支持”，再改用文字提问
 
 ## Skills 一览
 
@@ -239,7 +246,7 @@ npx skills add https://github.com/orziz/odai#old
 
 1. 用 `skill-author` 模块新增或改写 `skills/odai/references/modules/<module-name>.md`
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`
-3. 确认 unified source 稳定后，再用 `skill-sync` 或 `node scripts/skill-sync.js` 同步 Claude/GitHub/Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 术语基线、并行 support files、README 关键分节与禁用旧口径
+3. 确认 unified source 稳定后，再用 `skill-sync` 或 `node scripts/skill-sync.js` 同步 Claude/GitHub/Trae 安装版本，并回写 `README.md`；Codex 目前直接复用 source 口径；脚本会先校验 odai 术语基线、并行 support files、README 关键分节与禁用旧口径
 
 标准安装入口：
 

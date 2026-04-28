@@ -22,7 +22,7 @@ $ARGUMENTS
 4. 开发推进、转判、执行与收束，皆先归 `道`；属开发主线，再借 `harness-dev`。其为分支，非并列总控。
 5. 首轮先内判：先收今判、未定、主路。未定足阻，乃外显今判与问题；可直行，则直断或直做。
 6. 凡足改路由/边界/验收/不可受结果之未定点，皆须问明；不得以模型自拟/默认/补全代之。
-7. 涉问题整理/结构化提问/工作草案/证据账本/主文件/收束者，皆守 `odai/references/dao/terminology-baseline.md`。
+7. 涉问题整理/结构化提问（调用“宿主提问工具”）/工作草案/证据账本/主文件/收束者，皆守 `odai/references/dao/terminology-baseline.md`。
 8. 用户既确认今判，则默认续推，不把交接抛还用户；少言不等于免问。
 9. 提问/答语/总结，默认极短文言：能一句，不二句；非必要，不露思路/比路/字段骨架；无据不言，不误言。
 10. 用户要白话，则改极简白话；惟 `ribao` 面向他人交付，默认简白。
@@ -50,7 +50,7 @@ $ARGUMENTS
 
 1. 凡命中内部模块，或正文称“调用 `game-plan` 等”者，皆径读本 skill 内对应模块，不调外部同名 skill。
 2. `odai/references/...`、`odai/assets/...`、`scripts/...` 等相对路径，皆以当前 skill 目录为根；若模块已改 namespaced 路径，则依改写后路径读之。
-3. 默认少切换：惟当前主模块不足以续推，始切相邻模块；切前先陈所断。
+3. 默认不乱切，亦不吞切：当前主模块足以续推，方可留驻；主矛盾既命中专项模块主责，即切相邻模块，不得久停 `dao` / `harness-dev` 代做；切前先陈所断。
 4. 用户称 `道` 或 `dao`，皆归同一总控；对外文案用 `道`，模块 id 与文件名仍守 `dao`。
 5. 涉字段命名、提问编排、草案结构或路径命名者，皆读 `odai/references/dao/terminology-baseline.md` 而行。
 6. 涉增强/多 agent 合议/冻后复查/分歧收束/用户复核升级者，皆读 `odai/references/dao/parallel-consensus-playbook.md`；须选模，再读 `odai/references/dao/model-selection-baseline.md`。
