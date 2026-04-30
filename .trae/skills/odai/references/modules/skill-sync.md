@@ -4,7 +4,7 @@ description: 由标准源生成各端安装版
 scenario: 多端同步、README 回写、旧产物清理
 ---
 
-`skill-sync` 现在通过仓库内脚本 `scripts/skill-sync.js` 执行。
+`skill-sync` 以仓库内脚本 `odai/scripts/skill-sync.js` 为执行体。
 
 ## 目标
 
@@ -30,10 +30,10 @@ scenario: 多端同步、README 回写、旧产物清理
 
 1. 校验 `工程根目录/skills/<skill-name>/SKILL.md`、必要 support files 与 README 关键分节/锚点；关键校验失败即停。
 2. 源 frontmatter 与正文为唯一正文载荷；正文段落顺序、标题层级、代码块、措辞原样保留，不重组、不风格化重写。
-3. 同目录 `odai/references/`、`odai/assets/`、`scripts/` 皆为当前 skill 附属资源，一并同步到各手动安装目标。
+3. 同目录 `odai/references/`、`odai/assets/`、`odai/scripts/` 皆为当前 skill 附属资源，一并同步到各手动安装目标。
 4. Claude wrapper 元数据只认标准源 frontmatter 显式字段；不从现有 `.claude/` 产物反推或保留。
 5. 生成手动安装文件时，改写入口与资源相对路径为目标目录真实可用路径，并覆盖 Claude/GitHub/Trae 目标文件。
-6. 当前仓库默认只处理 `odai`；若 frontmatter 有 `replaces`，同步清旧安装产物与 README 条目。
+6. 默认只处理 `odai`；若 frontmatter 有 `replaces`，同步清旧安装产物与 README 条目。
 7. 更新 `README.md` 只处理“当前已提供”列表与对应分组落位；不改其他段落，不重写全文。
 8. 源正文涉提问工具/确认组件等宿主能力，须写成宿主无关规则；不得把单一宿主工具名写成全平台硬规则。
 
@@ -49,7 +49,7 @@ scenario: 多端同步、README 回写、旧产物清理
 8. 不调正文章节顺序，不合并段落，不擅增删规则。
 9. 不自推平台差异，不自设额外字段；源文件未写、规则未死者，一律不补。
 10. 写目标文件时，规则中 `$ARGUMENTS` 均作普通文本占位符；禁止展开、替换或引用当前传参。
-11. 宿主提问工具示例只能写“VS Code / Copilot 为 `vscode_askQuestions`；其余宿主各用原生提问工具”之映射，不得将 VS Code 示例写成全平台唯一定义。
+11. 宿主提问工具只写宿主无关口径：结构化提问即调用当前宿主原生提问工具；不得写单一宿主工具名或将其当全平台定义。
 
 ## 失败输出
 
