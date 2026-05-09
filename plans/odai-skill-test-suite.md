@@ -88,7 +88,7 @@ route 可用短名以省表格长度：`fp=feature-plan`、`ds=design-spec`、`i
 5. 对 E2 与 E3 样本，检查是否继续做到 done 要求，而不是停在半成品。
 6. 对所有样本，检查是否满足 clean 约束。
 
-`scripts/odai-suite-check.js` 只做测试集元校验：表头、id、枚举、route、覆盖标记、source 引用与旧词残留；它不等同于 AI 行为测试。
+本测试集需按上列口径喂给启用 `odai` 的 AI 做行为判定。
 
 ## 重点红线
 
