@@ -79,11 +79,11 @@ const SOURCE_VALIDATION_RULES = {
       },
       {
         phrase: '退回文本提问',
-        guidance: '改成“先明确说明‘当前环境不支持’，再改用文字提问”',
+        guidance: '改成“先明确说明‘当前环境未暴露提问工具’，再改用文字提问”',
       },
       {
         phrase: '不降级为零碎文本盘问',
-        guidance: '改成“先明确说明‘当前环境不支持’，再改用文字提问”',
+        guidance: '改成“先明确说明‘当前环境未暴露提问工具’，再改用文字提问”',
       },
       {
         phrase: '结构化提问（即调用 `vscode_askQuestions`）',

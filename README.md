@@ -190,7 +190,7 @@ npx skills add https://github.com/orziz/odai#old
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `odai` | 以道总控诸务，随事转内模块 | 接单、裁路、规划、设计、实现、审校、收束 | `skills/odai/SKILL.md` |
+| `odai` | 总控接单、澄清、规划、设计、实现、审查与收束，按任务路由内部模块并交付 | 接单、裁路、规划、设计、实现、审校、收束 | `skills/odai/SKILL.md` |
 
 ### 内置模块
 
