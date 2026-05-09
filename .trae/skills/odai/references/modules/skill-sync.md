@@ -4,7 +4,7 @@ description: 由标准源生成各端安装版
 scenario: 多端同步、README 回写、旧产物清理
 ---
 
-`skill-sync` 以仓库内脚本 `scripts/skill-sync.js` 为执行体。
+`skill-sync` 以仓库内脚本 `odai/scripts/skill-sync.js` 为执行体。
 
 ## 目标
 
@@ -30,7 +30,7 @@ scenario: 多端同步、README 回写、旧产物清理
 
 1. 校验 `工程根目录/skills/<skill-name>/SKILL.md`、必要 support files 与 README 关键分节/锚点；关键校验失败即停。
 2. 源 frontmatter 与正文为唯一正文载荷；正文段落顺序、标题层级、代码块、措辞原样保留，不重组、不风格化重写。
-3. 同目录 `odai/references/`、`odai/assets/`、`scripts/` 皆为当前 skill 附属资源，一并同步到各手动安装目标。
+3. 同目录 `odai/references/`、`odai/assets/`、`odai/scripts/` 皆为当前 skill 附属资源，一并同步到各手动安装目标。
 4. Claude wrapper 元数据只认标准源 frontmatter 显式字段；不从现有 `.claude/` 产物反推或保留。
 5. 生成手动安装文件时，改写入口与资源相对路径为目标目录真实可用路径，并覆盖 Claude/GitHub/Trae 目标文件。
 6. 默认只处理 `odai`；若 frontmatter 有 `replaces`，同步清旧安装产物与 README 条目。

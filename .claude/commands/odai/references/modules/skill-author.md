@@ -53,7 +53,7 @@ support files：
 2. 后续续同源稿，不开平行版；改旧模块即直改旧源。
 3. 可借近似骨架，惟只取相关节，不机械照抄。
 4. 正文只写本模块运行真规则；入口已定之提问、确认、术语、记忆、静默、宿主能力与全局边界，引用代替，不重抄。
-5. `odai/references/<module-name>/` 存长规则；`odai/assets/<module-name>/` 存模板；`scripts/<module-name>/` 仅脚本真为执行依据时设。
+5. `odai/references/<module-name>/` 存长规则；`odai/assets/<module-name>/` 存模板；`odai/scripts/<module-name>/` 仅脚本真为执行依据时设。
 6. 不空建目录，不把脚本可稳定完成之事改成模型手工流程。
 7. 未确认扩展，只写建议或待定项。
 8. 用户既曰“做”，即直改标准源。
@@ -62,7 +62,7 @@ support files：
 
 1. 目标/名称/类型/路径/support files 范围/覆盖影响/真实意图有疑，皆问。
 2. 用户只说“新增一个……模块草案”而未给模块名/类型/路径/support files 范围时，先成组问清，不先写泛草案。
-3. 先报已知、未定与所问，不偷定案。
+3. 先内整已知、未定与所问；对外只留最短今判与必问，不偷定案。
 4. 得答后径行；未答且边界未清，不硬写。
 5. 默认不做 .claude、.github、.trae 与 README 安装同步；需同步则标准源定稳后转 `skill-sync`。
 

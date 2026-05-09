@@ -54,6 +54,14 @@ const staleSourcePatterns = [
   /当前环境不支持/,
   /真实增强自测/,
   /少文/,
+  /先报/,
+  /先给今判/,
+  /先给已知/,
+  /先给出今判/,
+  /复述你/,
+  /完整判断依据/,
+  /候选理解/,
+  /推荐默认/,
 ]
 
 const staleCopilotPattern = /Copilot|copilot/
@@ -65,6 +73,20 @@ const requiredCoverage = [
   /第二视角/,
   /额度拒绝/,
   /Copilot 专属/,
+]
+const requiredShortOutputSnippets = [
+  '能一句不二句',
+  '不出二句',
+  '不预设默认答案',
+  '普通对话不先复述',
+  '对外仍短报结论',
+  '默认短审',
+  '输出形态互斥',
+  '当前对话啰嗦',
+  '某产品、技能或助手',
+  '最低信息量',
+  '工具失败、权限不足或环境限制',
+  '静默伪成成功',
 ]
 
 function fail(message) {
@@ -208,6 +230,7 @@ function checkSuite() {
 function checkSourceReferences() {
   const files = walk(skillRoot).filter((file) => file.endsWith('.md'))
   const missing = []
+  const sourceBlob = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n')
 
   for (const file of files) {
     const rel = path.relative(skillRoot, file)
@@ -237,6 +260,11 @@ function checkSourceReferences() {
 
   if (missing.length) {
     fail(`missing skill references:\n${missing.join('\n')}`)
+  }
+
+  const missingShortOutputSnippets = requiredShortOutputSnippets.filter((snippet) => !sourceBlob.includes(snippet))
+  if (missingShortOutputSnippets.length) {
+    fail(`missing short-output contract snippets:\n${missingShortOutputSnippets.join('\n')}`)
   }
 }
 
