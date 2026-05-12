@@ -53,7 +53,7 @@ support files：
 2. 后续续同源稿，不开平行版；改旧模块即直改旧源。
 3. 可借近似骨架，惟只取相关节，不机械照抄。
 4. 正文只写本模块运行真规则；入口已定之提问、确认、术语、记忆、静默、宿主能力与全局边界，引用代替，不重抄。
-5. `odai/references/<module-name>/` 存长规则；`odai/assets/<module-name>/` 存模板；`odai/scripts/<module-name>/` 仅脚本真为执行依据时设。
+5. `odai/references/<module-name>/` 存长规则；`odai/assets/<module-name>/` 存模板；`scripts/<module-name>/` 仅脚本真为执行依据时设。
 6. 不空建目录，不把脚本可稳定完成之事改成模型手工流程。
 7. 未确认扩展，只写建议或待定项。
 8. 用户既曰“做”，即直改标准源。

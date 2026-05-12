@@ -99,11 +99,25 @@ const SOURCE_VALIDATION_RULES = {
       },
       {
         phrase: '必须调用 `vscode_askQuestions`',
-        guidance: '改成“必须调用宿主提问工具”',
+        guidance: '改成“宿主提问工具可用且获准时调用；不可用或上层不允许时文字成组问”',
       },
       {
         phrase: '可用时调用 `vscode_askQuestions`',
-        guidance: '改成“可用时调用宿主提问工具”',
+        guidance: '改成“宿主提问工具可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '凡应问者必须调宿主提问工具',
+        guidance: '改成“可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '必须调用宿主提问工具',
+        pattern: /(?<![不无否])必须调用宿主提问工具/,
+        guidance: '改成“可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '默认先调用宿主提问工具',
+        pattern: /(?<![不无否])默认先调用宿主提问工具/,
+        guidance: '改成“先成组提问；工具可用且获准时才调用”',
       },
     ],
   },
@@ -404,7 +418,8 @@ function collectSourceValidationViolations({ repoRoot, sourceDir, bannedPhrases 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index]
       for (const rule of bannedPhrases) {
-        if (!line.includes(rule.phrase)) {
+        const hit = rule.pattern ? rule.pattern.test(line) : line.includes(rule.phrase)
+        if (!hit) {
           continue
         }
 
