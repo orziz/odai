@@ -1,0 +1,41 @@
+name: skill-sync-check
+
+on:
+  pull_request:
+    paths:
+      - 'skills/**'
+      - 'scripts/skill-sync.js'
+      - 'README.md'
+      - '.github/workflows/skill-sync-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'skills/**'
+      - 'scripts/skill-sync.js'
+      - 'README.md'
+      - '.github/workflows/skill-sync-check.yml'
+
+jobs:
+  check-generated-artifacts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Regenerate artifacts
+        run: node scripts/skill-sync.js
+
+      - name: Verify generated files are committed
+        run: |
+          if [[ -n "$(git status --short --untracked-files=all -- .claude .github/skills .trae README.md)" ]]; then
+            git status --short --untracked-files=all -- .claude .github/skills .trae README.md
+            echo 'Generated skill artifacts are out of sync. Run node scripts/skill-sync.js and commit the results.'
+            exit 1
+          fi

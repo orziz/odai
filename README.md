@@ -2,7 +2,7 @@
 
 一个把规划、通用设计、审查、实现、总结、游戏策划、游戏视觉设计与仓库维护收束成单一入口 skill 的仓库。
 
-这个仓库对外只有一个安装入口：`odai`。什么时候该走哪个模块、做到什么产物形态，都先由 `道` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
+这个仓库对外只有一个安装入口：`odai`。该走哪个模块、做到什么产物形态，都先由 `道` 按用户语义/目标/约束/想法判断；拿不准就先结构化问清。
 
 当前 main 分支承载的是统一入口 `odai`。如果你还需要分离出来的旧多 skill 结构，请改装 `old` 分支。
 
@@ -14,6 +14,7 @@
 - [这是什么](#这是什么)
 - [如何安装](#如何安装)
 - [`odai` 怎么用更顺](#odai-怎么用更顺)
+- [默认交互方式](#默认交互方式)
 - [Skills 一览](#skills-一览)
 - [面向维护者](#面向维护者)
 
@@ -51,7 +52,8 @@ npx skills add https://github.com/orziz/odai#old
 - 对外安装和触发都只认 `odai`。
 - `道` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
 - 源文件结构以 `skills/odai/` 为唯一 source-of-truth，模块正文与 support files 都收进这个目录下。
-- 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致。
+- 仓库结构、source-of-truth 与同步流程属于维护者说明，统一放在 README 和维护模块里，不再混写进 `odai` 入口技能正文。
+- 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致；Codex 暂无专用出包，故源正文保持宿主无关。
 - 旧的多 skill 布局已分离到 `old` 分支，供仍需旧结构的安装场景继续使用。
 
 ## 适合谁用
@@ -63,7 +65,7 @@ npx skills add https://github.com/orziz/odai#old
 - 想先由一个总控判断方向、边界、主路和先手，再切到下游模块
 - 想保留不同审查风格和不同 workflow，但不想继续维护多个并列安装入口
 - 想整理项目 README、规则、AI 接手基线或日报 / commit / PR 描述
-- 想同时兼顾 Claude、Copilot、Trae 等不同入口，并保持安装结构一致
+- 想同时兼顾 Claude、Copilot、Trae、Codex 等不同入口，并保持安装结构一致
 
 ## 这是什么
 
@@ -149,9 +151,14 @@ npx skills add https://github.com/orziz/odai#old
 - 通过指令或自然语言触发
 - 更适合按任务临时点名内部模块的场景
 
+#### Codex
+
+- 当前仓库暂无 Codex 专用出包目录
+- 但 `skills/odai/` 下的标准源正文已按宿主无关口径编写；若后续接入 Codex，应直接复用该正文规则，不得把 VS Code 工具名写死成唯一口径
+
 ## `odai` 怎么用更顺
 
-`odai` 不是把所有模块机械串起来，而是先由 `道` 判断你当前真正缺的是哪一层、该调用哪个模块、该产出什么形态，再读取对应内部模块继续工作。
+`odai` 不机械串模块；先由 `道` 判你当前缺哪层/该调何模块/该产何形态，再读对应内部模块续推。
 
 它内部保留两条主 workflow：
 
@@ -166,7 +173,7 @@ npx skills add https://github.com/orziz/odai#old
 - `design-spec`：页面、交互、状态、视觉、体验说明
 - `implement-code`：代码实现、修 bug、补测试、重构落地
 - `project-guide`：README、规则、AI 接手基线
-- `review-*`：按不同风格做代码审查
+- `review-sslb`：三省六部式代码审查
 - `ribao`：日报、commit message、PR message
 - `skill-author` / `skill-sync`：维护这个仓库本身
 
@@ -175,16 +182,17 @@ npx skills add https://github.com/orziz/odai#old
 - “用 `odai` 接这个需求：先判断该走哪个模块和产物形态，拿不准就结构化问我。”
 - “用 `odai` 接这个需求：先用 `道` 定边界、主路和关键风险，再继续推进。”
 - “用 `odai` 按 `harness-dev` 路线处理这个实现问题，推进到结果总结。”
-- “用 `odai` 按 `review-band` 风格审这个分支。”
+- “用 `odai` 按 `review-sslb` 风格审这个分支。”
 - “用 `odai` 用 `project-guide` 模块整理这个仓库的 AI 接手基线。”
 
 ## 默认交互方式
 
 本仓库里会主动向用户补关键信息的内部模块，默认都遵守同一条交互约定：
 
-- 提问时若当前环境支持结构化提问，必须使用结构化提问组件，例如选项、单选、多选，或“选项 + 自由补充”
+- 结构化提问只在当前宿主原生提问工具可用且当前模式允许时调用；否则直接文字成组提问
+- 提问时若当前环境支持结构化提问且获准调用，优先使用其原生结构化组件，例如选项、单选、多选，或“选项 + 自由补充”
 - 收到你的回答后，默认直接继续当前阶段，不额外等一句“继续”
-- 若当前环境不支持结构化提问，必须先明确说明“当前环境不支持”，再改用文字提问
+- 若当前宿主连提问工具都不支持，或当前模式不允许调用，直接改用文字成组提问
 
 ## Skills 一览
 
@@ -194,7 +202,7 @@ npx skills add https://github.com/orziz/odai#old
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `odai` | 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查、成果整理与 skill 仓库维护 | `skills/odai/SKILL.md` |
+| `odai` | 总控接单、澄清、规划、设计、实现、审查与收束，按任务路由内部模块并交付 | 接单、裁路、规划、设计、实现、审校、收束 | `skills/odai/SKILL.md` |
 
 ### 内置模块
 
@@ -203,20 +211,16 @@ npx skills add https://github.com/orziz/odai#old
 | 模块 | 作用 | 对应文件 |
 | --- | --- | --- |
 | `dao`（文案写作 `道`） | 默认总控 workflow，负责方向、边界、主路、先手与复核 | `skills/odai/references/modules/dao.md` |
-| `harness-dev` | 开发类总控 workflow，负责按 SDD / BDD / TDD 判断主驱动并持续推进 | `skills/odai/references/modules/harness-dev.md` |
-| `game-plan` | 全域游戏策划主模块，负责系统、玩法、数值、经济、商业、关卡与内容规划 | `skills/odai/references/modules/game-plan.md` |
-| `game-design` | 完整游戏视觉设计主模块，负责 UI/UX/UE、角色场景、宣传品牌与特效演出 | `skills/odai/references/modules/game-design.md` |
+| `harness-dev` | 开发类总控 workflow，按 SDD/BDD/TDD 判主驱并持续推进 | `skills/odai/references/modules/harness-dev.md` |
+| `game-plan` | 全域游戏策划主模块，负责系统/玩法/数值/经济/商业/关卡/内容规划 | `skills/odai/references/modules/game-plan.md` |
+| `game-design` | 完整游戏视觉设计主模块，负责 UI/UX/UE、角色场景、宣传品牌与特效 | `skills/odai/references/modules/game-design.md` |
 | `feature-plan` | 规格规划、方案取舍、bug 诊断 | `skills/odai/references/modules/feature-plan.md` |
 | `design-spec` | 页面、交互、状态、视觉与体验说明 | `skills/odai/references/modules/design-spec.md` |
 | `implement-code` | 代码实现、修 bug、补测试、重构落地 | `skills/odai/references/modules/implement-code.md` |
 | `project-guide` | README、规则、AI 接手基线与项目级说明 | `skills/odai/references/modules/project-guide.md` |
 | `review-sslb` | 三省六部式代码审查 | `skills/odai/references/modules/review-sslb.md` |
-| `review-hgsc` | 后宫分位式代码审查 | `skills/odai/references/modules/review-hgsc.md` |
-| `review-gal` | gal 多角色代码审查 | `skills/odai/references/modules/review-gal.md` |
-| `review-band` | 少女乐队分工式代码审查 | `skills/odai/references/modules/review-band.md` |
-| `review-anime` | anime 多角色连续对话式代码审查 | `skills/odai/references/modules/review-anime.md` |
 | `ribao` | 日报、commit message、PR message 整理 | `skills/odai/references/modules/ribao.md` |
-| `skill-author` | 统一入口内部模块的 source-of-truth 维护 | `skills/odai/references/modules/skill-author.md` |
+| `skill-author` | 统一入口内部模块 source-of-truth 维护 | `skills/odai/references/modules/skill-author.md` |
 | `skill-sync` | 统一入口 skill 的多端同步与 README 回写 | `skills/odai/references/modules/skill-sync.md` |
 
 ## 面向维护者
@@ -225,7 +229,7 @@ npx skills add https://github.com/orziz/odai#old
 
 ### 命名约定
 
-当前仓库默认按“对象 / 层级 + 工作类型”来给内部模块命名：
+仓库按“对象 / 层级 + 工作类型”来给内部模块命名：
 
 - `dao`：默认总控路线
 - `game-*`：游戏策划与游戏视觉设计
@@ -246,11 +250,15 @@ npx skills add https://github.com/orziz/odai#old
 
 ### 维护流程
 
+这一节承接维护者信息；`skills/odai/SKILL.md` 只保留运行时路由与调用约定，不再重复仓库结构约束。
+
+内部模块正文优先只写本域职责/交付骨架/边界/support 触发；入口、README、并行手册、术语基线与同步模块已定的全局口径，优先引用，不再回抄。
+
 推荐顺序：
 
 1. 用 `skill-author` 模块新增或改写 `skills/odai/references/modules/<module-name>.md`
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`
-3. 确认 unified source 稳定后，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线与禁用旧口径
+3. 确认 unified source 稳定后，再用 `skill-sync` 或 `node scripts/skill-sync.js` 同步 Claude/GitHub/Trae 安装版本，并回写 `README.md`；Codex 目前直接复用 source 口径；脚本会先校验 odai 术语基线、并行 support files、README 关键分节与禁用旧口径
 
 标准安装入口：
 
