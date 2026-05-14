@@ -26,12 +26,6 @@
 npx skills add https://github.com/orziz/odai
 ```
 
-如果你想尝试版本更加超前的 `odai` ，可以查看并改装 `odai `分支：
-
-```bash
-npx skills add https://github.com/orziz/odai#odai
-```
-
 如果你要继续使用分离出来的旧多 skill 结构，可以改装 `old` 分支：
 
 ```bash
@@ -92,12 +86,6 @@ npx skills add https://github.com/orziz/odai
 - 想快速把统一入口接进当前环境
 - 不想手动复制多个 skill 文件
 - 日常直接通过 `odai` 触发内部模块，不自己维护一套手动安装副本
-
-如果你想尝试版本更加超前的 `odai` ，可以查看并改装 `odai `分支：
-
-```bash
-npx skills add https://github.com/orziz/odai#odai
-```
 
 如果你要安装分离出来的旧多 skill 版本，请使用 `old` 分支：
 

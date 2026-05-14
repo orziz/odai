@@ -119,6 +119,30 @@ const SOURCE_VALIDATION_RULES = {
         pattern: /(?<![不无否])默认先调用宿主提问工具/,
         guidance: '改成“先成组提问；工具可用且获准时才调用”',
       },
+      {
+        phrase: '先立四格：确定、待验、待定、风险',
+        guidance: '改成“已验、待验、待定、风险”，与 terminology-baseline 保持一致',
+      },
+      {
+        phrase: '已知、已验、未确认、冲突、必问',
+        guidance: '改成“已知、已验、未定、相左、必问”，与 terminology-baseline 保持一致',
+      },
+      {
+        phrase: '今判、所求、所重、确定/待验/待定、目标与非目标',
+        guidance: '改成“今判、所求、所重、已验/待验/待定/相左、目标与非目标”',
+      },
+      {
+        phrase: '需要提问时，若宿主提问工具在当前模式可用且上层规则允许，调用宿主提问工具；否则直接文字成组问。',
+        guidance: '改成“提问通道与文字兜底统承 terminology-baseline；此处只补本文件新增规则”',
+      },
+      {
+        phrase: '若当前环境未暴露提问工具，或当前模式/上层规则不允许调用，直接改用文字提问；同层问题仍应一次成组问完，不拆成零碎盘问。',
+        guidance: '改成“提问通道与文字兜底统承 terminology-baseline”，避免在 dao-shu-fa-playbook 重写全局兜底',
+      },
+      {
+        phrase: '默认一句可了，不出二句；非必要不外显三层。',
+        guidance: '改成“短式字段、语体与展开口径统承 terminology-baseline；此处只补三态折法”',
+      },
     ],
   },
 }
