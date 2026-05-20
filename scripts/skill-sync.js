@@ -42,6 +42,10 @@ const SOURCE_VALIDATION_RULES = {
         guidance: '改成“已确认路径 / 待确认路径”',
       },
       {
+        phrase: '候选路径',
+        guidance: '改成“已确认路径 / 待确认路径”',
+      },
+      {
         phrase: '候选选项',
         guidance: '改成“待确认问题、待验证项或风险项”',
       },
@@ -62,6 +66,10 @@ const SOURCE_VALIDATION_RULES = {
         guidance: '改成“已确认方案”或“待确认方案草案”',
       },
       {
+        phrase: '推荐指令草稿',
+        guidance: '改成“续执行指令骨架”或“后续指令模板”',
+      },
+      {
         phrase: '默认路线',
         guidance: '改成“未经确认的继续方向”或“继续依据”',
       },
@@ -71,11 +79,69 @@ const SOURCE_VALIDATION_RULES = {
       },
       {
         phrase: '退回文本提问',
-        guidance: '改成“先明确说明‘当前环境不支持’，再改用文字提问”',
+        guidance: '改成“先明确说明‘当前环境未暴露提问工具’，再改用文字提问”',
       },
       {
         phrase: '不降级为零碎文本盘问',
-        guidance: '改成“先明确说明‘当前环境不支持’，再改用文字提问”',
+        guidance: '改成“先明确说明‘当前环境未暴露提问工具’，再改用文字提问”',
+      },
+      {
+        phrase: '结构化提问（即调用 `vscode_askQuestions`）',
+        guidance: '改成“结构化提问（调用宿主提问工具）”，并把 VS Code 示例留在宿主映射里',
+      },
+      {
+        phrase: '结构化提问专指调用 `vscode_askQuestions`',
+        guidance: '改成“结构化提问专指调用宿主提问工具”',
+      },
+      {
+        phrase: '结构化提问即调用 `vscode_askQuestions`',
+        guidance: '改成“结构化提问即调用宿主提问工具”',
+      },
+      {
+        phrase: '必须调用 `vscode_askQuestions`',
+        guidance: '改成“宿主提问工具可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '可用时调用 `vscode_askQuestions`',
+        guidance: '改成“宿主提问工具可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '凡应问者必须调宿主提问工具',
+        guidance: '改成“可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '必须调用宿主提问工具',
+        pattern: /(?<![不无否])必须调用宿主提问工具/,
+        guidance: '改成“可用且获准时调用；不可用或上层不允许时文字成组问”',
+      },
+      {
+        phrase: '默认先调用宿主提问工具',
+        pattern: /(?<![不无否])默认先调用宿主提问工具/,
+        guidance: '改成“先成组提问；工具可用且获准时才调用”',
+      },
+      {
+        phrase: '先立四格：确定、待验、待定、风险',
+        guidance: '改成“已验、待验、待定、风险”，与 terminology-baseline 保持一致',
+      },
+      {
+        phrase: '已知、已验、未确认、冲突、必问',
+        guidance: '改成“已知、已验、未定、相左、必问”，与 terminology-baseline 保持一致',
+      },
+      {
+        phrase: '今判、所求、所重、确定/待验/待定、目标与非目标',
+        guidance: '改成“今判、所求、所重、已验/待验/待定/相左、目标与非目标”',
+      },
+      {
+        phrase: '需要提问时，若宿主提问工具在当前模式可用且上层规则允许，调用宿主提问工具；否则直接文字成组问。',
+        guidance: '改成“提问通道与文字兜底统承 terminology-baseline；此处只补本文件新增规则”',
+      },
+      {
+        phrase: '若当前环境未暴露提问工具，或当前模式/上层规则不允许调用，直接改用文字提问；同层问题仍应一次成组问完，不拆成零碎盘问。',
+        guidance: '改成“提问通道与文字兜底统承 terminology-baseline”，避免在 dao-shu-fa-playbook 重写全局兜底',
+      },
+      {
+        phrase: '默认一句可了，不出二句；非必要不外显三层。',
+        guidance: '改成“短式字段、语体与展开口径统承 terminology-baseline；此处只补三态折法”',
       },
     ],
   },
@@ -376,7 +442,8 @@ function collectSourceValidationViolations({ repoRoot, sourceDir, bannedPhrases 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index]
       for (const rule of bannedPhrases) {
-        if (!line.includes(rule.phrase)) {
+        const hit = rule.pattern ? rule.pattern.test(line) : line.includes(rule.phrase)
+        if (!hit) {
           continue
         }
 

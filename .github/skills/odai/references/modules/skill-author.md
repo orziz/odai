@@ -37,7 +37,7 @@ support files：
 
 ## 命名与类型整理
 
-1. 新建模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-*`、`skill-*`、`harness-*`。
+1. 新建模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-sslb`、`skill-*`、`harness-*`。
 2. 默认总控模块的概念文案可写作 `道`，但模块 id、frontmatter `name` 与文件名保持 `dao`，避免跨工具和跨平台兼容问题。
 3. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
 4. 模块 frontmatter 默认至少包含 `name`、`description`；若该模块需要被顶层路由或做说明，可补 `scenario`。

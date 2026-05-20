@@ -37,7 +37,7 @@ support files：
 
 ## 命名与类型整理
 
-1. 新建模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-*`、`skill-*`、`harness-*`。
+1. 新建模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-sslb`、`skill-*`、`harness-*`。
 2. 默认总控模块的概念文案可写作 `道`，但模块 id、frontmatter `name` 与文件名保持 `dao`，避免跨工具和跨平台兼容问题。
 3. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
 4. 模块 frontmatter 默认至少包含 `name`、`description`；若该模块需要被顶层路由或做说明，可补 `scenario`。
@@ -55,7 +55,7 @@ support files：
 2. 后续补充优先续写同一份模块源文件，不开平行版本；若用户是在改现有模块，就直接改现有 source。
 3. 能复用仓库里最接近的模块结构时可以复用，但只复用相关骨架，不机械照抄无关规则。
 4. 模块正文只写当前模块真正需要承接的运行时规则；入口、README、`odai/references/dao/parallel-consensus-playbook.md`、`odai/references/dao/terminology-baseline.md`、`odai/references/modules/skill-sync.md` 等处已经定义的全局规则、维护说明和脚本细则，优先引用，不再重复塞进模块正文。
-5. `odai/references/<module-name>/` 适合放长篇规则、方法说明、审查准则；`odai/assets/<module-name>/` 适合放模板；`odai/scripts/<module-name>/` 只在脚本才是最终稳定执行依据时创建。
+5. `odai/references/<module-name>/` 适合放长篇规则、方法说明、审查准则；`odai/assets/<module-name>/` 适合放模板；`scripts/<module-name>/` 只在脚本才是最终稳定执行依据时创建。
 6. 不为显得完整而空建目录，也不把本应由脚本稳定执行的逻辑重新写成模型手工流程。
 7. 任何未经用户确认的扩展能力，都只能写成默认建议或待确认项，不能偷偷塞进正式规则。
 8. 若用户已经明确要“做吧”，就直接改 unified source 文件，不退回成纯建议。
@@ -71,7 +71,7 @@ support files：
 
 1. 搜索并读取现有模块、README 与相近 source。
 2. 创建或更新 `odai/references/modules/<module-name>.md`。
-3. 创建或更新同一 unified skill 下必要的 `odai/references/<module-name>/`、`odai/assets/<module-name>/`、`odai/scripts/<module-name>/`。
+3. 创建或更新同一 unified skill 下必要的 `odai/references/<module-name>/`、`odai/assets/<module-name>/`、`scripts/<module-name>/`。
 4. 回写边界、类型、命名、正文结构和 support file 引用关系。
 
 ## 风格与限制
