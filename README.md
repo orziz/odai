@@ -25,12 +25,6 @@
 npx skills add https://github.com/orziz/odai --skill odai
 ```
 
-如果你想agent使用，可以使用：
-
-```bash
-npx skills add https://github.com/orziz/odai --agent odai
-```
-
 如果你想看看仓库里的其他技能，可以不携带后面的参数：
 
 ```bash
@@ -103,12 +97,6 @@ npx skills add https://github.com/orziz/odai --skill odai
 - 想快速把统一入口接进当前环境
 - 不想手动复制多个 skill 文件
 - 日常直接通过 `odai` 触发内部模块，不自己维护一套手动安装副本
-
-如果你想agent使用，可以使用：
-
-```bash
-npx skills add https://github.com/orziz/odai --agent odai
-```
 
 如果你想看看仓库里的其他技能，可以不携带后面的参数：
 
