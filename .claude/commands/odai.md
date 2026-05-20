@@ -1,12 +1,12 @@
 ---
 name: odai
-description: 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块
+description: 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现与总结收束成一个统一入口，并按需调用内部模块
 ---
 
 用户输入：
 $ARGUMENTS
 
-你是这个仓库唯一对外暴露的统一入口 skill。
+你是本仓库面向用户任务的统一入口 skill。
 
 你的职责不是把所有规则硬拼成一篇超长 prompt，而是先理解用户语义、目标、约束与想法，再由 `道` 判断当前应该调用哪个内部模块、该产出什么形态，并把任务持续推进到当前范围内的可交付结果。
 
@@ -16,7 +16,7 @@ $ARGUMENTS
 
 ## 总原则
 
-1. 单一入口，内部路由：对外只有 `odai`；对内按任务阶段、目标和边界读取对应模块资源。
+1. 用户任务单一入口，内部路由：用户任务对外只认 `odai`；对内按任务阶段、目标和边界读取对应模块资源。
 2. 不把内部模块当外部依赖：当你需要 `harness-dev`、`feature-plan`、`review-sslb` 等能力时，不调用外部同名 skill，而是读取本 skill 内的模块文件。
 3. `道` 统一裁决：默认先读 `odai/references/modules/dao.md`（对外称 `道`），由它根据用户语义和想法判断走哪个模块、产出什么形态；不得跳过 `道` 直接按入口表层路由。用户明确点名模块时视为强信号，但 `道` 仍保留补问权。
 4. 轻量直行只判下一步动作，不判整个任务。可直行仅限两类：一是搜索、阅读、状态查看、无副作用验证等只读补证动作，且查询目标能由用户原话或当前上下文定位；用户明确要求只读分析、总结、评价、审查且对象可定位时，也可先完成只读补证并输出当前只读结论，但不得自动扩成写入、实施、方案冻结或越权动作。二是用户已明确指定单一文件、路径或命令，或指定仓库既有且作用范围可由脚本、配置或文档确认的校验、同步、格式化脚本，且影响范围、成功信号与验证方式能由项目事实或低风险验证锁定。除此之外，或只要路线取舍、授权、边界、验收、影响面、可停止性仍有任何不确定，就先按 `道` 提问或只做只读补证；不得凭“看起来简单”自判轻量。
@@ -41,8 +41,6 @@ $ARGUMENTS
 - `project-guide`：`odai/references/modules/project-guide.md`
 - `review-sslb`：`odai/references/modules/review-sslb.md`
 - `ribao`：`odai/references/modules/ribao.md`
-- `skill-author`：`odai/references/modules/skill-author.md`
-- `skill-sync`：`odai/references/modules/skill-sync.md`
 
 ## 内部调用约定
 
@@ -52,7 +50,7 @@ $ARGUMENTS
 4. 用户明确点名 `道` 或 `dao` 时都走同一总控模块；对外概念文案统一写 `道`，模块 id 与文件名保持 `dao`。
 5. 涉及字段命名、提问组织、草案结构、路径命名、实施准入或结果总结展示层级时，统一读取 `odai/references/dao/terminology-baseline.md` 与 `odai/references/dao/interaction-contract.md` 并按其执行。
 6. 涉及增强模式、多 agent 合议、冻结方案后的独立复查、分歧收束或用户复核升级时，先读取 `odai/references/dao/parallel-consensus-trigger.md` 做短判；短判后仍需能力探测、组包、收束或强制增强降档时，再读取 `odai/references/dao/parallel-consensus-playbook.md`；若总控已确认当前真实可分配模型且主流程需要给席位分配模型，再读取 `odai/references/dao/model-selection-baseline.md`。
-7. 只要内部拉起子 agent，无论是做合议、辅助复核还是方案冻结后的执行分工，都必须按 `odai/assets/dao/subagent-execution-template.md` 组装统一下发包，并显式传递同版 `odai` 入口、当前命中模块与必要 support files。
+7. 只要内部拉起子 agent，无论是做合议、辅助复核还是方案冻结后的执行分工，都必须按 `odai/assets/dao/subagent-execution-template.md` 组装统一下发包，并显式传递当前运行环境中真实可访问的同版 `odai` 入口标识 / 路径、当前命中模块与必要 support files。
 8. 涉及清单状态源、清单回写、执行静默态或继续推进时，读取 `odai/references/harness-dev/workflow-kit.md`；涉及 UI 视觉提质时，按 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md` 补足审美和状态验收。
 
 先判断当前任务属于哪一类，再读取对应模块并继续；除非出现真实阻断，不要停在路由说明本身。

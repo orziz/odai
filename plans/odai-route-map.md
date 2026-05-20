@@ -14,5 +14,3 @@
 | `project-guide` | 新项目接手、项目规范整理、README/规则文档整理、AI 上下文基线整理 | 继续理解 \| 更新现有主文档 \| 新建项目 guide \| 输出 AI 基线 | `references/dao/interaction-contract.md` |
 | `review-sslb` | 使用三省六部式代码审查，按中书省、尚书省、六部、门下省、锦衣卫五阶段输出结构化审查结论 | 审查范围、六部意见、门下省终审、锦衣卫监察密报 | `references/review-sslb/ui-aesthetic-review.md`<br>`references/dao/interaction-contract.md`<br>`references/dao/parallel-consensus-trigger.md` |
 | `ribao` | 根据当天工作内容、总结或 git 变更，生成一份可复用的结构化成果描述；可直接用于日报、git commit message 或 git PR message | 日报 / commit message / PR message 的结构化成果描述 | 无 |
-| `skill-author` | 新增模块、改写模块、沉淀 prompt 或 workflow 为统一入口下的标准模块资源 | 当前理解、待确认项、下一步或对应交付草案 | `references/dao/interaction-contract.md`<br>`references/dao/parallel-consensus-trigger.md`<br>`references/dao/parallel-consensus-playbook.md`<br>`references/dao/terminology-baseline.md`<br>`references/modules/skill-sync.md` |
-| `skill-sync` | 统一入口 skill 定稿后的多端同步、README 回写与旧安装产物清理 | 同步检查、安装产物更新、README 回写结果 | `scripts/skill-sync.js`<br>`references/modules/` |

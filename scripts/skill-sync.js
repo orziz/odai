@@ -28,8 +28,6 @@ const MODULE_ROUTE_ORDER = [
   'project-guide',
   'review-sslb',
   'ribao',
-  'skill-author',
-  'skill-sync',
 ]
 const SOURCE_VALIDATION_RULES = {
   odai: {
@@ -41,8 +39,14 @@ const SOURCE_VALIDATION_RULES = {
       'references/dao/model-selection-baseline.md',
       'assets/dao/subagent-execution-template.md',
     ],
-    requiredReadmeHeadings: ['### 面向大多数使用者', '### 2. 手动安装', '### 维护流程', '## 目录说明'],
-    requiredReadmeSnippets: ['标准安装入口：', '`skills/odai/SKILL.md`', 'skills/odai/           统一入口 source skill'],
+    requiredReadmeHeadings: ['### 面向大多数使用者', '### 仓库维护工具', '### 2. 手动安装', '### 维护流程', '## 目录说明'],
+    requiredReadmeSnippets: [
+      '标准安装入口：',
+      '`skills/odai/SKILL.md`',
+      '`skills/skill-author/SKILL.md`',
+      '`skills/skill-sync/SKILL.md`',
+      'skills/odai/           统一入口 source skill',
+    ],
     bannedReadmePhrases: [
       {
         phrase: 'review-hgsc',
@@ -222,8 +226,9 @@ const TARGETS = [
   },
 ]
 const MISSING_SOURCE_TEMPLATE = '错误：skills/{name}/SKILL.md 不存在，无法生成手动安装版本。'
-const DEFAULT_SKILL_NAMES = ['odai']
-const USAGE_ERROR = '错误：skill 名称必须是非空且不含空格的单个标识，例如：skill-sync odai、skill-sync --check odai、skill-sync --stats odai'
+const DEFAULT_SKILL_NAMES = ['odai', 'skill-author', 'skill-sync']
+const ROUTE_MAP_SKILL_NAMES = ['odai']
+const USAGE_ERROR = '错误：skill 名称必须是非空且不含空格的单个标识，例如：skill-sync odai、skill-sync --check skill-author、skill-sync --stats odai'
 
 function main() {
   const { skillNames, checkOnly, printStats, writeRouteMap } = parseCliArgs(process.argv.slice(2))
@@ -361,16 +366,16 @@ function parseCliArgs(args) {
   }
 
   return {
-    skillNames: parseSkillNames(skillArgs),
+    skillNames: parseSkillNames(skillArgs, writeRouteMap ? ROUTE_MAP_SKILL_NAMES : DEFAULT_SKILL_NAMES),
     checkOnly,
     printStats,
     writeRouteMap,
   }
 }
 
-function parseSkillNames(args) {
+function parseSkillNames(args, defaultSkillNames) {
   if (args.length === 0) {
-    return [...DEFAULT_SKILL_NAMES]
+    return [...defaultSkillNames]
   }
 
   const parsed = []
@@ -619,6 +624,9 @@ function writeSkillRouteMap({ repoRoot, payload }) {
 
 function buildSkillRouteMap(payload) {
   const moduleDir = path.join(payload.sourceDir, 'references', 'modules')
+  if (!fs.existsSync(moduleDir)) {
+    fail(`错误：skills/${payload.skillName}/ 不包含 references/modules/，无法生成模块路由维护表。`)
+  }
   const moduleFiles = fs
     .readdirSync(moduleDir)
     .filter((name) => name.endsWith('.md'))
@@ -664,7 +672,6 @@ function extractMinimalOutputs(body, moduleName) {
   const fallbackOutputs = {
     'review-sslb': '审查范围、六部意见、门下省终审、锦衣卫监察密报',
     ribao: '日报 / commit message / PR message 的结构化成果描述',
-    'skill-sync': '同步检查、安装产物更新、README 回写结果',
   }
   return fallbackOutputs[moduleName] || '当前理解、待确认项、下一步或对应交付草案'
 }

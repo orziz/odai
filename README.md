@@ -1,10 +1,10 @@
 # odai
 
-一个把规划、通用设计、审查、实现、总结、游戏策划、游戏视觉设计与仓库维护收束成单一入口 skill 的仓库。
+一个把规划、通用设计、审查、实现、总结、游戏策划与游戏视觉设计收束成单一入口 skill 的仓库，并配套独立维护工具。
 
-这个仓库对外只有一个安装入口：`odai`。什么时候该走哪个模块、做到什么产物形态，都先由 `道` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
+这个仓库的用户任务入口是 `odai`；仓库维护入口是独立的 `skill-author` 与 `skill-sync`。什么时候该走哪个内部模块、做到什么产物形态，都先由 `道` 根据用户语义、目标、约束和想法来判断；若还拿不准，就先结构化问清。
 
-当前 main 分支承载的是统一入口 `odai`。如果你还需要分离出来的旧多 skill 结构，请改装 `old` 分支。
+当前 main 分支承载的是统一入口 `odai` 与独立维护工具。如果你还需要分离出来的旧多 skill 结构，请改装 `old` 分支。
 
 ## 快速导航
 
@@ -20,6 +20,18 @@
 ## 30 秒上手
 
 1. 先把统一入口 skill 接进当前环境：
+
+```bash
+npx skills add https://github.com/orziz/odai --skill odai
+```
+
+如果你想agent使用，可以使用：
+
+```bash
+npx skills add https://github.com/orziz/odai --agent odai
+```
+
+如果你想看看仓库里的其他技能，可以不携带后面的参数：
 
 ```bash
 npx skills add https://github.com/orziz/odai
@@ -48,11 +60,11 @@ npx skills add https://github.com/orziz/odai#old
 
 ## 当前结构
 
-- 对外安装和触发都只认 `odai`。
+- 用户任务的对外安装和触发默认只认 `odai`；维护本仓库时使用独立 `skill-author` / `skill-sync`。
 - `道` 是默认总控，负责判断当前该走哪个模块，以及该输出短判断、草案、设计、审查、执行单还是直接推进。
-- 源文件结构以 `skills/odai/` 为唯一 source-of-truth，模块正文与 support files 都收进这个目录下。
-- 仓库结构、source-of-truth 与同步流程属于维护者说明，统一放在 README 和维护模块里，不再混写进 `odai` 入口技能正文。
-- 同步脚本只分发当前统一入口 skill，并保持 Claude / GitHub / Trae 产物一致。
+- 用户任务 source 以 `skills/odai/` 为 source-of-truth，模块正文与 support files 都收进这个目录下；维护工具 source 放在 `skills/skill-author/` 与 `skills/skill-sync/`。
+- 仓库结构、source-of-truth 与同步流程属于维护者说明，统一放在 README 和维护工具里，不再混写进 `odai` 入口技能正文。
+- 同步脚本分发当前 source skills，并保持 Claude / GitHub / Trae 产物一致。
 - 旧的多 skill 布局已分离到 `old` 分支，供仍需旧结构的安装场景继续使用。
 
 ## 适合谁用
@@ -70,7 +82,7 @@ npx skills add https://github.com/orziz/odai#old
 
 这个仓库现在的核心思路是：
 
-- 对外只有 `skills/odai/SKILL.md` 这一个标准入口
+- 用户任务只有 `skills/odai/SKILL.md` 这一个标准入口，仓库维护另有 `skills/skill-author/SKILL.md` 与 `skills/skill-sync/SKILL.md`
 - 内部模块正文放在 `skills/odai/references/modules/`
 - 模块级规则、模板和脚本按模块名收在 `references/<module-name>/`、`assets/<module-name>/`、`scripts/<module-name>/`
 - `道` 是默认总控；`harness-dev` 是偏开发推进的总控 workflow
@@ -83,7 +95,7 @@ npx skills add https://github.com/orziz/odai#old
 ### 1. 自动安装（推荐）
 
 ```bash
-npx skills add https://github.com/orziz/odai
+npx skills add https://github.com/orziz/odai --skill odai
 ```
 
 适合场景：
@@ -91,6 +103,18 @@ npx skills add https://github.com/orziz/odai
 - 想快速把统一入口接进当前环境
 - 不想手动复制多个 skill 文件
 - 日常直接通过 `odai` 触发内部模块，不自己维护一套手动安装副本
+
+如果你想agent使用，可以使用：
+
+```bash
+npx skills add https://github.com/orziz/odai --agent odai
+```
+
+如果你想看看仓库里的其他技能，可以不携带后面的参数：
+
+```bash
+npx skills add https://github.com/orziz/odai
+```
 
 如果你要比较省Tokens的版本，可以改装 `mini` 分支：
 
@@ -116,19 +140,24 @@ npx skills add https://github.com/orziz/odai#old
 
 - `.claude/commands/odai.md`
 - `.claude/commands/odai/`
+- 可选维护工具：`.claude/commands/skill-author.md`、`.claude/commands/skill-sync.md`
 
 之后在输入框中使用：
 
 - `/odai`
+- `/skill-author`
+- `/skill-sync`
 
 #### Copilot
 
 - `.github/skills/odai/SKILL.md`
+- 可选维护工具：`.github/skills/skill-author/SKILL.md`、`.github/skills/skill-sync/SKILL.md`
 
 补充说明：
 
 - Copilot 的手动安装版本按“一个 skill 一个目录”组织
 - `odai` 带有 `references/`、`assets/`、`scripts/` 等附属目录，必须连同整个目录一起复制
+- `skill-author` 与 `skill-sync` 是独立维护工具，当前为单文件 skill
 - 只有保留目录结构，`SKILL.md` 中的相对路径才能继续可用
 
 > `copilot-instructions.md` 更适合项目级全局说明，不适合作为多文件 skill 的承载位置。
@@ -139,6 +168,7 @@ npx skills add https://github.com/orziz/odai#old
 - `.trae/skills/odai/`
 - `.trae/rules/odai.md`
 - `.trae/rules/odai/`
+- 可选维护工具：`.trae/skills/skill-author.md`、`.trae/skills/skill-sync.md`、`.trae/rules/skill-author.md`、`.trae/rules/skill-sync.md`
 
 `rules`：
 
@@ -159,7 +189,7 @@ npx skills add https://github.com/orziz/odai#old
 - `道`：默认总控，更适合“先定方向、边界、主路与先手”，也负责判断模块选择和产物形态
 - `harness-dev`：偏开发推进，更适合“接住一整段开发任务并持续推进”
 
-除此之外，你也可以直接点名单阶段模块或工具模块：
+除此之外，你也可以直接点名单阶段模块：
 
 - `game-plan`：游戏系统、玩法、数值、经济、商业、关卡与内容规划
 - `game-design`：完整游戏视觉设计，覆盖 UI/UX/UE、角色场景、宣传品牌与特效演出
@@ -169,7 +199,11 @@ npx skills add https://github.com/orziz/odai#old
 - `project-guide`：README、规则、AI 接手基线
 - `review-sslb`：三省六部式代码审查；旧多风格审查已收敛到这一入口
 - `ribao`：日报、commit message、PR message
-- `skill-author` / `skill-sync`：维护这个仓库本身
+
+维护这个仓库本身时，使用独立维护工具：
+
+- `skill-author`：维护 `skills/` 下的 source skill 与 `odai` 内部模块
+- `skill-sync`：同步 Claude / GitHub / Trae 安装产物并回写 README
 
 推荐触发方式：
 
@@ -195,7 +229,14 @@ npx skills add https://github.com/orziz/odai#old
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `odai` | 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现、总结与仓库维护能力收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查、成果整理与 skill 仓库维护 | `skills/odai/SKILL.md` |
+| `odai` | 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现与总结收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查与成果整理 | `skills/odai/SKILL.md` |
+
+### 仓库维护工具
+
+| Skill | 简介 | 适用场景 | 对应文件 |
+| --- | --- | --- | --- |
+| `skill-author` | 维护本仓库 skill source，把能力整理成可同步的标准 skill 或模块资源 | 新增 skill、改写 skill、沉淀 prompt 或 workflow、维护 odai 内部模块与 support files | `skills/skill-author/SKILL.md` |
+| `skill-sync` | 基于 skills/ 下的 source 生成各端安装版本，并对 README 做最小范围回写 | skill source 定稿后的多端同步、同步检查、README 回写、安装产物清理、source 统计与路由表生成 | `skills/skill-sync/SKILL.md` |
 
 ### 内置模块
 
@@ -213,8 +254,6 @@ npx skills add https://github.com/orziz/odai#old
 | `project-guide` | README、规则、AI 接手基线与项目级说明 | `skills/odai/references/modules/project-guide.md` |
 | `review-sslb` | 三省六部式代码审查 | `skills/odai/references/modules/review-sslb.md` |
 | `ribao` | 日报、commit message、PR message 整理 | `skills/odai/references/modules/ribao.md` |
-| `skill-author` | 统一入口内部模块的 source-of-truth 维护 | `skills/odai/references/modules/skill-author.md` |
-| `skill-sync` | 统一入口 skill 的多端同步与 README 回写 | `skills/odai/references/modules/skill-sync.md` |
 
 ## 面向维护者
 
@@ -231,32 +270,34 @@ npx skills add https://github.com/orziz/odai#old
 - `implement-*`：代码实现、测试补齐、落地总结
 - `project-*`：项目级说明、规则、基线、README 整理
 - `review-*`：代码审查
-- `skill-*`：仓库维护与同步工具链
 - `harness-*`：偏开发推进的 workflow
+- `skill-*`：仓库维护与同步工具链，作为独立维护 skill 存放在 `skills/<skill-name>/SKILL.md`
 
 补充约定：
 
 - 模块 id 默认使用小写 kebab-case 英文，便于跨工具、跨平台和路径复用
 - 默认总控模块的概念文案统一写 `道`；模块 id、frontmatter `name` 与文件名保持 `dao`；提示词里 `道` 和 `dao` 都算命中同一模块
 - 面向人读的说明、分类和文案，优先用中文表达职责与场景
-- 不再新增第二个对外 skill；新增能力默认收进 `odai` 的内部模块资源
+- 新增用户任务能力默认收进 `odai` 的内部模块资源；新增仓库维护能力默认做成独立 `skill-*` 工具
 
 ### 维护流程
 
 这一节承接维护者信息；`skills/odai/SKILL.md` 只保留运行时路由与调用约定，不再重复仓库结构约束。
 
-内部模块正文优先只写本域职责、交付骨架、边界和 support file 触发条件；入口、README、交互契约、并行短判、并行手册、术语基线和同步模块里已经定义的全局规则、维护说明与脚本细则，优先引用，不再重复拷回模块正文。
+内部模块正文优先只写本域职责、交付骨架、边界和 support file 触发条件；入口、README、交互契约、并行短判、并行手册、术语基线和 `skill-sync` 里已经定义的全局规则、维护说明与脚本细则，优先引用，不再重复拷回模块正文。
 
 推荐顺序：
 
-1. 用 `skill-author` 模块新增或改写 `skills/odai/references/modules/<module-name>.md`
+1. 用独立 `skill-author` 新增或改写 `skills/<skill-name>/SKILL.md` 或 `skills/odai/references/modules/<module-name>.md`
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`
-3. 确认 unified source 稳定后，先用 `node scripts/skill-sync.js --check` 检查 source、README 与安装产物是否一致，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线、并行 support files、README 关键分节、README 模块引用与禁用旧口径
+3. 确认 source 稳定后，先用 `node scripts/skill-sync.js --check` 检查 source、README 与安装产物是否一致，再用独立 `skill-sync` 或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线、并行 support files、README 关键分节、README 模块引用与禁用旧口径
 4. 需要更新维护材料时，用 `node scripts/skill-sync.js --stats` 输出当前 source 体积统计，用 `node scripts/skill-sync.js --route-map` 重新生成 `plans/odai-route-map.md`
 
 标准安装入口：
 
 - `skills/odai/SKILL.md`
+- `skills/skill-author/SKILL.md`
+- `skills/skill-sync/SKILL.md`
 
 ## 目录说明
 
@@ -266,6 +307,8 @@ skills/odai/           统一入口 source skill
 	references/*/        模块级规则、说明等 support files
 	assets/*/            模块级模板等资源
 	scripts/*/           模块级脚本资源（按需）
+skills/skill-author/   仓库 source 作者维护 skill
+skills/skill-sync/     仓库多端同步维护 skill
 scripts/               仓库维护脚本
 .claude/commands/      Claude 手动安装版本
 .github/skills/        GitHub / Copilot 适配版本

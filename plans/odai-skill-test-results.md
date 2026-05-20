@@ -3,7 +3,8 @@
 ## 口径校正
 
 - token / 上下文统计只看用户实际使用技能时可能进入上下文的 `skills/odai/SKILL.md` 与按需读取的 `skills/odai/references`、`assets`；`plans/`、`scripts/`、安装产物与测试说明不计入技能运行成本。
-- 当前全量技能源口径（`node scripts/skill-sync.js --stats`）：共 39 个 Markdown、3712 行；入口 `SKILL.md` 为 `8321` 字节；`references/` 为 `248288` 字节；`assets/` Markdown 为 `8878` 字节；合计 `265487` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
+- 当前 `odai` 运行时源口径（`node scripts/skill-sync.js --stats odai`）：共 37 个 Markdown、3556 行；入口 `SKILL.md` 为 `8245` 字节；`references/` 为 `236538` 字节；`assets/` Markdown 为 `9133` 字节；合计 `253916` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
+- 当前独立维护 skill 口径：`skill-author` 为 1 个 Markdown、82 行、6522 字节；`skill-sync` 为 1 个 Markdown、72 行、5064 字节。两者不计入普通 `odai` 用户任务运行时成本。
 - `plans/odai-skill-test-suite.csv` 是给 AI 的需求样本集；行为测试应把每条 `user_prompt` 作为用户需求喂给启用 `odai` 的 AI，再按 route/ask/exec/done/clean/focus 判定。
 - 测试结论来自 AI 需求样本行为口径预检。
 
@@ -21,6 +22,14 @@
 - P1：新增轻量 / 标准 / 完整三档结果总结层级，普通小任务不再强塞完整 support files / agent / model 回报，复杂、严格、并行、blocked 或用户追问仍完整展开。
 - P2：新增 `references/dao/interaction-contract.md`，统一只读直行、首轮确认、结构化提问兜底、实施准入与收到回答后的继续推进，各模块只补本域特有边界。
 - P2：`node scripts/skill-sync.js --stats` 输出 source 体积统计；`node scripts/skill-sync.js --route-map` 自动生成 `plans/odai-route-map.md` 的“触发语义 -> 模块 -> 最小产物 -> 必读 support files”维护表。
+
+## 2026-05-20 skill-* 独立维护工具拆分
+
+- `skill-author` 与 `skill-sync` 已从 `odai` 内部模块拆出，成为 `skills/skill-author/SKILL.md` 与 `skills/skill-sync/SKILL.md` 两个独立维护 skill。
+- `odai` 入口、`dao` 调用对象和 `plans/odai-route-map.md` 不再把 `skill-*` 作为运行时内部模块；维护本仓库时改走独立维护入口。
+- `scripts/skill-sync.js` 默认同步当前三个 source skill：`odai`、`skill-author`、`skill-sync`；`--route-map` 默认仍只生成 `odai` 内部模块路由表。
+- 测试样本中的维护类旧路由已改为直接命中独立 `skill-author` / `skill-sync`。
+- 拆分后的残留口径已继续收束：`odai` 限定为用户任务入口，子 agent 下发包与合议手册改为“同版 `odai` 入口标识 / 可访问路径”，README 手动安装段补充可选维护工具路径。
 
 ## 2026-05-09 无降智二次瘦身后三轮复测
 
