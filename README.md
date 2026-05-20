@@ -167,7 +167,7 @@ npx skills add https://github.com/orziz/odai#old
 - `design-spec`：页面、交互、状态、视觉、体验说明
 - `implement-code`：代码实现、修 bug、补测试、重构落地
 - `project-guide`：README、规则、AI 接手基线
-- `review-*`：按不同风格做代码审查
+- `review-sslb`：三省六部式代码审查；旧多风格审查已收敛到这一入口
 - `ribao`：日报、commit message、PR message
 - `skill-author` / `skill-sync`：维护这个仓库本身
 
@@ -176,16 +176,16 @@ npx skills add https://github.com/orziz/odai#old
 - “用 `odai` 接这个需求：先判断该走哪个模块和产物形态，拿不准就结构化问我。”
 - “用 `odai` 接这个需求：先用 `道` 定边界、主路和关键风险，再继续推进。”
 - “用 `odai` 按 `harness-dev` 路线处理这个实现问题，推进到结果总结。”
-- “用 `odai` 按 `review-band` 风格审这个分支。”
+- “用 `odai` 按 `review-sslb` 风格审这个 PR。”
 - “用 `odai` 用 `project-guide` 模块整理这个仓库的 AI 接手基线。”
 
 ## 默认交互方式
 
-本仓库里会主动向用户补关键信息的内部模块，默认都遵守同一条交互约定：
+本仓库里会主动向用户补关键信息的内部模块，默认都遵守 `skills/odai/references/dao/interaction-contract.md` 这条交互约定：
 
-- 提问时若当前环境支持结构化提问，必须使用结构化提问组件，例如选项、单选、多选，或“选项 + 自由补充”
+- 先列当前理解、已验证事实、未确认点和必须确认的问题
+- 宿主提问工具可用且上层规则允许时，优先用结构化提问；不可用时说明通道限制后改用文字成组提问
 - 收到你的回答后，默认直接继续当前阶段，不额外等一句“继续”
-- 若当前环境不支持结构化提问，必须先明确说明“当前环境不支持”，再改用文字提问
 
 ## Skills 一览
 
@@ -212,10 +212,6 @@ npx skills add https://github.com/orziz/odai#old
 | `implement-code` | 代码实现、修 bug、补测试、重构落地 | `skills/odai/references/modules/implement-code.md` |
 | `project-guide` | README、规则、AI 接手基线与项目级说明 | `skills/odai/references/modules/project-guide.md` |
 | `review-sslb` | 三省六部式代码审查 | `skills/odai/references/modules/review-sslb.md` |
-| `review-hgsc` | 后宫分位式代码审查 | `skills/odai/references/modules/review-hgsc.md` |
-| `review-gal` | gal 多角色代码审查 | `skills/odai/references/modules/review-gal.md` |
-| `review-band` | 少女乐队分工式代码审查 | `skills/odai/references/modules/review-band.md` |
-| `review-anime` | anime 多角色连续对话式代码审查 | `skills/odai/references/modules/review-anime.md` |
 | `ribao` | 日报、commit message、PR message 整理 | `skills/odai/references/modules/ribao.md` |
 | `skill-author` | 统一入口内部模块的 source-of-truth 维护 | `skills/odai/references/modules/skill-author.md` |
 | `skill-sync` | 统一入口 skill 的多端同步与 README 回写 | `skills/odai/references/modules/skill-sync.md` |
@@ -249,13 +245,14 @@ npx skills add https://github.com/orziz/odai#old
 
 这一节承接维护者信息；`skills/odai/SKILL.md` 只保留运行时路由与调用约定，不再重复仓库结构约束。
 
-内部模块正文优先只写本域职责、交付骨架、边界和 support file 触发条件；入口、README、并行手册、术语基线和同步模块里已经定义的全局规则、维护说明与脚本细则，优先引用，不再重复拷回模块正文。
+内部模块正文优先只写本域职责、交付骨架、边界和 support file 触发条件；入口、README、交互契约、并行短判、并行手册、术语基线和同步模块里已经定义的全局规则、维护说明与脚本细则，优先引用，不再重复拷回模块正文。
 
 推荐顺序：
 
 1. 用 `skill-author` 模块新增或改写 `skills/odai/references/modules/<module-name>.md`
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`
-3. 确认 unified source 稳定后，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线、并行 support files、README 关键分节与禁用旧口径
+3. 确认 unified source 稳定后，先用 `node scripts/skill-sync.js --check` 检查 source、README 与安装产物是否一致，再用 `skill-sync` 模块或 `node scripts/skill-sync.js` 同步 Claude / GitHub / Trae 安装版本，并回写 `README.md`；脚本会先校验 odai 的统一术语基线、并行 support files、README 关键分节、README 模块引用与禁用旧口径
+4. 需要更新维护材料时，用 `node scripts/skill-sync.js --stats` 输出当前 source 体积统计，用 `node scripts/skill-sync.js --route-map` 重新生成 `plans/odai-route-map.md`
 
 标准安装入口：
 

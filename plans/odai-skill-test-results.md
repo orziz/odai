@@ -3,16 +3,31 @@
 ## 口径校正
 
 - token / 上下文统计只看用户实际使用技能时可能进入上下文的 `skills/odai/SKILL.md` 与按需读取的 `skills/odai/references`、`assets`；`plans/`、`scripts/`、安装产物与测试说明不计入技能运行成本。
-- 当前全量技能源口径：入口 `SKILL.md` 为 `5134` 字节；`references/` 为 `123870` 字节；`assets/` Markdown 为 `4027` 字节；合计 `133031` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
+- 当前全量技能源口径（`node scripts/skill-sync.js --stats`）：共 39 个 Markdown、3712 行；入口 `SKILL.md` 为 `8321` 字节；`references/` 为 `248288` 字节；`assets/` Markdown 为 `8878` 字节；合计 `265487` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
 - `plans/odai-skill-test-suite.csv` 是给 AI 的需求样本集；行为测试应把每条 `user_prompt` 作为用户需求喂给启用 `odai` 的 AI，再按 route/ask/exec/done/clean/focus 判定。
 - 测试结论来自 AI 需求样本行为口径预检。
+
+## 2026-05-20 历史残留清理与同步检查工具
+
+- 本轮清理 README 中已不存在的旧多风格审查模块示例与表格条目，main 分支对外统一只保留 `review-sslb` 审查入口。
+- 入口 `SKILL.md` 与 `dao` 模块补明确只读分析 / 总结 / 评价 / 审查的直行例外，避免只读任务被“首轮必问”误拦；该例外不允许扩成写入、实施、方案冻结或越权动作。
+- 删除 `game-design` 下不再被路由引用的旧兼容入口 `art-brand-fx-playbook.md`，正式推进直接走角色场景、品牌包装或特效演出细分 playbook。
+- `scripts/skill-sync.js` 增加 `--check` / `--dry-run` 模式：只比对 source、README、安装入口与资源文件，不写入；同步前同时校验 README 中的内部模块路径是否真实存在。
+- 同步脚本的术语校验提示已改回 `terminology-baseline` 当前字段：已知事实、已验证事实、未确认点、冲突点、必须确认的问题。
+
+## 2026-05-20 P1/P2 收束与维护自动化
+
+- P1：新增 `references/dao/parallel-consensus-trigger.md`，把“是否值得开启并行 / 多模型 / 子 agent 复核”的第一判断拆成短判；完整 `parallel-consensus-playbook` 只在短判命中后展开。
+- P1：新增轻量 / 标准 / 完整三档结果总结层级，普通小任务不再强塞完整 support files / agent / model 回报，复杂、严格、并行、blocked 或用户追问仍完整展开。
+- P2：新增 `references/dao/interaction-contract.md`，统一只读直行、首轮确认、结构化提问兜底、实施准入与收到回答后的继续推进，各模块只补本域特有边界。
+- P2：`node scripts/skill-sync.js --stats` 输出 source 体积统计；`node scripts/skill-sync.js --route-map` 自动生成 `plans/odai-route-map.md` 的“触发语义 -> 模块 -> 最小产物 -> 必读 support files”维护表。
 
 ## 2026-05-09 无降智二次瘦身后三轮复测
 
 - 本轮目标：在不削弱真意校准、必问、权限、并行授权、执行推进与验收的前提下，继续压低 token 消耗和上下文占用。
 - 瘦身策略：不压入口核心判断，只压高频 support 中的重复解释与长段展开；把“极短文言”改成“极简短句/浅文言，不作僻古”，避免为省字引入歧义。
-- 源 skill Markdown 体积：`140764 -> 133031` 字节，减少 `7733` 字节。
-- 源 skill Markdown 行数：`2528 -> 2310` 行，减少 `218` 行。
+- 当轮历史 Markdown 体积：`140764 -> 133031` 字节，减少 `7733` 字节。
+- 当轮历史 Markdown 行数：`2528 -> 2310` 行，减少 `218` 行。
 - 主要压缩点：`parallel-consensus-playbook`、`workflow-kit`、`review-kit`；`SKILL.md` 仅微调语体口径。
 
 ## 本轮复测结果
@@ -42,7 +57,7 @@
 ## 2026-05-09 上下文瘦身后三轮复测
 
 - 本轮目标：降低 `odai` skill 的 token 消耗与上下文占用，同时保留路由、提问、权限、UI 审美、实现、审查、继续推进等核心护栏。
-- 历史窄口径记录：`71035 -> 59100` 字节，减少 `11935` 字节；此数只用于当轮对比，非当前全量技能源口径，勿与 `133031` 直接比较。
+- 历史窄口径记录：`71035 -> 59100` 字节，减少 `11935` 字节；此数只用于当轮对比，非当前全量技能源口径，勿与当前 source 统计直接比较。
 - 历史窄口径行数：`2994 -> 2539` 行，减少 `455` 行；同上，非当前全量技能源口径。
 - 主要瘦身点：入口 `SKILL.md`、`ui-visual-playbook`、`design-spec`、`implement-code`、`harness-dev`、`review-sslb`、UI 审美复核与游戏 UI 审美参考。
 - 同步检查覆盖 `skills/odai/` 标准源与 `.claude`、`.github`、`.trae` 安装产物。
