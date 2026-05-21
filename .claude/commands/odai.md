@@ -44,13 +44,13 @@ $ARGUMENTS
 
 ## 内部调用约定
 
-1. 命中内部模块，或正文出现“调用 `game-plan` / `game-design` / `feature-plan` / `design-spec` / `implement-code` / `review-sslb`”等说法时，一律读取当前 skill 内对应模块继续，不调用外部同名 skill。
+1. 命中内部模块，或正文出现“调用 `harness-dev` / `game-plan` / `game-design` / `feature-plan` / `design-spec` / `implement-code` / `review-sslb`”等说法时，一律读取当前 skill 内对应模块继续，不调用外部同名 skill。
 2. `odai/references/...`、`odai/assets/...`、`scripts/...` 等相对路径一律以当前统一 skill 目录为根；若模块已改成 namespaced 路径，就按改写后的路径读取。
 3. 默认优先少切换：只有当前主模块不足以继续时，才切到相邻模块；切换前先说明当前判断。
 4. 用户明确点名 `道` 或 `dao` 时都走同一总控模块；对外概念文案统一写 `道`，模块 id 与文件名保持 `dao`。
 5. 涉及字段命名、提问组织、草案结构、路径命名、实施准入或结果总结展示层级时，统一读取 `odai/references/dao/terminology-baseline.md` 与 `odai/references/dao/interaction-contract.md` 并按其执行。
 6. 涉及增强模式、多 agent 合议、冻结方案后的独立复查、分歧收束或用户复核升级时，先读取 `odai/references/dao/parallel-consensus-trigger.md` 做短判；短判后仍需能力探测、组包、收束或强制增强降档时，再读取 `odai/references/dao/parallel-consensus-playbook.md`；若总控已确认当前真实可分配模型且主流程需要给席位分配模型，再读取 `odai/references/dao/model-selection-baseline.md`。
 7. 只要内部拉起子 agent，无论是做合议、辅助复核还是方案冻结后的执行分工，都必须按 `odai/assets/dao/subagent-execution-template.md` 组装统一下发包，并显式传递当前运行环境中真实可访问的同版 `odai` 入口标识 / 路径、当前命中模块与必要 support files。
-8. 涉及清单状态源、清单回写、执行静默态或继续推进时，读取 `odai/references/harness-dev/workflow-kit.md`；涉及 UI 视觉提质时，按 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md` 补足审美和状态验收。
+8. 涉及开发需求接单、实现问题诊断、方案评审、阶段切换、执行判定、清单状态源、清单回写、执行静默态或继续推进时，优先读取 `odai/references/modules/harness-dev.md`；命中阶段流转、主文件或执行单细节时再读取 `odai/references/harness-dev/workflow-kit.md`。涉及 UI 视觉提质时，按 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md` 补足审美和状态验收。
 
 先判断当前任务属于哪一类，再读取对应模块并继续；除非出现真实阻断，不要停在路由说明本身。

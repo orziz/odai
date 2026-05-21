@@ -175,7 +175,7 @@ npx skills add https://github.com/orziz/odai#old
 它内部保留两条主 workflow：
 
 - `道`：默认总控，更适合“先定方向、边界、主路与先手”，也负责判断模块选择和产物形态
-- `harness-dev`：偏开发推进，更适合“接住一整段开发任务并持续推进”
+- `harness-dev`：开发类外层 workflow，更适合“接住开发需求、诊断、执行判断与持续推进”
 
 除此之外，你也可以直接点名单阶段模块：
 
@@ -183,7 +183,7 @@ npx skills add https://github.com/orziz/odai#old
 - `game-design`：完整游戏视觉设计，覆盖 UI/UX/UE、角色场景、宣传品牌与特效演出
 - `feature-plan`：规格、方案、bug 诊断
 - `design-spec`：页面、交互、状态、视觉、体验说明
-- `implement-code`：代码实现、修 bug、补测试、重构落地
+- `implement-code`：边界已明确后的代码实现、修 bug、补测试、重构落地
 - `project-guide`：README、规则、AI 接手基线
 - `review-sslb`：三省六部式代码审查；旧多风格审查已收敛到这一入口
 - `ribao`：日报、commit message、PR message
