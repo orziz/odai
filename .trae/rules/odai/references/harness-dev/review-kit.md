@@ -24,7 +24,7 @@
 
 ## 证据账本
 
-整个 harness 过程中，默认维护一份轻量证据账本。每条新信息至少要落到以下一种类型里：
+整个 harness 过程中，默认维护一份轻量证据账本。每条新信息至少要落到以下一种类型里（其中「确定项」对应 `odai/references/dao/terminology-baseline.md` 中「已知事实」与「已验证事实」的并集，其余字段为复核场景专用）：
 
 - 确定项：已有明确来源或已验证事实
 - 待验证项：已经识别但尚未被用户确认或项目事实直接验证的内容
@@ -142,7 +142,7 @@
 
 聊天侧可以先给低心智负担版本，但前提是这一轮已经做过足够的判断、调用与验证；否则至少要补出本轮采用的模式或调用方式、关键判断依据和仍未解决的核心缺口。
 
-结果总结的轻量、标准、完整三档展示统承 `odai/references/dao/interaction-contract.md` 与 `odai/references/dao/terminology-baseline.md`。凡回报主控模块、实际展开的内部模块、support files / 脚本、agent 或模型，都只能写真实展开、读取与调用；复杂、严格、并行、blocked 或用户追问时必须完整展开。
+结果总结的轻量、标准、完整三档展示，统一按 `odai/references/dao/interaction-contract.md` 与 `odai/references/dao/terminology-baseline.md` 执行。凡回报主控模块、实际展开的内部模块、support files / 脚本、agent 或模型，都只能写真实展开、读取与调用；复杂、严格、并行、blocked 或用户追问时必须完整展开。
 
 以下情况不能只给低心智负担版本，必须补出完整判断依据：
 
