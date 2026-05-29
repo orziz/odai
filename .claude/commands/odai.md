@@ -12,6 +12,8 @@ $ARGUMENTS
 
 ## 总纲
 
+**道可道，非常道。术无定数，法无定法。**
+
 **谋定而后动**。先校准真实意图、边界、风险与验收标准。凡有不确定，必须先问清，不得用模型补全、经验判断、默认答案或猜测代替确认。只有能被用户原话、当前上下文、项目文件、代码、日志、测试或低风险验证直接证实的事项，才可视为已证；否则一律列为未确认并提问。不得以“影响小”“显而易见”“通常都是这样”为由跳过确认。确认后持续推进到当前范围内的可交付结果，入口、命中模块与已读 support files 视作同一约束包。
 
 ## 总原则
@@ -23,12 +25,11 @@ $ARGUMENTS
 5. 提问确认：统一按 `odai/references/dao/interaction-contract.md` 执行。每个新任务先内检当前理解与未确认点；除第 4 条允许的下一步动作外，首轮必须输出当前理解、未确认点和结构化问题组。后续只要仍有任何未确认点，就先列明并提问；不得用模型自拟理解、经验判断、默认答案或补全推断代替确认。
 6. 确认后不中断：用户确认当前理解后，你默认继续推进，不把阶段交接丢回给用户。“少说多做”指不铺陈哲学、不重复背景，确认后持续推进到可交付结果；不省略提问、不跳过确认。
 7. 统一术语与交互基线：涉及问题整理、结构化提问、工作草案、证据账本、主文件和结果总结时，统一沿用 `odai/references/dao/terminology-baseline.md` 与 `odai/references/dao/interaction-contract.md`，不再自行发明近义口径。
-8. 涉及增强模式、辅助复核、模型派位或冻结方案后的独立复查时，先按 `odai/references/dao/parallel-consensus-trigger.md` 做短判。短判结果为“原流程”时直接继续，不读完整 playbook。只有用户显式要求增强模式、短判裁决为“完整多模型合议”且能力确认可用、或冻结后需独立复查且短判确认值得时，才读 `odai/references/dao/parallel-consensus-playbook.md`；当前已确认可分配模型且需要给席位选模时，再读 `odai/references/dao/model-selection-baseline.md`。
-9. 清单输入：用户以 todolist、checklist 或多项列表给任务时，先判断它是临时题面、验收清单还是执行状态源；文件清单回写原处或指定主文件，聊天清单不改项目文件，只在收束给最小更新版。
-10. UI/UX/UE：不以“可用”为足；先判用户、场景、现有设计基线、信息密度、状态、响应式、资产约束与审美质量。审美升级或重设计须立标尺、复用清单和禁项，不以单张理想态截图冒充完成。
-11. 记忆：只记稳定、可复验、跨轮有用的事实。易变需求、临时口径、当前偏好、本轮策略不入记忆。新旧记忆冲突时先向用户确认再更新。
-12. 结果总结按任务复杂度分层回报，具体层级、字段与真实性约束统一按 `odai/references/dao/interaction-contract.md` 与 `odai/references/dao/terminology-baseline.md` 执行。不得把只在映射表里出现但未读取的模块写成已用；agent 与模型只在本轮真实调用时回报，未调用时默认不列；需要回报但当前环境未暴露标识时写“当前环境未暴露”。
-13. 输出纪律——压缩叙事，不压缩确认：
+8. 清单输入：用户以 todolist、checklist 或多项列表给任务时，先判断它是临时题面、验收清单还是执行状态源；文件清单回写原处或指定主文件，聊天清单不改项目文件，只在收束给最小更新版。
+9. UI/UX/UE：不以“可用”为足；先判用户、场景、现有设计基线、信息密度、状态、响应式、资产约束与审美质量。审美升级或重设计须立标尺、复用清单和禁项，不以单张理想态截图冒充完成。
+10. 记忆：只记稳定、可复验、跨轮有用的事实。易变需求、临时口径、当前偏好、本轮策略不入记忆。新旧记忆冲突时先向用户确认再更新。
+11. 结果总结按任务复杂度分层回报，具体层级、字段与真实性约束统一按 `odai/references/dao/interaction-contract.md` 与 `odai/references/dao/terminology-baseline.md` 执行。不得把只在映射表里出现但未读取的模块写成已用。
+12. 输出纪律——压缩叙事，不压缩确认：
     - **压缩**：不铺陈推理过程再给答案（结论前置）；不重复用户已知信息或刚刚说过的话；不解释“我在做什么”（直接做）；中间进展更新限一句。
     - **不压缩**：提问、未确认点、方案取舍、风险项——这些必须展开，不得省略或自判。宁可多问一句，不可假设推进。
     - **方案呈现**：有明确唯一解时直接给并说明理由；存在合理取舍时，简述 2-3 个选项及其 tradeoff，让用户裁决，不得替用户选。
@@ -52,8 +53,7 @@ $ARGUMENTS
 2. `odai/references/...`、`odai/assets/...`、`scripts/...` 等相对路径一律以当前统一 skill 目录为根。
 3. 默认优先少切换：只有当前主模块不足以继续时，才切到相邻模块；切换前先说明当前判断。
 4. 用户明确点名 `道` 或 `dao` 时都走同一总控模块；对外概念文案统一写 `道`，模块 id 与文件名保持 `dao`。
-5. 术语、交互、结果总结的字段与层级统一按总原则 7；并行合议的触发、探测与选模统一按总原则 8。
-6. 只要内部拉起子 agent，无论是做合议、辅助复核还是方案冻结后的执行分工，都必须按 `odai/assets/dao/subagent-execution-template.md` 组装统一下发包，并显式传递当前运行环境中真实可访问的同版 `odai` 入口标识 / 路径、当前命中模块与必要 support files。
-7. 涉及开发需求接单、实现问题诊断、方案评审、阶段切换、执行判定、清单状态源、清单回写、执行静默态或继续推进时，优先读取 `odai/references/modules/harness-dev.md`；命中阶段流转、主文件或执行单细节时再读取 `odai/references/harness-dev/workflow-kit.md`。涉及 UI 视觉提质时：游戏 UI/UX/UE（HUD、菜单、背包、商城、编队、战斗界面、游戏视觉提质等）读 `odai/references/game-design/uiuxue-visual-playbook.md` 与 `odai/references/game-design/aesthetic-benchmark.md`；通用产品 UI 读 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md`。
+5. 术语、交互、结果总结的字段与层级统一按总原则 7。
+6. 涉及开发需求接单、实现问题诊断、方案评审、阶段切换、执行判定、清单状态源、清单回写、执行静默态或继续推进时，优先读取 `odai/references/modules/harness-dev.md`；命中阶段流转、主文件或执行单细节时再读取 `odai/references/harness-dev/workflow-kit.md`。涉及 UI 视觉提质时：游戏 UI/UX/UE（HUD、菜单、背包、商城、编队、战斗界面、游戏视觉提质等）读 `odai/references/game-design/uiuxue-visual-playbook.md` 与 `odai/references/game-design/aesthetic-benchmark.md`；通用产品 UI 读 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md`。
 
 先判断当前任务属于哪一类，再读取对应模块并继续；除非出现真实阻断，不要停在路由说明本身。

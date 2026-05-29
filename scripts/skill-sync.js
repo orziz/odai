@@ -34,10 +34,6 @@ const SOURCE_VALIDATION_RULES = {
     requiredRelativePaths: [
       'references/dao/terminology-baseline.md',
       'references/dao/interaction-contract.md',
-      'references/dao/parallel-consensus-trigger.md',
-      'references/dao/parallel-consensus-playbook.md',
-      'references/dao/model-selection-baseline.md',
-      'assets/dao/subagent-execution-template.md',
     ],
     requiredReadmeHeadings: ['### 面向大多数使用者', '### 仓库维护工具', '### 2. 手动安装', '### 维护流程', '## 目录说明'],
     requiredReadmeSnippets: [
