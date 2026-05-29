@@ -3,7 +3,7 @@
 ## 口径校正
 
 - token / 上下文统计只看用户实际使用技能时可能进入上下文的 `skills/odai/SKILL.md` 与按需读取的 `skills/odai/references`、`assets`；`plans/`、`scripts/`、安装产物与测试说明不计入技能运行成本。
-- 当前 `odai` 运行时源口径（`node scripts/skill-sync.js --stats odai`）：共 37 个 Markdown、3556 行；入口 `SKILL.md` 为 `8245` 字节；`references/` 为 `236538` 字节；`assets/` Markdown 为 `9133` 字节；合计 `253916` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
+- 当前 `odai` 运行时源口径（`node scripts/skill-sync.js --stats odai`）：共 37 个 Markdown、3579 行；入口 `SKILL.md` 为 `8190` 字节；`references/` 为 `233566` 字节；`assets/` Markdown 为 `8942` 字节；合计 `250698` 字节。实际触发时先加载入口，references/assets 只在命中场景时按需进入上下文。
 - 当前独立维护 skill 口径：`skill-author` 为 1 个 Markdown、82 行、6522 字节；`skill-sync` 为 1 个 Markdown、72 行、5064 字节。两者不计入普通 `odai` 用户任务运行时成本。
 - `plans/odai-skill-test-suite.csv` 是给 AI 的需求样本集；行为测试应把每条 `user_prompt` 作为用户需求喂给启用 `odai` 的 AI，再按 route/ask/exec/done/clean/focus 判定。
 - 测试结论来自 AI 需求样本行为口径预检。
