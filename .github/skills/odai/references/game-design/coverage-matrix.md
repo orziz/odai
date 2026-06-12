@@ -2,12 +2,7 @@
 
 ## 何时读取
 
-当你需要以下任一判断时，再读取本文件：
-
-- 某个需求是否属于 `game-design` 主收口
-- 某类游戏视觉工作是否应从 `design-spec` 切出
-- 某类问题到底该由 `game-design`、`game-plan` 还是 `design-spec` 负责
-- 何时继续留在 `game-design`，何时切回其他模块
+由 `game-design`「何时必须读取参考文件」触发；本文件覆盖游戏视觉主收口的范围判断，以及与 `game-plan` / `design-spec` 的切换边界。
 
 ## 最短判断规则
 
