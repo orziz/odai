@@ -74,6 +74,6 @@ $ARGUMENTS
 2. `odai/references/...`、`odai/assets/...`、`scripts/...` 等相对路径一律以当前统一 skill 目录为根。
 3. 默认优先少切换：只有当前主模块不足以继续时，才切到相邻模块；切换前先说明当前判断。
 4. 用户明确点名 `道` 或 `dao` 时都走同一总控模块；对外概念文案统一写 `道`，模块 id 与文件名保持 `dao`。
-5. 开发类需求接单、实现问题诊断、方案评审、阶段切换、执行判定、清单回写与继续推进，优先读取 `odai/references/modules/harness-dev.md`。UI 视觉提质：游戏 UI/UX/UE（HUD、菜单、背包、商城、编队、战斗界面等）读 `odai/references/game-design/uiuxue-visual-playbook.md` 与 `odai/references/game-design/aesthetic-benchmark.md`；通用产品 UI 读 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md`。
+5. 开发类需求接单、实现问题诊断、方案评审、阶段切换、执行判定、清单回写与继续推进，优先读取 `odai/references/modules/harness-dev.md`；用户已用原话锁定动作、对象与边界的指定实现，按 `道` 前置判断直达 `implement-code`，不经 `harness-dev`。UI 视觉提质：游戏 UI/UX/UE（HUD、菜单、背包、商城、编队、战斗界面等）读 `odai/references/game-design/uiuxue-visual-playbook.md` 与 `odai/references/game-design/aesthetic-benchmark.md`；通用产品 UI 读 `odai/references/design-spec/ui-visual-playbook.md` 与 `odai/references/design-spec/aesthetic-benchmark.md`。
 
 先过「轻量门」；未命中或用户选完整时，再判断当前任务属于哪一类，读取对应模块并继续；除非出现真实阻断，不要停在路由说明本身。
