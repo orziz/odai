@@ -1,6 +1,5 @@
 ---
 name: dao
-readme-section: main
 description: 以道、术、法三层拆解复杂任务，先定方向、主路与先手
 scenario: 复杂需求推进、方向裁决、多路线取舍、需要先定边界与主路的任务
 ---

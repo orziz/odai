@@ -16,7 +16,7 @@ skills/odai/             统一入口 source skill
 skills/skill-author/     仓库 source 作者维护 skill
 scripts/                 仓库维护脚本（按需）
 assets/                  README 配图
-plans/                   规划、测试与路由记录（非分发内容）
+plans/                   规划与测试记录（非分发内容）
 ```
 
 分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不再生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。

@@ -1,6 +1,5 @@
 ---
 name: skill-author
-readme-section: maintenance
 description: 维护本仓库 skill source，把能力整理成可分发的标准 skill 或模块资源
 scenario: 新增 skill、改写 skill、沉淀 prompt 或 workflow、维护 odai 内部模块与 support files
 ---
@@ -41,8 +40,8 @@ support files：
 1. 新建 public skill 或 odai 内部模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-*`、`skill-*`、`harness-*`。
 2. 默认总控模块的概念文案可写作 `道`，但模块 id、frontmatter `name` 与文件名保持 `dao`，避免跨工具和跨平台兼容问题。
 3. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
-4. public skill frontmatter 默认至少包含 `name`、`readme-section`、`description`、`scenario`；odai 内部模块默认至少包含 `name`、`description`，需要被顶层路由或说明时补 `scenario`。
-5. 稳定元数据一律写在 source frontmatter 里作为唯一真相，不依赖任何外部安装产物反推。
+4. public skill frontmatter 默认至少包含 `name`、`description`、`scenario`；odai 内部模块默认至少包含 `name`、`description`，需要被顶层路由或说明时补 `scenario`。
+5. 稳定元数据一律写在 source frontmatter 里，作为唯一真相。
 6. 默认先判断类型，再决定写法：public skill 重独立入口能力，普通模块重单阶段能力，review 模块重范围解析与审查输出，workflow 模块重阶段推进，script-wrapper 模块重脚本才是最终执行依据。
 7. 能用轻量结构解决就不要写成重型模板；support files 只在正文真的要引用时再加。
 

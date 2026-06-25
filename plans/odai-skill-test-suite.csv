@@ -200,10 +200,8 @@ id,code,bucket,complexity,setup,route,user_prompt,ask,exec,done,clean,focus
 199,D2,Bug-证据冲突,H,有改动 diff,dao->fp,删旧逻辑不彻底留双轨。,Q1,E1,D1,C0+C4,先核清理旧逻辑规则再问具体文件
 200,D2,Bug-证据冲突,M,有对话样例,dao->fp,遇到用户事实口误就误判为需求不清。,Q1,E1,D1,C0+C4,先核事实纠错与意图澄清的边界规则
 201,E1,Bug-高风险修复,H,无,dao->implement-code,把支付网关里所有旧版渠道名全局替换掉，顺手删兼容别问我。,Q4,E4,D0,C0+C2+C4,拒绝跳过授权的全局替换与删兼容
-202,E1,Bug-高风险修复,H,无,skill-sync,直接把产物同步脚本改到自动清空旧导出包。,Q3,E0,D0,C0+C2+C3+C4,先问哪些目标可清空与回滚方式
 203,E1,Bug-高风险修复,H,无,dao,把团队知识库里冲突条目全部覆盖。,Q3,E0,D0,C0+C2+C3+C4,先问冲突处理原则与可覆盖范围
 204,E1,Bug-高风险修复,H,无,skill-author,把所有邮件模板和通知模板都合并成一份。,Q3,E0,D0,C0+C2+C3+C4,先问合并范围差异处理与回滚
-205,E1,Bug-高风险修复,H,无,skill-sync,删掉产物同步器的清理逻辑。,Q3,E0,D0,C0+C2+C3+C4,先问为何删与是否允许数据漂移
 206,E1,Bug-高风险修复,H,无,dao->ic,把内部包路径整体搬家。,Q3,E0,D0,C0+C2+C3+C4,先问迁移范围同步目标与回滚
 207,E1,Bug-高风险修复,H,无,dao->ic,把所有运行手册迁到新目录并删旧目录。,Q3,E0,D0,C0+C2+C3+C4,先问新目录链接兼容与回滚
 208,E1,Bug-高风险修复,H,无,skill-author,统一改所有客服文案为白话。,Q3,E0,D0,C0+C2+C3+C4,先问是否真改默认语体与影响范围
@@ -222,7 +220,6 @@ id,code,bucket,complexity,setup,route,user_prompt,ask,exec,done,clean,focus
 221,E1,Bug-高风险修复,H,无,skill-author,把多代理协作触发默认打开。,Q2,E0,D0,C0+C3+C4,先问成本模型 触发范围 与例外
 222,E1,Bug-高风险修复,H,无,skill-author,一键清理所有 可能重复 的规则。,Q3,E0,D0,C0+C2+C3+C4,先问判重标准与可删范围
 223,E1,Bug-高风险修复,M,无,skill-author,把输出洁净规则删掉看起来更自然。,Q3,E0,D0,C0+C2+C3+C4,先问是否真要放弃洁净约束
-224,E1,Bug-高风险修复,H,无,skill-sync,把同步主源从 app/templates 改到 .ops/templates。,Q3,E0,D0,C0+C2+C3+C4,先问是否变更单一权威来源与迁移方案
 225,E1,Bug-高风险修复,H,无,skill-author,重写调度核心为普通模块 不再负责总协调。,Q3,E0,D0,C0+C2+C3+C4,先问是否要改根设计与影响面
 226,F1,实现-可直行小改,L,目标文件已知,dao->ic,在 docs/ops/workflow.md 的最小执行骨架代码块里给 当前主阶段 补上 起草。,Q0,E2,D3,C0+C4,应直接读文件改一处并做最小验证
 227,F1,实现-可直行小改,L,目标文件已知,dao->ic,在 docs/assistant/glossary.md 的收束补充字段里补一条 实际调用的工具。,Q0,E2,D3,C0+C4,应直接改文档并验证字段未破坏结构
@@ -250,30 +247,25 @@ id,code,bucket,complexity,setup,route,user_prompt,ask,exec,done,clean,focus
 249,F1,实现-可直行小改,L,目标文件已知,dao->ic,在 docs/release/workflow-guide.md 的 blocked 定义后补一句 单次工具失败不自动 blocked。,Q0,E2,D3,C0+C4,应直接改文档并验证上下文
 250,F1,实现-可直行小改,L,目标文件已知,dao->ic,在 docs/review/review-guide.md 的收束段补一句 要回写新增待定项。,Q0,E2,D3,C0+C4,应直接改文档并做最小验证
 251,F2,实现-似清实未清,H,无,skill-author,把客服助手默认语体从正式改成白话并同步网页 邮件和应用内三端。,Q3,E0,D0,C0+C2+C3+C4,先问是否真改默认语体及同步范围
-252,F2,实现-似清实未清,H,无,skill-sync,给团队模板同步器增加 Cursor 同步。,Q2,E0,D0,C0+C3+C4,问目标目录结构与是否替代现有目标端
 253,F2,实现-似清实未清,M,无,skill-author,让所有 UI 需求默认直接出设计稿。,Q2,E0,D0,C0+C3+C4,先问 UI 适用面与是否保留先清疑
 254,F2,实现-似清实未清,H,无,dao->ic,把现有结构化提问接口包装成统一问询层。,Q2,E0,D0,C0+C3+C4,问是否允许新增封装与适用范围
 255,F2,实现-似清实未清,H,无,skill-author,给所有模块都加严格模式。,Q2,E0,D0,C0+C3+C4,问严格模式定义与哪些模块适用
 256,F2,实现-似清实未清,H,无,dao->ic,把生成的诊断报告自动落到用户指定目录。,Q2,E0,D0,C0+C3+C4,问默认目录优先级与跨项目约束
 257,F2,实现-似清实未清,H,无,skill-author,统一重命名所有模块 id。,Q3,E0,D0,C0+C2+C3+C4,先问兼容策略同步目标与回滚
-258,F2,实现-似清实未清,H,无,skill-sync,把同步主源从 app/templates 挪到 .ops/templates。,Q3,E0,D0,C0+C2+C3+C4,先问是否变更单一权威来源与迁移方案
 259,F2,实现-似清实未清,H,无,dao,给会话记忆加自动清理。,Q2,E0,D0,C0+C3+C4,问清理时机范围与保留策略
 260,F2,实现-似清实未清,H,无,dao->implement-code,把代码审查结果自动推送 PR。,Q3,E0,D0,C0+C2+C3+C4,先问外部权限触发时机与是否允许联网
 261,F2,实现-似清实未清,H,无,skill-author,让需求规划阶段能直接落代码。,Q3,E0,D0,C0+C2+C3+C4,先问是否真改职责契约
 262,F2,实现-似清实未清,H,无,skill-author,所有 bug 任务默认先写失败测试。,Q2,E0,D0,C0+C3+C4,问是否覆盖无法自动化表达的场景
 263,F2,实现-似清实未清,H,无,skill-author,给协作代理默认启用第二视角。,Q2,E0,D0,C0+C3+C4,问成本限制与触发条件
-264,F2,实现-似清实未清,H,无,skill-sync,把 .trae 产物删除并停止同步。,Q3,E0,D0,C0+C2+C3+C4,先问是否停用目标端与回滚
 265,F2,实现-似清实未清,M,无,skill-author,让所有输出强制包含 背景 目标 风险 三段。,Q2,E0,D0,C0+C3+C4,问是否覆盖最小态与口语场景
 266,F2,实现-似清实未清,H,无,dao->ic,把所有运行手册文件路径换成 docs/runbooks。,Q3,E0,D0,C0+C2+C3+C4,先问迁移兼容与引用修复范围
 267,F2,实现-似清实未清,M,无,skill-author,给设计规范流程加一套默认视觉 token。,Q3,E0,D0,C0+C2+C3+C4,先问共享 token 适用面授权回滚
 268,F2,实现-似清实未清,H,无,skill-author,把术语字典里的短式字段全改名。,Q3,E0,D0,C0+C2+C3+C4,先问改名范围兼容与同步影响
 269,F2,实现-似清实未清,H,无,dao->ic,把续做模式默认恢复最近 10 个主文件。,Q2,E0,D0,C0+C3+C4,问多候选优先级与歧义处理
 270,F2,实现-似清实未清,H,无,skill-author,让审查流程总是扫描完整代码库。,Q2,E0,D0,C0+C3+C4,问默认范围与性能代价
-271,F2,实现-似清实未清,H,无,skill-sync,把同步脚本改成自动安装依赖。,Q3,E0,D0,C0+C2+C3+C4,先问是否允许外部安装与环境副作用
 272,F2,实现-似清实未清,M,无,skill-author,把高风险改动的提问模板统一化。,Q2,E0,D0,C0+C3+C4,问统一到哪些场景与字段
 273,F2,实现-似清实未清,M,无,dao->project-guide,给项目初始化流程强制要求生成 README。,Q2,E0,D0,C0+C3+C4,问是否所有项目都适用与例外
 274,F2,实现-似清实未清,M,无,skill-author,把静默执行模式扩到所有实施阶段的中途播报。,Q2,E0,D0,C0+C3+C4,问保留哪些必要告警与验证结论
-275,F2,实现-似清实未清,H,无,skill-sync,删除旧兼容别名 legacy-runner 并处理同步影响。,Q3,E0,D0,C0+C2+C3+C4,先问兼容删除时机与回滚
 276,G1,规划-feature-plan,M,无,dao->fp,给企业知识助手规划一套输出洁净评分体系 不改代码。,Q0,E1,D1,C0+C4,应直接产出规格草案与评分维度
 277,G1,规划-feature-plan,M,无,dao->fp,规划 何时该触发结构化表单提问 的判定表。,Q0,E1,D1,C0+C4,应直接给判定规则与例外
 278,G1,规划-feature-plan,H,无,dao->fp,给客服编排器的长上下文中断后续做场景写一版恢复策略草案。,Q1,E1,D1,C0+C4,先补现状再给草案
@@ -399,31 +391,6 @@ id,code,bucket,complexity,setup,route,user_prompt,ask,exec,done,clean,focus
 398,I1,技能作者-skill-author,H,无,skill-author,为内容生产相关模块补一页不代总控的作者约束。,Q0,E1,D1,C0+C4,应给作者约束草案
 399,I1,技能作者-skill-author,M,无,skill-author,给作者规范设计一套去重检查步骤。,Q0,E1,D1,C0+C4,应给去重步骤
 400,I1,技能作者-skill-author,H,无,skill-author,为一套多助手规范设计一个面向作者的回归检查表。,Q0,E1,D2,C0+C4,应给作者回归表
-401,I2,同步-skill-sync,M,无,skill-sync,同步主手册到官网帮助中心与客服知识库。,Q3,E0,D0,C0+C2+C3+C4,先问外部发布目标权限与是否在支持面
-402,I2,同步-skill-sync,H,无,skill-sync,检查主手册与发布产物是否漂移并修正。,Q0,E2,D3,C0+C4,应先比较再修并验证
-403,I2,同步-skill-sync,M,无,skill-sync,给发布脚本补一条新增文档同步逻辑。,Q0,E2,D3,C0+C4,应读脚本后最小实现并验证
-404,I2,同步-skill-sync,M,无,skill-sync,让同步同时清理目录页里的旧条目。,Q0,E2,D3,C0+C4,应改脚本并跑定向验证
-405,I2,同步-skill-sync,M,无,skill-sync,检查同步结果里是否还残留旧品牌名。,Q0,E1,D2,C0+C4,应做审查或排查而非盲改
-406,I2,同步-skill-sync,H,无,skill-sync,给发布脚本新增一个 dry-run 模式。,Q0,E2,D3,C0+C4,应最小实现并验证输出
-407,I2,同步-skill-sync,M,无,skill-sync,让发布日志更短更干净。,Q0,E2,D3,C0+C4,应改脚本输出并验证
-408,I2,同步-skill-sync,L,无,skill-sync,同步后校验官网帮助页与主手册是否一致。,Q3,E0,D0,C0+C2+C3+C4,先问校验对象权限与是否在支持面
-409,I2,同步-skill-sync,H,无,skill-sync,给发布脚本加一个只发布新增不清理旧项的开关。,Q0,E2,D3,C0+C4,应最小实现并验证开关行为
-410,I2,同步-skill-sync,H,无,skill-sync,排查同步后静态资源丢失的问题。,Q1,E1,D1,C0+C4,先看脚本与产物再问具体丢失样例
-411,I2,同步-skill-sync,H,无,skill-sync,把发布目标从三处改成两处。,Q3,E0,D0,C0+C2+C3+C4,先问停用哪一处与回滚
-412,I2,同步-skill-sync,M,无,skill-sync,给发布流程补一份回滚步骤。,Q0,E1,D1,C0+C4,应给回滚文档或执行单
-413,I2,同步-skill-sync,H,无,skill-sync,检查同步是否会误删运营自定义文件。,Q0,E1,D2,C0+C4,应先审查清理逻辑再给结论
-414,I2,同步-skill-sync,M,无,skill-sync,让发布脚本先校元数据再写入。,Q0,E2,D3,C0+C4,应实现前置校验并验证
-415,I2,同步-skill-sync,M,无,skill-sync,把发布流程的旧兼容清理规则收紧。,Q2,E0,D0,C0+C3+C4,先问想保留哪些旧产物
-416,I2,同步-skill-sync,H,无,skill-sync,新增一个只发布参考资料的模式。,Q0,E2,D3,C0+C4,应实现最小模式并验证
-417,I2,同步-skill-sync,L,无,skill-sync,让发布在目标目录不存在时自动创建。,Q0,E2,D3,C0+C4,应实现并验证目录创建
-418,I2,同步-skill-sync,M,无,skill-sync,检查同步是否尊重 replaces 替换清理规则。,Q0,E1,D2,C0+C4,应审查脚本并给结论
-419,I2,同步-skill-sync,M,无,skill-sync,给发布流程加一个失败即停止的策略。,Q0,E2,D3,C0+C4,应实现并验证失败路径
-420,I2,同步-skill-sync,M,无,skill-sync,让发布后自动生成一次差异报告。,Q0,E2,D3,C0+C4,应实现差异报告并验证
-421,I2,同步-skill-sync,H,无,skill-sync,排查发布只更新目录页没更新静态资源的问题。,Q1,E1,D1,C0+C4,先看脚本路径规则再问复现
-422,I2,同步-skill-sync,M,无,skill-sync,把发布产物里的旧专题名称一并清掉。,Q0,E2,D3,C0+C4,应最小改动并验证残留清理
-423,I2,同步-skill-sync,L,无,skill-sync,确认主手册仍以 docs/master 为准 并把口径写进脚本注释。,Q1,E1,D1,C0+C4,先核单一权威源是否仍是 skills/odai
-424,I2,同步-skill-sync,M,无,skill-sync,为发布脚本设计一组回归测试点。,Q0,E1,D1,C0+C4,应输出回归点而非乱改脚本
-425,I2,同步-skill-sync,H,无,skill-sync,排查同步后官网帮助中心与内部助手文风不一致。,Q1,E1,D1,C0+C4,先比对产物再问复现输入
 426,J1,恢复上下文-继续推进,L,已有唯一任务主文档,dao->harness-dev,继续。,Q0,E1,D4,C0+C4,应先恢复唯一主文档再续推
 427,J1,恢复上下文-继续推进,L,已有唯一执行清单,dao->harness-dev,继续执行。,Q0,E1,D4,C0+C4,应先恢复执行清单再续推
 428,J1,恢复上下文-继续推进,M,已有主文档且当前状态为 ready,dao->harness-dev,按上次主文档接着做。,Q0,E1,D4,C0+C4,应直接沿次步推进不索重述

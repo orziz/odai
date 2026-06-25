@@ -1,6 +1,5 @@
 ---
 name: game-design
-readme-section: main
 description: 把游戏相关的 UI/UX/UE、角色场景、宣传品牌与特效演出收敛成可交接的视觉设计说明
 scenario: 游戏 UI/UX/UE 设计、HUD 与菜单设计、角色与场景视觉设计、宣传与品牌视觉设计、特效与演出视觉设计、游戏整体视觉方向整理
 ---

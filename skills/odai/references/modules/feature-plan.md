@@ -1,6 +1,5 @@
 ---
 name: feature-plan
-readme-section: main
 description: 在通用功能设计与问题诊断阶段理解用户真实需求，收敛成规格、方案与执行前提草案
 scenario: 通用功能设计、需求理解、方案规划与 bug 诊断
 ---

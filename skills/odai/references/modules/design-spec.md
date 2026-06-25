@@ -1,6 +1,5 @@
 ---
 name: design-spec
-readme-section: main
 description: 把需求、页面、模块、流程与体验想法收敛成可交接的行为、交互与界面设计说明
 scenario: 页面设计、模块设计、交互设计、视觉设计、UI/UX 优化、信息架构、状态设计、设计说明文档整理
 ---

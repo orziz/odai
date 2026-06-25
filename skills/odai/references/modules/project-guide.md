@@ -1,6 +1,5 @@
 ---
 name: project-guide
-readme-section: main
 description: 归纳整个项目的目标、结构、约束、命名与协作规则，形成可复用的项目级说明文档
 scenario: 新项目接手、项目规范整理、README/规则文档整理、AI 上下文基线整理
 ---

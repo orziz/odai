@@ -1,6 +1,5 @@
 ---
 name: harness-dev
-readme-section: main
 description: 作为开发类外层 workflow，把需求、诊断、执行边界与验证策略理解到位，并在 SDD / BDD / TDD 之间做结构化裁决、推进与总结
 scenario: 开发需求接单、新功能或修 bug 的执行前判断、方案评审、复杂实现推进、代码问题诊断与持续推进
 ---
