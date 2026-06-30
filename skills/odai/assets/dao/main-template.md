@@ -38,6 +38,7 @@
 
 - 当前主层：
 - 当前裁决：
+- 当前状态：draft / reviewed / ready / executing / verified / blocked
 - 调用对象：
 - 下一步：
 - 当前阻断原因：
