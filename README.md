@@ -84,6 +84,45 @@ npx skills add https://github.com/orziz/odai#old
 
 When to reach for the `old` branch: you're still on the old entry point, you need the standalone install for `harness-dev` / `harness-dao` and friends, or you're doing a side-by-side migration off the old structure.
 
+## Architecture at a glance
+
+```text
+                         your task
+                             │
+                             ▼
+       ┌─────────────────────────────────────────┐
+       │  odai · SKILL.md  — entry routing         │
+       │  direct-hit · lightweight gate · …        │
+       └──────────────┬────────────────────────────┘
+         direct-hit    │   ambiguous · cross-domain · dev
+       ┌───────────────┘                 │
+       │                                 ▼
+       │                  ┌───────────────────────────┐
+       │                  │  道 (dao) — orchestrator    │
+       │                  │  道→术→法  (why→how→do)     │
+       │                  │  sets direction & track,    │
+       │                  │  supervises                 │
+       │                  └──────────────┬──────────────┘
+       │   defines the producer track,   │
+       │   carries forward (no bounce) ──┤
+       ▼                                 ▼
+   ┌────────────────────────────────────────────────────────┐
+   │  specialist modules (producers)                          │
+   │   feature-plan · design-spec · implement-code            │
+   │   game-plan · game-design · review-sslb                  │
+   │   project-guide · ribao                                  │
+   └────────────────────────────────────────────────────────┘
+
+   support files (道 loads on demand):
+     interaction-contract (hard law) · dao-shu-fa-playbook
+     review-kit · diagnose-kit · consensus-mode · external-skills
+```
+
+`道术法` (dao-shu-fa) are **phases of the work** — why → how → do —
+that every task flows through; they are not labels stamped on modules.
+A task enters once through `odai`; simple ones hit a module directly,
+the rest go to `道`, which sets the track and carries them to a wrap-up.
+
 ## Getting more out of `odai`
 
 `odai` doesn't just run every module in sequence. `道` first works out which layer you're actually missing, which module to call, and what shape the output should take — then reads that module and keeps going.
