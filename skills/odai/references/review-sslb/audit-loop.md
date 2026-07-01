@@ -4,7 +4,7 @@
 
 - `review-sslb` 的可选重型子流程：任务要求“连续 N 轮 clean”“全仓 / 全目录复查”“安全 audit”“长修复后反复验证到无缺陷”时读取；普通单轮 diff 审查不读，默认仍走 `review-sslb` 单流程。
 - 由当前主审 agent（`review-sslb` 主流程）按命中读取并主控；读取时外显一行「触发：`audit-loop`｜条件：『<原话关键词>』」，写不出条件即未命中。
-- 本文件叠加在 `references/dao/interaction-contract.md`「子 agent 通用边界」「下放（费率套利）」「高代价决策的独立挑战」之上，只补长回路特有的**缺陷分级收敛门**与 **subagent exit 权威**；与契约冲突以契约为准。
+- 本文件叠加在 `references/dao/decision-challenge.md` 与 `references/dao/agent-governance.md`「子 agent 通用边界」「执行下放」之上，只补长回路特有的**缺陷分级收敛门**与 **subagent exit 权威**；确认与实施准入仍以交互契约为准。
 
 ## 缺陷分级与收敛门
 
@@ -23,9 +23,9 @@
 
 ## subagent 在回路里的边界
 
-叠加在契约「子 agent 通用边界」「下放」之上，本节补长回路专属约束：
+叠加在 `references/dao/agent-governance.md`「子 agent 通用边界」「执行下放」之上，本节补长回路专属约束：
 
-- 本回路要求 `review-sslb` 自身是主审 agent（能启动并管理扫描 subagent）；它若反过来是被 `道` 下放的子 agent，则受契约「子 agent 通用边界」递归保护，不得展开本回路的多 subagent 扫描——此时不下放，由上游主流程直接主控 `review-sslb` 跑本回路。
+- 本回路要求 `review-sslb` 自身是主审 agent（能启动并管理扫描 subagent）；它若反过来是被 `道` 下放的子 agent，则受 `references/dao/agent-governance.md` 递归保护，不得展开多 subagent 扫描——此时不下放，由上游主流程直接主控。
 - 只有当前主审 agent 可启动和管理 subagent；subagent 只做**只读扫描**，并报告 `CLEAN` / `BLOCKER` / `NON-BLOCKING` / `WATCH` 及复现路径。
 - subagent **不得**：修改文件、启动新的 subagent（递归保护）、继续派生复查轮次、宣布 clean round 完成或宣布收敛。这些权威只属主审 agent。
 - 每轮 subagent 数量与扫描范围由主审 agent **固定**；发现 BLOCKER 由主审 agent 修复并重启计数，不由 subagent 自行推进。
@@ -36,5 +36,5 @@
 
 落地与回归测试纪律按 `references/modules/implement-code.md`，本节只补回路口径：
 
-- 先补一条能**触发该缺陷的回归测试**，再跑定向测试；涉及共享边界时继续跑相关包 / workspace 级验证（按宿主语言的工作区口径）。
+- 有稳定自动化测试接缝时，先补一条能**触发该缺陷的回归测试**，再跑定向测试；涉及共享边界时继续跑相关包 / workspace 级验证（按宿主语言的工作区口径）。若接缝确实不存在或环境无法构造，不强造仪式化测试；记录原因，改用能对准原缺陷场景的最强可用证据，并保持未覆盖风险可见。
 - 不得把“subagent 认为已修”当证据；修复后由主审 agent 实际复核（读 / 跑）确认，再把 clean round 归零重数。
