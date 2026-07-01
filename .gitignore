@@ -2,3 +2,5 @@
 skills-lock.json
 
 .claude/settings*.json
+
+plans/odai-*-runs
