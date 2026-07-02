@@ -3,9 +3,9 @@
 
 # odai
 
-`odai` is a bundle of AI skills hidden behind a single entry point. Instead of memorizing a dozen skill names, you just hand your task to `odai` and let it figure out the rest — planning, design, code review, writing code, summaries, game design, game visuals, all of it.
+`odai` is a single governance entry point for AI agent work. It does not try to teach the model generic reasoning, searching, reading, coding, or summarizing again; it defines the parts an agent should not decide alone: real intent, boundaries, authorization, acceptance, handoffs, evidence, and stopping conditions.
 
-Inside, there's a dispatcher called `道` ("the Way"). It reads what you're actually trying to do, picks the right module, decides what to hand back (a quick judgment call, a draft, a design, a review verdict, an action list, or just doing the work), and asks first when something important is unclear.
+Inside, `道` ("the Way") acts as the orchestrator. It aligns the goal and risk, chooses the module chain when needed, lets simple tasks move quickly, and asks only when a missing decision would change the path, scope, authorization, acceptance, risk, or stop line.
 
 - **Just want to get stuff done?** One entry point: `odai`.
 - **Maintaining this repo?** There's a separate `skill-author` tool. See [MAINTAINING.md](MAINTAINING.md).
@@ -34,11 +34,12 @@ npx skills add https://github.com/orziz/odai --skill odai
 
 ## What is this, really
 
-Think of `odai` as a self-routing toolbox of skills:
+Think of `odai` as a governance layer over strong models and agents:
 
-- **One door in.** You don't pick the skill. `道` decides whether this round needs a one-line judgment, a draft, a design mockup, a review verdict, an action list, or just getting hands dirty.
-- **A set of focused modules behind it.** Planning, design, review, coding, game design, game visuals, summaries — whatever the task needs.
-- **`道` is the default dispatcher.** Whatever the domain, it picks the route and carries the task all the way to a wrap-up.
+- **One door in.** User tasks enter through `odai`; direct, lightweight tasks stay light, and ambiguous or cross-domain work goes through `道`.
+- **Hard lines where autonomy is risky.** The skill guards intent alignment, scope, authorization, acceptance, truthfulness, handoffs, and evidence.
+- **Focused modules behind it.** Planning, design, review, coding, game design, game visuals, summaries, and project guidance are loaded only when the task actually needs them.
+- **Agents stay subordinate.** Sub-agents can generate candidates, evidence, reviews, or frozen-scope work; the main flow verifies and adopts only what can be checked.
 
 A few things worth knowing up front:
 
@@ -50,10 +51,10 @@ A few things worth knowing up front:
 
 If any of these sound like you, this repo will feel at home:
 
-- You want your go-to prompts and workflows behind one door, without memorizing a list of names.
-- You want the AI to route itself between planning, design, review, and implementation.
-- You like having a "dispatcher" lock in direction, boundaries, and the first step before any specific module runs.
-- You want to keep several review styles and workflows around without maintaining a pile of parallel entry points.
+- You want one entry point that keeps agent work aligned without turning every task into a rigid process.
+- You want the AI to move autonomously on facts it can verify, but ask before it crosses scope, authorization, acceptance, or risk boundaries.
+- You like having `道` lock in direction, boundaries, the main path, and the first step when the task is ambiguous or high-impact.
+- You want review, diagnosis, TDD, UI quality, game planning, and agent delegation rules available without loading them on every request.
 - You regularly tidy up READMEs, project rules, AI hand-off notes, or daily reports / commits / PR descriptions.
 - You want to wire the entry point into any agent with a single skills.sh command instead of copying files by hand.
 
@@ -115,7 +116,8 @@ When to reach for the `old` branch: you're still on the old entry point, you nee
 
    support files (道 loads on demand):
      interaction-contract (hard law) · dao-shu-fa-playbook
-     review-kit · diagnose-kit · consensus-mode · external-skills
+     review-kit · diagnose-kit · agent-governance · result-reporting
+     consensus-mode · external-skills
 ```
 
 `道术法` (dao-shu-fa) are **phases of the work** — why → how → do —
@@ -125,13 +127,13 @@ the rest go to `道`, which sets the track and carries them to a wrap-up.
 
 ## Getting more out of `odai`
 
-`odai` doesn't just run every module in sequence. `道` first works out which layer you're actually missing, which module to call, and what shape the output should take — then reads that module and keeps going.
+`odai` doesn't run every module in sequence. It first checks whether the task can stay direct or lightweight; if not, `道` works out which layer is missing, which module to call, and what shape the output should take.
 
 The one workflow inside:
 
-- **`道`** — the default dispatcher and the only general workflow. Best for "lock in direction, boundaries, the main path, and the first step." It also picks the module and decides the output shape, and carries any task — dev or not — through to a wrap-up.
+- **`道`** — the default orchestrator and the only general workflow. Best for "lock in direction, boundaries, the main path, and the first step." It also picks the module chain and keeps the task moving until there is a result, verified gap, or real blocker.
 
-You can also skip the dispatcher and name a module directly:
+You can also skip `道` for a single clear segment and name a module directly:
 
 - `game-plan` — game systems, mechanics, numbers, economy, monetization, levels and content
 - `game-design` — full game visuals: UI/UX/UE, characters and scenes, branding, FX and cinematics
@@ -151,11 +153,12 @@ A few handy triggers:
 
 ## How it talks to you
 
-The modules that proactively ask you for missing details all follow one interaction contract (`skills/odai/references/dao/interaction-contract.md`):
+The modules that ask for missing details follow one interaction contract (`skills/odai/references/dao/interaction-contract.md`):
 
-- Before acting, it lays out: current understanding, what's already verified, what's still unconfirmed, and the questions only you can settle.
-- It uses structured questions when it can; if the channel doesn't support them, it says so and switches to asking in grouped plain text.
-- Once you answer, it just continues with the current step by default — no need to add a "go on."
+- It first tries to read, check, or run low-risk verification itself.
+- It asks only for decisions that affect goal, boundary, authorization, acceptance, risk, stop line, or unacceptable outcomes.
+- It keeps unverified claims separate from confirmed facts, and it does not report files, agents, commands, or validation it did not actually use.
+- Once you answer, it continues with the current step by default — no need to add a "go on."
 
 ## Showcase
 

@@ -12,11 +12,8 @@ skills/odai/             统一入口 source skill
   references/modules/    内部模块正文（dao、game-*、feature-plan 等）
   references/*/          模块级规则、说明等 support files
   assets/*/              模块级模板等资源
-  scripts/*/             模块级脚本资源（按需）
 skills/skill-author/     仓库 source 作者维护 skill
-scripts/                 仓库维护脚本（按需）
 assets/                  README 配图
-plans/                   规划与测试记录（非分发内容）
 ```
 
 分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不再生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。
@@ -62,7 +59,7 @@ plans/                   规划与测试记录（非分发内容）
 
 | Skill | 简介 | 适用场景 | 对应文件 |
 | --- | --- | --- | --- |
-| `odai` | 以道为总控，把规划、游戏策划、游戏视觉设计、通用设计、审查、实现与总结收束成一个统一入口，并按需调用内部模块 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查与成果整理 | `skills/odai/SKILL.md` |
+| `odai` | 以道为总控，提供意图对齐、边界授权、验收真实性、跨阶段接力、agent 治理和专家 playbook 的统一入口 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查、agent 下放与成果整理 | `skills/odai/SKILL.md` |
 
 ### 仓库维护工具
 
