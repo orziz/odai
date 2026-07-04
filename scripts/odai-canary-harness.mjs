@@ -14,6 +14,7 @@ const HARNESS_STATUS_PATHS = new Set([
   "judge.log",
   "last_message.txt",
   "prompt.md",
+  "runner.compact.log",
   "runner.log",
   "status.txt",
 ]);
@@ -79,7 +80,7 @@ function detectTrace(text, skillFiles = []) {
   const value = String(text || "");
   const supportFiles = new Set();
   for (const match of value.matchAll(/(?:skills[\\/]+odai[\\/]+)?((?:references|assets)[\\/][^\s'"`<>)]*?\.(?:md|mjs|js))/g)) {
-    supportFiles.add(match[1].split("\\").join("/"));
+    supportFiles.add(match[1].split("\\").join("/").replace(/\/+/g, "/"));
   }
   for (const file of skillFiles) {
     if (file !== "SKILL.md" && value.includes(file)) supportFiles.add(file);
@@ -121,6 +122,10 @@ function parseArgs(argv) {
     judgeCmd: "",
     timeout: 900,
     judgeTimeout: 300,
+    reasoningEffort: "low",
+    judgeTranscriptChars: 30000,
+    judgeDiffChars: 20000,
+    judgeStatusChars: 5000,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -134,6 +139,10 @@ function parseArgs(argv) {
     else if (arg === "--judge-cmd") args.judgeCmd = argv[++i];
     else if (arg === "--timeout") args.timeout = Number(argv[++i]);
     else if (arg === "--judge-timeout") args.judgeTimeout = Number(argv[++i]);
+    else if (arg === "--reasoning-effort") args.reasoningEffort = argv[++i];
+    else if (arg === "--judge-transcript-chars") args.judgeTranscriptChars = Number(argv[++i]);
+    else if (arg === "--judge-diff-chars") args.judgeDiffChars = Number(argv[++i]);
+    else if (arg === "--judge-status-chars") args.judgeStatusChars = Number(argv[++i]);
     else if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
@@ -164,6 +173,10 @@ Options:
                     {workdir} {prompt_file} {last_message} {case_id}
   --judge-cmd CMD   Command template; stdin receives judge prompt; placeholders:
                     {workdir} {schema} {judge_output} {case_id}
+  --reasoning-effort VALUE    Override Codex model_reasoning_effort (default: low; use inherit to keep user config)
+  --judge-transcript-chars N  Transcript chars sent to judge (default: 30000)
+  --judge-diff-chars N        Diff chars sent to judge (default: 20000)
+  --judge-status-chars N      Status chars sent to judge (default: 5000)
 `);
 }
 
@@ -389,6 +402,9 @@ function buildRunnerPrompt(testCase, renderedPrompt, workdir) {
   return `Use the odai skill at \`${skillPath}\` to handle the user request below.
 
 Treat this as a normal user task in the fixture repository. Do not read or mention the canary plan, the expected result, or that this is a test. Work only inside this fixture repository.
+When reading Markdown or Chinese text in PowerShell, use UTF-8 output, for example:
+\`$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); Get-Content -Raw -Encoding UTF8 -LiteralPath '<path>'\`
+Do not reread the same large file only because a previous terminal rendering looked garbled.
 
 User request:
 ${renderedPrompt}
@@ -404,12 +420,99 @@ function evidenceExcerpt(value, limit) {
   return `${text.slice(0, head)}\n\n[... ${omitted} chars omitted from middle ...]\n\n${text.slice(-tail)}`;
 }
 
-function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status) {
+function positiveNumber(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function stripLastMessageBlock(value) {
+  return String(value || "").replace(/\r?\n\r?\n\[LAST MESSAGE\]\r?\n[\s\S]*$/, "");
+}
+
+const TRANSCRIPT_NOISE_RE =
+  /^\s*(?:(?:\d{4}-\d{2}-\d{2}T[^\s]+\s+)?WARN codex_core(?:::|_)|OpenAI Codex v|--------|workdir:|model:|provider:|approval:|sandbox:|reasoning effort:|reasoning summaries:|session id:|warning: ignoring interface\.|Failed to create shell snapshot)/;
+
+function isTranscriptBoundary(line) {
+  return (
+    /^\d{4}-\d{2}-\d{2}T/.test(line) ||
+    line === "codex" ||
+    line === "exec" ||
+    line === "[LAST MESSAGE]" ||
+    line === "tokens used" ||
+    line.startsWith("ERROR:")
+  );
+}
+
+function compactTranscriptForJudge(value) {
+  const lines = stripLastMessageBlock(value).split(/\r?\n/);
+  const kept = [];
+  let dropped = 0;
+  let blankRun = 0;
+  let inExec = false;
+  let execTouchesOdaiSource = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (TRANSCRIPT_NOISE_RE.test(line)) {
+      dropped += 1;
+      continue;
+    }
+    if (line === "exec") {
+      inExec = true;
+      execTouchesOdaiSource = false;
+      kept.push(line);
+      continue;
+    }
+    if (inExec && /(?:skills[\\/]+odai[\\/]+|[\\/]+skills[\\/]+odai[\\/]+)/.test(line)) {
+      execTouchesOdaiSource = true;
+    }
+    if (/^\s*succeeded in \d+ms:$/.test(line) && execTouchesOdaiSource) {
+      kept.push(line);
+      let omittedChars = 0;
+      let omittedLines = 0;
+      i += 1;
+      while (i < lines.length && !isTranscriptBoundary(lines[i])) {
+        omittedChars += lines[i].length + 1;
+        omittedLines += 1;
+        i += 1;
+      }
+      kept.push(`[harness: redacted odai source output: ${omittedLines} lines, ${omittedChars} chars; command path retained]`);
+      dropped += omittedLines;
+      inExec = false;
+      execTouchesOdaiSource = false;
+      i -= 1;
+      continue;
+    }
+    if (/^\s*(succeeded|exited) in \d+ms:/.test(line)) {
+      inExec = false;
+      execTouchesOdaiSource = false;
+    }
+    if (!line.trim()) {
+      blankRun += 1;
+      if (blankRun > 2) {
+        dropped += 1;
+        continue;
+      }
+    } else {
+      blankRun = 0;
+    }
+    kept.push(line);
+  }
+  if (dropped) kept.unshift(`[harness: omitted ${dropped} noisy runtime log lines; full transcript is in runner.log]`);
+  return kept.join("\n").trim();
+}
+
+function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, lastMessageText, args) {
+  const transcriptLimit = positiveNumber(args.judgeTranscriptChars, 30000);
+  const diffLimit = positiveNumber(args.judgeDiffChars, 20000);
+  const statusLimit = positiveNumber(args.judgeStatusChars, 5000);
+  const lastMessageLimit = Math.min(transcriptLimit, 12000);
+  const compactTranscript = compactTranscriptForJudge(transcript);
   return `You are judging one odai canary run. Decide only from the observable transcript, git diff, and git status.
 
 Do not require exact wording, route-line formatting, or extra ceremony. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
 
 Git status is filtered to remove harness-owned files. Treat untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
+
+The full raw transcript is saved by the harness. The transcript below is compacted for cost: noisy runtime wrapper lines and the duplicate last-message block may be omitted, while command/action evidence remains.
 
 Return JSON matching the provided schema.
 
@@ -423,19 +526,24 @@ ${testCase.must}
 MUST NOT:
 ${testCase.forbid}
 
-Transcript:
+Final message:
 \`\`\`text
-${evidenceExcerpt(transcript, 80000)}
+${evidenceExcerpt(lastMessageText || "(not captured)", lastMessageLimit)}
+\`\`\`
+
+Compacted transcript:
+\`\`\`text
+${evidenceExcerpt(compactTranscript, transcriptLimit)}
 \`\`\`
 
 Git diff after run:
 \`\`\`diff
-${evidenceExcerpt(diff, 40000)}
+${evidenceExcerpt(diff, diffLimit)}
 \`\`\`
 
 Filtered git status after run:
 \`\`\`text
-${evidenceExcerpt(status || "(clean)", 20000)}
+${evidenceExcerpt(status || "(clean)", statusLimit)}
 \`\`\`
 `;
 }
@@ -453,13 +561,19 @@ function formatTemplate(template, values) {
   return result;
 }
 
-function defaultRunner(workdir, lastMessage) {
+function reasoningConfigArgs(args) {
+  if (!args.reasoningEffort || args.reasoningEffort === "inherit") return [];
+  return ["-c", `model_reasoning_effort=${JSON.stringify(args.reasoningEffort)}`];
+}
+
+function defaultRunner(workdir, lastMessage, args) {
   return [
     "codex",
     "exec",
     "--ephemeral",
     "--sandbox",
     "workspace-write",
+    ...reasoningConfigArgs(args),
     "-C",
     workdir,
     "-o",
@@ -468,13 +582,14 @@ function defaultRunner(workdir, lastMessage) {
   ];
 }
 
-function defaultJudge(workdir, schema, judgeOutput) {
+function defaultJudge(workdir, schema, judgeOutput, args) {
   return [
     "codex",
     "exec",
     "--ephemeral",
     "--sandbox",
     "read-only",
+    ...reasoningConfigArgs(args),
     "-C",
     workdir,
     "--output-schema",
@@ -559,6 +674,8 @@ function summarizeMetrics(results) {
   return {
     runner_prompt_chars: sum("runner_prompt_chars"),
     runner_prompt_token_estimate: sum("runner_prompt_token_estimate"),
+    runner_raw_transcript_chars: sum("runner_raw_transcript_chars"),
+    runner_raw_transcript_token_estimate: sum("runner_raw_transcript_token_estimate"),
     runner_transcript_chars: sum("runner_transcript_chars"),
     runner_transcript_token_estimate: sum("runner_transcript_token_estimate"),
     judge_prompt_chars: sum("judge_prompt_chars"),
@@ -595,11 +712,14 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
       user_prompt_chars: renderedPrompt.length,
       runner_prompt_chars: prompt.length,
       runner_prompt_token_estimate: estimateTokens(prompt),
+      runner_raw_transcript_chars: 0,
+      runner_raw_transcript_token_estimate: 0,
       runner_transcript_chars: 0,
       runner_transcript_token_estimate: 0,
       last_message_chars: 0,
       judge_prompt_chars: 0,
       judge_prompt_token_estimate: 0,
+      judge_transcript_char_budget: args.judgeTranscriptChars,
       runner_duration_ms: null,
       judge_duration_ms: null,
       diff_chars: 0,
@@ -613,24 +733,30 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const lastMessage = path.join(caseDir, "last_message.txt");
   const runner = args.runnerCmd
     ? formatTemplate(args.runnerCmd, { workdir: caseDir, prompt_file: promptFile, last_message: lastMessage, case_id: testCase.id })
-    : defaultRunner(caseDir, lastMessage);
+    : defaultRunner(caseDir, lastMessage, args);
   const runnerStartedAt = Date.now();
   const runnerResult = Array.isArray(runner)
     ? run(runner, { cwd: caseDir, input: prompt, timeoutSeconds: args.timeout })
     : runShell(runner, { cwd: caseDir, input: prompt, timeoutSeconds: args.timeout });
   result.metrics.runner_duration_ms = Date.now() - runnerStartedAt;
   const timedOut = runnerResult.error && runnerResult.error.code === "ETIMEDOUT";
-  let transcript = `${runnerResult.stdout || ""}${runnerResult.stderr || ""}`;
+  let rawTranscript = `${runnerResult.stdout || ""}${runnerResult.stderr || ""}`;
   const lastMessageText = existsSync(lastMessage) ? readText(lastMessage) : "";
-  if (lastMessageText) transcript += `\n\n[LAST MESSAGE]\n${lastMessageText}`;
+  if (lastMessageText) rawTranscript += `\n\n[LAST MESSAGE]\n${lastMessageText}`;
+  const transcript = compactTranscriptForJudge(rawTranscript);
+  result.metrics.runner_raw_transcript_chars = rawTranscript.length;
+  result.metrics.runner_raw_transcript_token_estimate = estimateTokens(rawTranscript);
   result.metrics.runner_transcript_chars = transcript.length;
   result.metrics.runner_transcript_token_estimate = estimateTokens(transcript);
   result.metrics.last_message_chars = lastMessageText.length;
   result.metrics.trace = detectTrace(transcript, skillFiles);
   const transcriptFile = path.join(caseDir, "runner.log");
-  writeText(transcriptFile, transcript);
+  writeText(transcriptFile, rawTranscript);
+  const compactTranscriptFile = path.join(caseDir, "runner.compact.log");
+  writeText(compactTranscriptFile, transcript);
   result.runner_exit = timedOut ? null : runnerResult.status;
   result.transcript_file = transcriptFile;
+  result.compact_transcript_file = compactTranscriptFile;
   if (timedOut) {
     result.status = "runner-timeout";
     return result;
@@ -659,14 +785,14 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
     return result;
   }
 
-  const judgePrompt = buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status);
+  const judgePrompt = buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, lastMessageText, args);
   result.metrics.judge_prompt_chars = judgePrompt.length;
   result.metrics.judge_prompt_token_estimate = estimateTokens(judgePrompt);
   const judgeOutput = path.join(caseDir, "judge.json");
   const judgeLog = path.join(caseDir, "judge.log");
   const judge = args.judgeCmd
     ? formatTemplate(args.judgeCmd, { workdir: caseDir, schema: schemaPath, judge_output: judgeOutput, case_id: testCase.id })
-    : defaultJudge(caseDir, schemaPath, judgeOutput);
+    : defaultJudge(caseDir, schemaPath, judgeOutput, args);
   const judgeStartedAt = Date.now();
   const judgeResult = Array.isArray(judge)
     ? run(judge, { cwd: caseDir, input: judgePrompt, timeoutSeconds: args.judgeTimeout })
@@ -708,7 +834,7 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- pass: ${report.pass}`,
     `- fail: ${report.fail}`,
     `- runner prompt est. tokens: ${metrics.runner_prompt_token_estimate}`,
-    `- runner transcript est. tokens: ${metrics.runner_transcript_token_estimate}`,
+    `- runner transcript est. tokens: ${metrics.runner_transcript_token_estimate} compacted / ${metrics.runner_raw_transcript_token_estimate} raw`,
     `- judge prompt est. tokens: ${metrics.judge_prompt_token_estimate}`,
     `- skill markdown est. tokens: ${skillBudget.total_token_estimate}`,
     "",
@@ -751,6 +877,10 @@ function main() {
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         judge: args.run && !args.noJudge,
+        reasoning_effort: args.reasoningEffort,
+        judge_transcript_chars: args.judgeTranscriptChars,
+        judge_diff_chars: args.judgeDiffChars,
+        judge_status_chars: args.judgeStatusChars,
         skill_markdown_token_estimate: skillBudget.total_token_estimate,
       },
       null,
