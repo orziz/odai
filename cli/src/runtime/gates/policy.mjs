@@ -76,7 +76,13 @@ export function policyGate(intent, context) {
 }
 
 function isAllowedShellCommand(command, allowlist) {
-  return allowlist.some((entry) => entry === command || entry === path.basename(command));
+  const basename = path.basename(command);
+  const basenameWithoutExecutableExtension = process.platform === "win32"
+    ? basename.replace(/\.(?:bat|cmd|com|exe|ps1)$/i, "")
+    : basename;
+  return allowlist.some((entry) =>
+    entry === command || entry === basename || entry === basenameWithoutExecutableExtension
+  );
 }
 
 function networkPolicyDecision(intent, context) {

@@ -490,12 +490,14 @@ function discoverClaudeCodeExtensionBinary(env = process.env) {
       if (!entry.isDirectory() || !entry.name.startsWith("anthropic.claude-code-")) {
         continue;
       }
-      const candidate = path.join(root, entry.name, "resources", "native-binary", "claude");
-      if (isExecutableFile(candidate)) {
-        candidates.push({
-          path: candidate,
-          mtimeMs: safeMtimeMs(candidate),
-        });
+      for (const candidateName of claudeNativeBinaryNames()) {
+        const candidate = path.join(root, entry.name, "resources", "native-binary", candidateName);
+        if (isExecutableFile(candidate)) {
+          candidates.push({
+            path: candidate,
+            mtimeMs: safeMtimeMs(candidate),
+          });
+        }
       }
     }
   }
@@ -522,10 +524,23 @@ function safeMtimeMs(filePath) {
 function isExecutableFile(filePath) {
   try {
     const stat = statSync(filePath);
-    return stat.isFile() && (stat.mode & 0o111) !== 0;
+    if (!stat.isFile()) {
+      return false;
+    }
+    if (process.platform === "win32") {
+      return [".bat", ".cmd", ".com", ".exe", ".ps1"].includes(path.extname(filePath).toLowerCase())
+        || (stat.mode & 0o111) !== 0;
+    }
+    return (stat.mode & 0o111) !== 0;
   } catch {
     return false;
   }
+}
+
+function claudeNativeBinaryNames() {
+  return process.platform === "win32"
+    ? ["claude.exe", "claude.cmd", "claude.bat", "claude"]
+    : ["claude"];
 }
 
 function packageExists(packageName) {

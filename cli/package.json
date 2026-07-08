@@ -39,6 +39,12 @@
   ],
   "scripts": {
     "check": "find . -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "sync:skill": "node ./scripts/sync-skill-snapshot.mjs",
+    "check:skill": "node ./scripts/sync-skill-snapshot.mjs --check",
+    "prepack": "node ./scripts/sync-skill-snapshot.mjs",
+    "prepublishOnly": "node ./scripts/sync-skill-snapshot.mjs",
+    "presmoke": "node ./scripts/sync-skill-snapshot.mjs",
+    "pretest": "node ./scripts/sync-skill-snapshot.mjs",
     "phase0": "node ./bin/odai.mjs phase0",
     "providers": "node ./bin/odai.mjs providers",
     "pack:dry-run": "npm pack --dry-run",

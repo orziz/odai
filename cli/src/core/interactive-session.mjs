@@ -191,7 +191,7 @@ export async function runInteractiveSession({
       }
       const argv = parseInteractiveArgs(line.replace(/^\/authorize\s*/, ""));
       const result = await handleAuthorize(argv);
-      write(formatJson(result));
+      write(formatAuthorizationResult(result));
       await record({ type: "command-result", command: "authorize", argv, result });
       continue;
     }
@@ -598,7 +598,7 @@ async function runTaskWithInteractiveAuthorization({
     }
     if (isApprovalAnswer(answer)) {
       const authorization = await handleAuthorize([scope]);
-      write(formatJson(authorization));
+      write(formatAuthorizationResult(authorization));
       await recordTranscript?.({ type: "authorization-result", scope, approved: Boolean(authorization?.ok) });
       if (authorization?.ok) {
         approved.push(scope);
@@ -787,6 +787,13 @@ function formatSessionCommandResult(result = {}, { command, argv = [] } = {}) {
   }
   if (command === "settings") {
     return formatSessionSettings(result);
+  }
+  return formatInteractiveStatus(result);
+}
+
+function formatAuthorizationResult(result = {}) {
+  if (result?.ok === true) {
+    return `authorized: ${redactString(result.scope || "ok")}`;
   }
   return formatInteractiveStatus(result);
 }

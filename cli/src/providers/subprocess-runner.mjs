@@ -8,12 +8,7 @@ export function runCommandAsync(command, args = [], options = {}) {
     let stdout = "";
     let stderr = "";
     const maxOutputChars = options.maxOutputChars;
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    let child;
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -24,6 +19,21 @@ export function runCommandAsync(command, args = [], options = {}) {
         stderr: truncate(result.stderr || stderr, maxOutputChars),
       });
     };
+    try {
+      child = spawn(command, args, {
+        cwd: options.cwd,
+        env: options.env,
+        shell: shouldUseWindowsCommandShell(command),
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      finish({
+        status: 1,
+        stderr: error?.message || String(error),
+      });
+      return;
+    }
     timeout = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
       ? setTimeout(() => {
           timedOut = true;
@@ -71,4 +81,8 @@ function appendBounded(current = "", chunk = "", limit = 200000) {
 function truncate(value = "", limit = 200000) {
   if (!Number.isFinite(limit) || value.length <= limit) return value;
   return `${value.slice(0, limit)}\n[truncated ${value.length - limit} chars]`;
+}
+
+function shouldUseWindowsCommandShell(command = "") {
+  return process.platform === "win32" && /\.(?:bat|cmd)$/i.test(String(command));
 }

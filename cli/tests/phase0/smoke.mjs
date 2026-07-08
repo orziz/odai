@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -168,12 +168,16 @@ assert.notEqual(secondSkillPack.entrySha256, firstSkillPack.entrySha256);
 const packageFallbackRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-skill-package-fallback-"));
 const packageFallbackSkillPack = await loadSkillPack({ repoRoot: packageFallbackRoot });
 assert.ok(packageFallbackSkillPack.root.endsWith(path.join("cli", "skills", "odai")));
-assert.ok(packageFallbackSkillPack.entryText.includes("npm package bundles this compact skill snapshot"));
+assert.equal(packageFallbackSkillPack.entrySha256, skillPack.entrySha256);
+assert.deepEqual(packageFallbackSkillPack.supportFiles, skillPack.supportFiles);
 const packageFallbackPromptPack = await packageFallbackSkillPack.render({
   references: ["references/modules/dao.md", "references/dao/interaction-contract.md"],
 });
-assert.ok(packageFallbackPromptPack.includes("Compact odai controller rules"));
-assert.ok(packageFallbackPromptPack.includes("Interaction Contract"));
+const rootInteractionContract = await readFile(
+  path.join(repoRoot, "skills", "odai", "references", "dao", "interaction-contract.md"),
+  "utf8",
+);
+assert.ok(packageFallbackPromptPack.includes(rootInteractionContract.trimEnd()));
 
 const packageManifest = JSON.parse(await readFile(path.join(repoRoot, "cli", "package.json"), "utf8"));
 assert.equal(packageManifest.name, "odai-cli");
@@ -556,8 +560,12 @@ assert.equal(bulkReaderRouting.tools, "read_only");
 assert.deepEqual(bulkReaderRouting.requirements, ["long_context"]);
 assert.equal(bulkReaderRouting.auto.selected, "mock-reviewer");
 const fakeAgentClaudeBinDir = await mkdtemp(path.join(tmpdir(), "odai-cli-agent-fake-claude-bin-"));
-const fakeAgentClaudePath = path.join(fakeAgentClaudeBinDir, "claude");
-await writeFile(fakeAgentClaudePath, "#!/bin/sh\nprintf 'fake agent claude\\n'\n", "utf8");
+const fakeAgentClaudePath = path.join(fakeAgentClaudeBinDir, process.platform === "win32" ? "claude.cmd" : "claude");
+await writeFile(
+  fakeAgentClaudePath,
+  process.platform === "win32" ? "@echo off\r\necho fake agent claude\r\n" : "#!/bin/sh\nprintf 'fake agent claude\\n'\n",
+  "utf8",
+);
 await chmod(fakeAgentClaudePath, 0o755);
 const previousPathForAgentRouting = process.env.PATH;
 process.env.PATH = [
@@ -570,7 +578,11 @@ process.env.PATH = [
 try {
   const routedAgents = runAgents({
     repoRoot: agentRoot,
-    env: { OPENAI_API_KEY: "test-key", ODAI_OPENAI_MODEL: "test-model" },
+    env: {
+      OPENAI_API_KEY: "test-key",
+      ODAI_OPENAI_MODEL: "test-model",
+      ODAI_CLAUDE_COMMAND: fakeAgentClaudePath,
+    },
     argv: ["--use-api-key", "--use-provider-command"],
   });
   const routedChallenger = routedAgents.routing.find((routing) => routing.profile === "challenger");
@@ -583,7 +595,11 @@ try {
   assert.ok(routedChallenger.candidates.some((provider) => provider.name === "claude-cli" && provider.available));
   const routedAgentsWithMain = runAgents({
     repoRoot: agentRoot,
-    env: { OPENAI_API_KEY: "test-key", ODAI_OPENAI_MODEL: "test-model" },
+    env: {
+      OPENAI_API_KEY: "test-key",
+      ODAI_OPENAI_MODEL: "test-model",
+      ODAI_CLAUDE_COMMAND: fakeAgentClaudePath,
+    },
     argv: ["--use-api-key", "--use-provider-command", "--main-provider", "openai-api"],
   });
   const routedChallengerWithMain = routedAgentsWithMain.routing.find((routing) => routing.profile === "challenger");
@@ -650,7 +666,7 @@ assert.ok(sensitiveAgentJson.includes("[redacted]"));
 
 const commandProviderRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-command-provider-"));
 await mkdir(path.join(commandProviderRoot, ".odai"), { recursive: true });
-await symlink(path.join(repoRoot, "skills"), path.join(commandProviderRoot, "skills"), "dir");
+await symlinkOrCopyDirectory(path.join(repoRoot, "skills"), path.join(commandProviderRoot, "skills"));
 const commandProviderFile = path.join(commandProviderRoot, "command-provider-input.txt");
 await writeFile(commandProviderFile, "command-provider-before\n", "utf8");
 const commandProviderScript = path.join(sessionTmp, "command-json-provider.mjs");
@@ -756,8 +772,12 @@ assert.equal(deepseekStatusBeforeAuth.apiKeyEnv, "DEEPSEEK_API_KEY");
 assert.equal(deepseekStatusBeforeAuth.modelEnv, "ODAI_DEEPSEEK_MODEL");
 assert.equal(deepseekStatusBeforeAuth.secretPresent, false);
 const fakeAuthClaudeDir = await mkdtemp(path.join(tmpdir(), "odai-cli-auth-claude-"));
-const fakeAuthClaudePath = path.join(fakeAuthClaudeDir, "claude");
-await writeFile(fakeAuthClaudePath, "#!/bin/sh\nprintf 'fake claude auth\\n'\n", "utf8");
+const fakeAuthClaudePath = path.join(fakeAuthClaudeDir, process.platform === "win32" ? "claude.cmd" : "claude");
+await writeFile(
+  fakeAuthClaudePath,
+  process.platform === "win32" ? "@echo off\r\necho fake claude auth\r\n" : "#!/bin/sh\nprintf 'fake claude auth\\n'\n",
+  "utf8",
+);
 await chmod(fakeAuthClaudePath, 0o755);
 const commandAuthStatus = await runAuthConfig({
   repoRoot: commandProviderRoot,
@@ -765,7 +785,7 @@ const commandAuthStatus = await runAuthConfig({
   env: { ODAI_CLAUDE_COMMAND: fakeAuthClaudePath, ODAI_CLAUDE_MODEL: "claude-auth-model" },
 });
 const claudeCommandAuth = commandAuthStatus.commands.find((provider) => provider.name === "claude-cli");
-assert.equal(claudeCommandAuth.command, fakeAuthClaudePath);
+assert.equal(normalizePathForCompare(claudeCommandAuth.command), normalizePathForCompare(fakeAuthClaudePath));
 assert.equal(claudeCommandAuth.commandPresent, true);
 assert.equal(claudeCommandAuth.executableEnv, "ODAI_CLAUDE_COMMAND");
 assert.equal(claudeCommandAuth.executableConfigured, true);
@@ -784,7 +804,7 @@ assert.equal(claudeLoginDryRun.status, "ready");
 assert.equal(claudeLoginDryRun.kind, "auth-login");
 assert.equal(claudeLoginDryRun.provider, "claude-cli");
 assert.equal(claudeLoginDryRun.dryRun, true);
-assert.equal(claudeLoginDryRun.command, fakeAuthClaudePath);
+assert.equal(normalizePathForCompare(claudeLoginDryRun.command), normalizePathForCompare(fakeAuthClaudePath));
 assert.deepEqual(claudeLoginDryRun.args, []);
 assert.equal(claudeLoginDryRun.cwdPolicy, "temporary-empty-directory");
 assert.equal(claudeLoginDryRun.interactive, true);
@@ -797,7 +817,7 @@ const claudeLoginNoTty = await runAuthConfig({
   inputIsTTY: false,
 });
 assert.equal(claudeLoginNoTty.status, "blocked");
-assert.equal(claudeLoginNoTty.command, fakeAuthClaudePath);
+assert.equal(normalizePathForCompare(claudeLoginNoTty.command), normalizePathForCompare(fakeAuthClaudePath));
 assert.match(claudeLoginNoTty.reason, /requires a TTY/);
 const codexLoginBlocked = await runAuthConfig({
   repoRoot: commandProviderRoot,
@@ -975,7 +995,7 @@ const codexCliModelCatalog = await runModels({
   env: { ODAI_CODEX_COMMAND: process.execPath },
   argv: ["--provider", "codex-cli", "--use-provider-command"],
   runCommand: (command, args) => {
-    assert.equal(command, process.execPath);
+    assert.equal(normalizePathForCompare(command), normalizePathForCompare(process.execPath));
     assert.deepEqual(args, ["doctor", "--json"]);
     return {
       status: 1,
@@ -1653,15 +1673,23 @@ assert.ok(
   ),
 );
 const fakeRuntimeCodexBinDir = await mkdtemp(path.join(tmpdir(), "odai-cli-fake-runtime-codex-bin-"));
-const fakeRuntimeCodexPath = path.join(fakeRuntimeCodexBinDir, "codex");
-await writeFile(fakeRuntimeCodexPath, "#!/bin/sh\nprintf 'fake codex\\n'\n", "utf8");
+const fakeRuntimeCodexPath = path.join(fakeRuntimeCodexBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
+await writeFile(
+  fakeRuntimeCodexPath,
+  process.platform === "win32" ? "@echo off\r\necho fake codex\r\n" : "#!/bin/sh\nprintf 'fake codex\\n'\n",
+  "utf8",
+);
 await chmod(fakeRuntimeCodexPath, 0o755);
 const previousPathForRuntimeCodex = process.env.PATH;
 process.env.PATH = `${fakeRuntimeCodexBinDir}${path.delimiter}${previousPathForRuntimeCodex || ""}`;
 try {
   const providerEvidenceReadyE2E = runE2EReadiness({
     repoRoot: initRoot,
-    env: { OPENAI_API_KEY: "test-key", ODAI_OPENAI_MODEL: "test-model" },
+    env: {
+      OPENAI_API_KEY: "test-key",
+      ODAI_OPENAI_MODEL: "test-model",
+      ODAI_CODEX_COMMAND: fakeRuntimeCodexPath,
+    },
     argv: ["--use-api-key", "--use-provider-command"],
   });
   assert.equal(
@@ -1688,7 +1716,11 @@ try {
   );
   const providerEvidenceReadyStatus = runStatus({
     repoRoot: initRoot,
-    env: { OPENAI_API_KEY: "test-key", ODAI_OPENAI_MODEL: "test-model" },
+    env: {
+      OPENAI_API_KEY: "test-key",
+      ODAI_OPENAI_MODEL: "test-model",
+      ODAI_CODEX_COMMAND: fakeRuntimeCodexPath,
+    },
     argv: ["--use-api-key", "--use-provider-command"],
   });
   assert.ok(providerEvidenceReadyStatus.next.includes("odai doctor --provider openai-api --use-api-key --save"));
@@ -1696,7 +1728,7 @@ try {
   assert.ok(providerEvidenceReadyStatus.next.includes("odai doctor --all --use-api-key --use-provider-command --save"));
   const providerEvidenceReadyWithModelE2E = runE2EReadiness({
     repoRoot: initRoot,
-    env: { OPENAI_API_KEY: "test-key" },
+    env: { OPENAI_API_KEY: "test-key", ODAI_CODEX_COMMAND: fakeRuntimeCodexPath },
     argv: ["--use-api-key", "--use-provider-command", "--model", "test-model"],
   });
   assert.equal(
@@ -1717,8 +1749,12 @@ try {
   else process.env.PATH = previousPathForRuntimeCodex;
 }
 const fakeCodexBinDir = await mkdtemp(path.join(tmpdir(), "odai-cli-fake-codex-bin-"));
-const fakeCodexPath = path.join(fakeCodexBinDir, "codex");
-await writeFile(fakeCodexPath, "#!/bin/sh\nprintf 'fake codex\\n'\n", "utf8");
+const fakeCodexPath = path.join(fakeCodexBinDir, process.platform === "win32" ? "codex.cmd" : "codex");
+await writeFile(
+  fakeCodexPath,
+  process.platform === "win32" ? "@echo off\r\necho fake codex\r\n" : "#!/bin/sh\nprintf 'fake codex\\n'\n",
+  "utf8",
+);
 await chmod(fakeCodexPath, 0o755);
 const previousPathForCodex = process.env.PATH;
 process.env.PATH = [
@@ -1731,7 +1767,7 @@ process.env.PATH = [
 try {
   const codexOnlyStatus = runStatus({
     repoRoot: initRoot,
-    env: {},
+    env: { ODAI_CODEX_COMMAND: fakeCodexPath },
     argv: ["--use-provider-command"],
   });
   assert.ok(codexOnlyStatus.runnableCommands.includes("odai doctor --provider codex-cli --use-provider-command --save"));
@@ -1847,7 +1883,7 @@ assert.ok(
 );
 const permissiveInvalidPolicyRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-permissive-invalid-policy-"));
 await mkdir(path.join(permissiveInvalidPolicyRoot, ".odai"), { recursive: true });
-await symlink(path.join(repoRoot, "skills"), path.join(permissiveInvalidPolicyRoot, "skills"), "dir");
+await symlinkOrCopyDirectory(path.join(repoRoot, "skills"), path.join(permissiveInvalidPolicyRoot, "skills"));
 await writeFile(
   path.join(permissiveInvalidPolicyRoot, ".odai", "policy.json"),
   JSON.stringify({
@@ -2351,33 +2387,35 @@ const outsideSymlinkTargetDir = await mkdtemp(path.join(tmpdir(), "odai-cli-outs
 const outsideSymlinkTargetFile = path.join(outsideSymlinkTargetDir, "secret.txt");
 await writeFile(outsideSymlinkTargetFile, "secret\n", "utf8");
 const symlinkedFile = path.join(sessionTmp, "linked-secret.txt");
-await symlink(outsideSymlinkTargetFile, symlinkedFile);
-const symlinkFileDenied = await dispatcher.dispatch({
-  actor: { kind: "main", id: "main" },
-  type: "read",
-  path: symlinkedFile,
-});
-assert.equal(symlinkFileDenied.ok, false);
-assert.equal(symlinkFileDenied.gate, "policy");
-assert.match(symlinkFileDenied.reason, /outside allowed roots/);
+if (await trySymlink(outsideSymlinkTargetFile, symlinkedFile)) {
+  const symlinkFileDenied = await dispatcher.dispatch({
+    actor: { kind: "main", id: "main" },
+    type: "read",
+    path: symlinkedFile,
+  });
+  assert.equal(symlinkFileDenied.ok, false);
+  assert.equal(symlinkFileDenied.gate, "policy");
+  assert.match(symlinkFileDenied.reason, /outside allowed roots/);
+}
 const symlinkedDir = path.join(sessionTmp, "linked-dir");
-await symlink(outsideSymlinkTargetDir, symlinkedDir, "dir");
-const symlinkDirReadDenied = await dispatcher.dispatch({
-  actor: { kind: "main", id: "main" },
-  type: "read",
-  path: path.join(symlinkedDir, "secret.txt"),
-});
-assert.equal(symlinkDirReadDenied.ok, false);
-assert.equal(symlinkDirReadDenied.gate, "policy");
-const symlinkDirWriteDenied = await dispatcher.dispatch({
-  actor: { kind: "main", id: "main" },
-  type: "write",
-  path: path.join(symlinkedDir, "created-by-model.txt"),
-  content: "escape\n",
-});
-assert.equal(symlinkDirWriteDenied.ok, false);
-assert.equal(symlinkDirWriteDenied.gate, "policy");
-await assert.rejects(() => readFile(path.join(outsideSymlinkTargetDir, "created-by-model.txt"), "utf8"), /ENOENT/);
+if (await trySymlink(outsideSymlinkTargetDir, symlinkedDir, "dir")) {
+  const symlinkDirReadDenied = await dispatcher.dispatch({
+    actor: { kind: "main", id: "main" },
+    type: "read",
+    path: path.join(symlinkedDir, "secret.txt"),
+  });
+  assert.equal(symlinkDirReadDenied.ok, false);
+  assert.equal(symlinkDirReadDenied.gate, "policy");
+  const symlinkDirWriteDenied = await dispatcher.dispatch({
+    actor: { kind: "main", id: "main" },
+    type: "write",
+    path: path.join(symlinkedDir, "created-by-model.txt"),
+    content: "escape\n",
+  });
+  assert.equal(symlinkDirWriteDenied.ok, false);
+  assert.equal(symlinkDirWriteDenied.gate, "policy");
+  await assert.rejects(() => readFile(path.join(outsideSymlinkTargetDir, "created-by-model.txt"), "utf8"), /ENOENT/);
+}
 
 const secretReadDenied = await dispatcher.dispatch({
   actor: { kind: "main", id: "main" },
@@ -3084,19 +3122,18 @@ const configuredClaudeCliDescription = describeProviders(configuredClaudeCliProv
 });
 assert.equal(configuredClaudeCliProviders.get("claude-cli").available, true);
 assert.equal(configuredClaudeCliDescription.commands.claude, true);
-assert.deepEqual(
-  configuredClaudeCliDescription.providers.find((provider) => provider.name === "claude-cli").source,
-  {
-    type: "command",
-    command: process.execPath,
-    commandPresent: true,
-    modelEnv: "ODAI_CLAUDE_MODEL",
-    modelPresent: false,
-    confirmationFlag: "--use-provider-command",
-    executableEnv: "ODAI_CLAUDE_COMMAND",
-    executableConfigured: true,
-  },
-);
+const configuredClaudeCliSource = configuredClaudeCliDescription.providers.find((provider) => provider.name === "claude-cli").source;
+const { command: configuredClaudeCliCommand, ...configuredClaudeCliSourceWithoutCommand } = configuredClaudeCliSource;
+assert.equal(normalizePathForCompare(configuredClaudeCliCommand), normalizePathForCompare(process.execPath));
+assert.deepEqual(configuredClaudeCliSourceWithoutCommand, {
+  type: "command",
+  commandPresent: true,
+  modelEnv: "ODAI_CLAUDE_MODEL",
+  modelPresent: false,
+  confirmationFlag: "--use-provider-command",
+  executableEnv: "ODAI_CLAUDE_COMMAND",
+  executableConfigured: true,
+});
 const scopedProviderCommandProviders = createProviderRegistryFromEnvironment(
   {
     ODAI_CLAUDE_COMMAND: process.execPath,
@@ -3111,10 +3148,12 @@ assert.equal(
   "provider_command_requires_explicit_use",
 );
 const failingAuthClaudeDir = await mkdtemp(path.join(tmpdir(), "odai-cli-failing-auth-claude-"));
-const failingAuthClaudePath = path.join(failingAuthClaudeDir, "claude");
+const failingAuthClaudePath = path.join(failingAuthClaudeDir, process.platform === "win32" ? "claude.cmd" : "claude");
 await writeFile(
   failingAuthClaudePath,
-  "#!/bin/sh\nprintf 'Not logged in · Please run /login\\n' >&2\nexit 1\n",
+  process.platform === "win32"
+    ? "@echo off\r\necho Not logged in - Please run /login 1>&2\r\nexit /b 1\r\n"
+    : "#!/bin/sh\nprintf 'Not logged in - Please run /login\\n' >&2\nexit 1\n",
   "utf8",
 );
 await chmod(failingAuthClaudePath, 0o755);
@@ -3139,10 +3178,14 @@ const discoveredClaudeBinary = path.join(
   "anthropic.claude-code-9.9.9-darwin-arm64",
   "resources",
   "native-binary",
-  "claude",
+  process.platform === "win32" ? "claude.cmd" : "claude",
 );
 await mkdir(path.dirname(discoveredClaudeBinary), { recursive: true });
-await writeFile(discoveredClaudeBinary, "#!/bin/sh\nprintf 'fake claude\\n'\n", "utf8");
+await writeFile(
+  discoveredClaudeBinary,
+  process.platform === "win32" ? "@echo off\r\necho fake claude\r\n" : "#!/bin/sh\nprintf 'fake claude\\n'\n",
+  "utf8",
+);
 await chmod(discoveredClaudeBinary, 0o755);
 const discoveredClaudeCliProviders = createProviderRegistryFromEnvironment(
   { HOME: discoveredClaudeHome },
@@ -3153,18 +3196,17 @@ const discoveredClaudeCliDescription = describeProviders(discoveredClaudeCliProv
 });
 assert.equal(discoveredClaudeCliProviders.get("claude-cli").available, true);
 assert.equal(discoveredClaudeCliDescription.commands.claude, true);
-assert.deepEqual(
-  discoveredClaudeCliDescription.providers.find((provider) => provider.name === "claude-cli").source,
-  {
-    type: "command",
-    command: discoveredClaudeBinary,
-    commandPresent: true,
-    modelEnv: "ODAI_CLAUDE_MODEL",
-    modelPresent: false,
-    confirmationFlag: "--use-provider-command",
-    executableDiscovered: true,
-  },
-);
+const discoveredClaudeCliSource = discoveredClaudeCliDescription.providers.find((provider) => provider.name === "claude-cli").source;
+const { command: discoveredClaudeCliCommand, ...discoveredClaudeCliSourceWithoutCommand } = discoveredClaudeCliSource;
+assert.equal(normalizePathForCompare(discoveredClaudeCliCommand), normalizePathForCompare(discoveredClaudeBinary));
+assert.deepEqual(discoveredClaudeCliSourceWithoutCommand, {
+  type: "command",
+  commandPresent: true,
+  modelEnv: "ODAI_CLAUDE_MODEL",
+  modelPresent: false,
+  confirmationFlag: "--use-provider-command",
+  executableDiscovered: true,
+});
 const configuredCodexCliProviders = createProviderRegistryFromEnvironment(
   { ODAI_CODEX_COMMAND: process.execPath, ODAI_CODEX_MODEL: "gpt-test" },
   { allowProviderCommand: true },
@@ -3175,9 +3217,11 @@ const configuredCodexCliDescription = describeProviders(configuredCodexCliProvid
 });
 assert.equal(configuredCodexCliProviders.get("codex-cli").available, true);
 assert.equal(configuredCodexCliDescription.commands.codex, true);
-assert.deepEqual(configuredCodexCliDescription.providers.find((provider) => provider.name === "codex-cli").source, {
+const configuredCodexCliSource = configuredCodexCliDescription.providers.find((provider) => provider.name === "codex-cli").source;
+const { command: configuredCodexCliCommand, ...configuredCodexCliSourceWithoutCommand } = configuredCodexCliSource;
+assert.equal(normalizePathForCompare(configuredCodexCliCommand), normalizePathForCompare(process.execPath));
+assert.deepEqual(configuredCodexCliSourceWithoutCommand, {
   type: "command",
-  command: process.execPath,
   commandPresent: true,
   modelEnv: "ODAI_CODEX_MODEL",
   modelPresent: true,
@@ -3195,9 +3239,11 @@ const configuredGrokCliDescription = describeProviders(configuredGrokCliProvider
 });
 assert.equal(configuredGrokCliProviders.get("grok-cli").available, true);
 assert.equal(configuredGrokCliDescription.commands.grok, true);
-assert.deepEqual(configuredGrokCliDescription.providers.find((provider) => provider.name === "grok-cli").source, {
+const configuredGrokCliSource = configuredGrokCliDescription.providers.find((provider) => provider.name === "grok-cli").source;
+const { command: configuredGrokCliCommand, ...configuredGrokCliSourceWithoutCommand } = configuredGrokCliSource;
+assert.equal(normalizePathForCompare(configuredGrokCliCommand), normalizePathForCompare(process.execPath));
+assert.deepEqual(configuredGrokCliSourceWithoutCommand, {
   type: "command",
-  command: process.execPath,
   commandPresent: true,
   modelEnv: "ODAI_GROK_MODEL",
   modelPresent: true,
@@ -5893,7 +5939,7 @@ const autoProviderSubagentRun = await runMockTask({
 assert.equal(autoProviderSubagentRun.agentLoop.agent.provider, "mock-main");
 assert.equal(autoProviderSubagentRun.subagentReviews[0].provider, "mock-reviewer");
 
-await symlink(path.join(repoRoot, "skills"), path.join(agentRoot, "skills"), "dir");
+await symlinkOrCopyDirectory(path.join(repoRoot, "skills"), path.join(agentRoot, "skills"));
 const configuredProfileRun = await runMockTask({
   repoRoot: agentRoot,
   sessionTmp,
@@ -7077,18 +7123,17 @@ assert.deepEqual(
     "--use-provider-command",
   ],
 );
-assert.deepEqual(
-  publicTaskArgv([
-    "initial task",
-    "--use-api-key=true",
-    "--use-provider-command=true",
-    "--allow-shell=true",
-    "--allow-network=true",
-    "--file",
-    sampleFile,
-  ]),
-  ["initial task", "--file", sampleFile],
-);
+const publicInitialTaskArgv = publicTaskArgv([
+  "initial task",
+  "--use-api-key=true",
+  "--use-provider-command=true",
+  "--allow-shell=true",
+  "--allow-network=true",
+  "--file",
+  sampleFile,
+]);
+assert.deepEqual(publicInitialTaskArgv.slice(0, 2), ["initial task", "--file"]);
+assert.equal(normalizePathForCompare(publicInitialTaskArgv[2]), normalizePathForCompare(sampleFile));
 
 const scriptedInputs = [
   "/provider mock-reviewer",
@@ -7416,9 +7461,11 @@ assert.ok(scriptedOutputs.some((message) => message.includes("requirements: 1/5 
 assert.ok(scriptedOutputs.some((message) => message.includes("external evidence: 0/2 ready")));
 assert.ok(scriptedOutputs.some((message) => message.includes("tool: read stream.txt")));
 assert.ok(scriptedOutputs.some((message) => message.includes("tool: read mock.txt")));
-assert.ok(scriptedOutputs.some((message) => message.includes("saved: .odai/runs/mock-run.json")));
-assert.ok(scriptedOutputs.some((message) => message.includes("saved: .odai/runs/doctor-run.json")));
-assert.ok(scriptedOutputs.some((message) => message.includes("record: .odai/runs/continued.json")));
+assert.ok(scriptedOutputs.some((message) => message === "authorized: production"));
+assert.ok(!scriptedOutputs.some((message) => message.includes('"authorizations"') && message.includes("production")));
+assert.ok(scriptedOutputs.some((message) => normalizeSlashes(message).includes("saved: .odai/runs/mock-run.json")));
+assert.ok(scriptedOutputs.some((message) => normalizeSlashes(message).includes("saved: .odai/runs/doctor-run.json")));
+assert.ok(scriptedOutputs.some((message) => normalizeSlashes(message).includes("record: .odai/runs/continued.json")));
 assert.ok(
   scriptedOutputs.some(
     (message) =>
@@ -7786,13 +7833,18 @@ assert.match(cliInitialTask.stdout, /odai interactive session/);
 assert.match(cliInitialTask.stdout, /status: ready/);
 assert.ok(!cliInitialTask.stdout.trimStart().startsWith("{"));
 assert.ok(!cliInitialTask.stdout.includes(repoRoot));
-assert.match(cliInitialTask.stdout, /transcript: \.odai\/sessions\//);
-assert.match(cliInitialTask.stdout, /saved: \.odai\/runs\//);
+const cliInitialTaskStdout = normalizeSlashes(cliInitialTask.stdout);
+assert.match(cliInitialTaskStdout, /transcript: \.odai\/sessions\//);
+assert.match(cliInitialTaskStdout, /saved: \.odai\/runs\//);
 const cliInitialTaskRecord = JSON.parse(await readFile(path.join(repoRoot, ".odai", "runs", "latest.json"), "utf8"));
 assert.equal(cliInitialTaskRecord.task, "spawned initial task");
 assert.equal(cliInitialTaskRecord.mode, "agent_loop");
 assert.deepEqual(cliInitialTaskRecord.providerSelection, { requested: "auto", selected: "mock-main" });
-assert.deepEqual(cliInitialTaskRecord.resume.argv.slice(-2), ["--file", path.join(repoRoot, "cli", "src", "index.mjs")]);
+assert.deepEqual(cliInitialTaskRecord.resume.argv.slice(-2, -1), ["--file"]);
+assert.equal(
+  normalizePathForCompare(cliInitialTaskRecord.resume.argv.at(-1)),
+  normalizePathForCompare(path.join(repoRoot, "cli", "src", "index.mjs")),
+);
 
 const cliNonTtyInitialTask = await runCliBin(["non tty initial task", "--max-turns", "1"], "");
 assert.equal(cliNonTtyInitialTask.timedOut, false);
@@ -8096,6 +8148,12 @@ await writeFile(
   "utf8",
 );
 await chmod(claudeCliEnvProbe, 0o755);
+const claudeCliEnvCommand = process.platform === "win32"
+  ? path.join(sessionTmp, "claude-env-probe.cmd")
+  : claudeCliEnvProbe;
+if (process.platform === "win32") {
+  await writeFile(claudeCliEnvCommand, `@echo off\r\n"${process.execPath}" "${claudeCliEnvProbe}" %*\r\n`, "utf8");
+}
 const previousOpenAiKey = process.env.OPENAI_API_KEY;
 const previousToken = process.env.ODAI_TEST_TOKEN;
 const previousSafe = process.env.ODAI_SAFE_ENV;
@@ -8104,7 +8162,7 @@ process.env.ODAI_TEST_TOKEN = "token-should-not-leak";
 process.env.ODAI_SAFE_ENV = "visible";
 try {
   const claudeCliEnvProvider = createClaudeCliProvider({
-    command: claudeCliEnvProbe,
+    command: claudeCliEnvCommand,
     installed: true,
     allowProviderCommand: true,
   });
@@ -8267,7 +8325,10 @@ async function runCliBin(args = [], stdinText = "") {
 
 async function runCliExecutable(args = [], stdinText = "") {
   return new Promise((resolve, reject) => {
-    const child = spawn(path.join(repoRoot, "cli", "bin", "odai.mjs"), args, {
+    const executablePath = path.join(repoRoot, "cli", "bin", "odai.mjs");
+    const command = process.platform === "win32" ? process.execPath : executablePath;
+    const commandArgs = process.platform === "win32" ? [executablePath, ...args] : args;
+    const child = spawn(command, commandArgs, {
       cwd: repoRoot,
       env: {
         PATH: process.env.PATH || "",
@@ -8305,4 +8366,36 @@ async function runCliExecutable(args = [], stdinText = "") {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function normalizePathForCompare(value) {
+  const normalized = path.resolve(String(value));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function normalizeSlashes(value) {
+  return String(value).replaceAll("\\", "/");
+}
+
+async function symlinkOrCopyDirectory(source, target) {
+  try {
+    await symlink(source, target, "dir");
+  } catch (error) {
+    if (!["EACCES", "EPERM", "ENOSYS"].includes(error?.code)) {
+      throw error;
+    }
+    await cp(source, target, { recursive: true });
+  }
+}
+
+async function trySymlink(source, target, type) {
+  try {
+    await symlink(source, target, type);
+    return true;
+  } catch (error) {
+    if (!["EACCES", "EPERM", "ENOSYS"].includes(error?.code)) {
+      throw error;
+    }
+    return false;
+  }
 }
