@@ -36,6 +36,10 @@ ODAI_LANG=en odai
 
 Inside `odai>`, use `/language zh` or `/language en` to switch the current session. Model/provider output is not translated by odai.
 
+## Preferences
+
+The interactive CLI stores UI/routing preferences in `.odai/preferences.json`: language, default provider, model, reasoning depth, context window, and `/auth` confirmations. Credentials themselves are still stored separately by your shell, `.odai/secrets.env`, or the provider CLI. Use `/auth claude-cli` to persist permission to call the local logged-in Claude CLI without reading Claude tokens; use `/auth clear` to disable persisted API-key and provider-command confirmations.
+
 ## Node API
 
 ```js
@@ -55,4 +59,4 @@ When a workspace contains `skills/odai`, odai uses that workspace skill. Otherwi
 
 ## Safety
 
-Real API-key and subscription-CLI providers remain fail-closed. Pass `--use-api-key` or `--use-provider-command` explicitly for commands that may call external providers.
+Real API-key and subscription-CLI providers remain fail-closed. Pass `--use-api-key`, `--use-provider-command`, or a provider-scoped flag such as `--use-provider-command=claude-cli` explicitly for commands that may call external providers.

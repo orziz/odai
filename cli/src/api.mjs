@@ -98,9 +98,11 @@ export function listProviders({
 } = {}) {
   const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: repoRoot, env });
   const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: repoRoot });
+  const providerCommandAuth = providerCommandAuthFromArgv(argv);
   const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey: enabledFlag(argv, "--use-api-key"),
-    allowProviderCommand: enabledFlag(argv, "--use-provider-command"),
+    allowProviderCommand: providerCommandAuth.useProviderCommand,
+    allowedProviderCommands: providerCommandAuth.providerCommandProviders,
     config: providerConfig,
   });
   return describeProviders(registry, workspaceEnv);
@@ -138,4 +140,56 @@ function enabledFlag(argv = [], name) {
     }
   }
   return false;
+}
+
+function providerCommandAuthFromArgv(argv = []) {
+  const result = {
+    useProviderCommand: false,
+    providerCommandProviders: [],
+  };
+  for (const item of argv) {
+    const option = optionToken(item);
+    if (option.name !== "--use-provider-command") continue;
+    if (!option.hasInlineValue) {
+      result.useProviderCommand = true;
+      result.providerCommandProviders = [];
+      continue;
+    }
+    const value = String(option.value || "").trim();
+    const normalized = value.toLowerCase();
+    if (["", "1", "true", "yes", "on"].includes(normalized)) {
+      result.useProviderCommand = true;
+      result.providerCommandProviders = [];
+    } else if (["0", "false", "no", "off"].includes(normalized)) {
+      result.useProviderCommand = false;
+      result.providerCommandProviders = [];
+    } else {
+      result.useProviderCommand = false;
+      result.providerCommandProviders = normalizeProviderCommandProviders(value);
+    }
+  }
+  return result;
+}
+
+function optionToken(item = "") {
+  const value = String(item);
+  const separator = value.indexOf("=");
+  if (separator <= 0) {
+    return {
+      name: value,
+      value: undefined,
+      hasInlineValue: false,
+    };
+  }
+  return {
+    name: value.slice(0, separator),
+    value: value.slice(separator + 1),
+    hasInlineValue: true,
+  };
+}
+
+function normalizeProviderCommandProviders(value) {
+  if (value === undefined || value === null) return [];
+  const items = Array.isArray(value) ? value : String(value).split(",");
+  return [...new Set(items.map((item) => String(item || "").trim()).filter(Boolean))].sort();
 }

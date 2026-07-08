@@ -12,6 +12,7 @@ export function describeE2EReadiness({
   env = process.env,
   allowApiKey = false,
   allowProviderCommand = false,
+  allowedProviderCommands = [],
   modelOverride,
   sandboxOptions = {},
 } = {}) {
@@ -22,6 +23,7 @@ export function describeE2EReadiness({
   const registry = createProviderRegistryFromEnvironment(env, {
     allowApiKey,
     allowProviderCommand,
+    allowedProviderCommands,
     config: providerConfig,
   });
   const effectiveRegistry = withRegistryModelOverride(registry, modelOverride);
@@ -105,6 +107,7 @@ export function describeE2EReadiness({
     flags: {
       useApiKey: allowApiKey,
       useProviderCommand: allowProviderCommand,
+      providerCommandProviders: normalizeProviderCommandProviders(allowedProviderCommands),
       model: modelOverride || undefined,
     },
     providers,
@@ -113,6 +116,12 @@ export function describeE2EReadiness({
     runnableCommands: buildRunnableCommands({ requirements, availableRealProviders, modelOverride }),
     note: "This readiness report does not call real providers or execute shell sandboxes. Use the listed commands only after the required credentials, CLI auth, and sandbox policy are intentionally configured.",
   };
+}
+
+function normalizeProviderCommandProviders(value) {
+  if (value === undefined || value === null) return [];
+  const items = Array.isArray(value) ? value : String(value).split(",");
+  return [...new Set(items.map((item) => String(item || "").trim()).filter(Boolean))].sort();
 }
 
 function providerSummary(provider) {

@@ -3,6 +3,15 @@
   "version": "0.0.1",
   "description": "Provider-neutral odai CLI agent runtime.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orziz/odai.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/orziz/odai#readme",
+  "bugs": {
+    "url": "https://github.com/orziz/odai/issues"
+  },
   "type": "module",
   "main": "./src/api.mjs",
   "exports": {

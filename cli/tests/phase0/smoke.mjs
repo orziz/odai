@@ -13,6 +13,12 @@ import {
 } from "../../src/core/interactive-session.mjs";
 import { rollbackRunRecord, rollbackWorkspaceRun } from "../../src/core/rollback.mjs";
 import { loadSkillPack } from "../../src/core/skill-pack.mjs";
+import {
+  loadWorkspacePreferences,
+  mergeWorkspacePreferences,
+  preferencesPath,
+  writeWorkspacePreferences,
+} from "../../src/core/preferences.mjs";
 import { SessionState } from "../../src/core/session-state.mjs";
 import { createWorkspaceTranscript } from "../../src/core/transcript-store.mjs";
 import { EvidenceLedger } from "../../src/runtime/evidence-ledger.mjs";
@@ -174,6 +180,13 @@ assert.equal(packageManifest.name, "odai-cli");
 assert.equal(packageManifest.version, "0.0.1");
 assert.equal(packageManifest.private, undefined);
 assert.equal(packageManifest.license, "MIT");
+assert.deepEqual(packageManifest.repository, {
+  type: "git",
+  url: "git+https://github.com/orziz/odai.git",
+  directory: "cli",
+});
+assert.equal(packageManifest.homepage, "https://github.com/orziz/odai#readme");
+assert.equal(packageManifest.bugs.url, "https://github.com/orziz/odai/issues");
 assert.equal(packageManifest.bin.odai, "./bin/odai.mjs");
 assert.equal(packageManifest.main, "./src/api.mjs");
 assert.equal(packageManifest.exports["."], "./src/api.mjs");
@@ -232,6 +245,55 @@ assert.deepEqual(defaultPolicy.network, {
   allowedHosts: [],
   timeoutMs: 10000,
 });
+
+const preferencesRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-preferences-"));
+assert.deepEqual(await loadWorkspacePreferences({ workspaceRoot: preferencesRoot }), {});
+const writtenPreferences = await writeWorkspacePreferences({
+  workspaceRoot: preferencesRoot,
+  preferences: {
+    language: "zh_CN",
+    provider: "codex-cli",
+    model: "gpt-5.5",
+    reasoning: "high",
+    context: "1m",
+    auth: {
+      useApiKey: true,
+      useProviderCommand: true,
+      providerCommands: ["claude-cli", "claude-cli"],
+    },
+    ignored: "nope",
+  },
+});
+assert.deepEqual(writtenPreferences, {
+  language: "zh",
+  provider: "codex-cli",
+  model: "gpt-5.5",
+  reasoning: "high",
+  contextWindowTokens: 1000000,
+  auth: {
+    useApiKey: true,
+    useProviderCommand: true,
+    providerCommands: ["claude-cli"],
+  },
+});
+assert.deepEqual(await loadWorkspacePreferences({ workspaceRoot: preferencesRoot }), writtenPreferences);
+assert.equal(preferencesPath(preferencesRoot), path.join(preferencesRoot, ".odai", "preferences.json"));
+assert.deepEqual(
+  mergeWorkspacePreferences(writtenPreferences, {
+    model: undefined,
+    reasoning: "auto",
+    contextWindowTokens: undefined,
+  }),
+  {
+    language: "zh",
+    provider: "codex-cli",
+    auth: {
+      useApiKey: true,
+      useProviderCommand: true,
+      providerCommands: ["claude-cli"],
+    },
+  },
+);
 
 const initRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-init-"));
 const initResult = await runInit({ repoRoot: initRoot });
@@ -3034,6 +3096,19 @@ assert.deepEqual(
     executableEnv: "ODAI_CLAUDE_COMMAND",
     executableConfigured: true,
   },
+);
+const scopedProviderCommandProviders = createProviderRegistryFromEnvironment(
+  {
+    ODAI_CLAUDE_COMMAND: process.execPath,
+    ODAI_CODEX_COMMAND: process.execPath,
+  },
+  { allowedProviderCommands: ["claude-cli"] },
+);
+assert.equal(scopedProviderCommandProviders.get("claude-cli").available, true);
+assert.equal(scopedProviderCommandProviders.get("codex-cli").available, false);
+assert.equal(
+  scopedProviderCommandProviders.get("codex-cli").blockedReason,
+  "provider_command_requires_explicit_use",
 );
 const failingAuthClaudeDir = await mkdtemp(path.join(tmpdir(), "odai-cli-failing-auth-claude-"));
 const failingAuthClaudePath = path.join(failingAuthClaudeDir, "claude");
@@ -6974,6 +7049,20 @@ assert.deepEqual(
   ],
 );
 assert.deepEqual(
+  normalizeTaskArgv(["initial task"], {
+    defaultProvider: "claude-cli",
+    sessionAuth: { providerCommands: ["claude-cli"] },
+  }),
+  [
+    "initial task",
+    "--save",
+    "--agent-loop",
+    "--provider",
+    "claude-cli",
+    "--use-provider-command=claude-cli",
+  ],
+);
+assert.deepEqual(
   normalizeTaskArgv(["initial task", "--use-api-key=false"], {
     defaultProvider: "mock-main",
     sessionAuth: { useApiKey: true, useProviderCommand: true },
@@ -7286,12 +7375,12 @@ assert.deepEqual(handled.continue[0], ["--run"]);
 assert.deepEqual(handled.rollback[0], ["latest"]);
 assert.ok(scriptedOutputs.some((message) => message.includes("odai interactive session")));
 assert.ok(scriptedOutputs.some((message) => message.includes("transcript: /tmp/scripted-transcript.jsonl")));
-assert.ok(scriptedOutputs.some((message) => message.includes("Session default provider updated")));
-assert.ok(scriptedOutputs.some((message) => message.includes("Session default provider and model updated")));
-assert.ok(scriptedOutputs.some((message) => message.includes("Session default reasoning depth updated")));
-assert.ok(scriptedOutputs.some((message) => message.includes("Session default context window budget updated")));
-assert.ok(scriptedOutputs.some((message) => message.includes('"reasoning": "high"')));
-assert.ok(scriptedOutputs.some((message) => message.includes('"context": "1m"')));
+assert.ok(scriptedOutputs.some((message) => message === "provider: mock-reviewer"));
+assert.ok(scriptedOutputs.some((message) => message === "model: mock-main:mock-session-model"));
+assert.ok(scriptedOutputs.some((message) => message === "reasoning: high"));
+assert.ok(scriptedOutputs.some((message) => message === "context: 1m"));
+assert.ok(scriptedOutputs.some((message) => message.includes("reasoning: high")));
+assert.ok(scriptedOutputs.some((message) => message.includes("context: 1m")));
 assert.ok(
   scriptedOutputs.some((message) =>
     message.includes(
@@ -7475,15 +7564,126 @@ assert.deepEqual(modelOnlyTasks[1], [
   "--provider",
   "mock-main",
 ]);
-assert.ok(modelOnlyOutputs.some((message) => message.includes("Session default model updated")));
-assert.ok(modelOnlyOutputs.some((message) => message.includes("Session default model cleared")));
+assert.ok(modelOnlyOutputs.some((message) => message === "model: plain-session-model"));
+assert.ok(modelOnlyOutputs.some((message) => message === "model: auto"));
 assert.ok(modelOnlyOutputs.some((message) => message.includes("model: plain-session-model")));
 assert.ok(modelOnlyOutputs.some((message) => message.includes("output:\ninteractive model answer")));
 assert.ok(modelOnlyOutputs.some((message) => message.includes("output:\ninteractive default answer")));
 
+const modelSelectInputs = ["/models select", "/exit"];
+const modelSelectOutputs = [];
+const modelSelectModelsArgs = [];
+const modelSelectChoices = [];
+await runInteractiveSession({
+  ask: async () => modelSelectInputs.shift(),
+  write: (message) => modelSelectOutputs.push(message),
+  handleTask: async (argv) => ({ status: "ready", task: argv.join(" ") }),
+  handleProviders: async () => ({ providers: [{ name: "codex-cli" }] }),
+  handleModels: async (argv) => {
+    modelSelectModelsArgs.push(argv);
+    return {
+      status: "ready",
+      kind: "model-catalog",
+      models: [
+        {
+          label: "codex-cli:gpt-5.5",
+          provider: "codex-cli",
+          model: "gpt-5.5",
+          available: true,
+        },
+      ],
+      discovery: [],
+      providers: [],
+    };
+  },
+  selectModel: async (choices) => {
+    modelSelectChoices.push(...choices);
+    return choices[0];
+  },
+  handleContinue: async () => ({ status: "ready" }),
+});
+assert.deepEqual(modelSelectModelsArgs[0], ["select"]);
+assert.equal(modelSelectChoices[0].label, "codex-cli:gpt-5.5");
+assert.ok(modelSelectOutputs.some((message) => message === "model: codex-cli:gpt-5.5"));
+assert.ok(!modelSelectOutputs.some((message) => /"selected": "codex-cli:gpt-5\.5"/.test(message)));
+
+const preferenceSessionInputs = [
+  "preference task",
+  "/model auto",
+  "/provider grok-cli",
+  "/reasoning auto",
+  "/context auto",
+  "/language en",
+  "/auth api-key",
+  "/exit",
+];
+const preferenceSessionTasks = [];
+const preferenceSessionOutputs = [];
+const preferencePatches = [];
+const preferenceLanguageState = { value: "zh" };
+await runInteractiveSession({
+  ask: async () => preferenceSessionInputs.shift(),
+  write: (message) => preferenceSessionOutputs.push(message),
+  languageState: preferenceLanguageState,
+  initialPreferences: {
+    language: "zh",
+    provider: "codex-cli",
+    model: "gpt-5.5",
+    reasoning: "high",
+    contextWindowTokens: 1000000,
+    auth: {
+      useApiKey: false,
+      useProviderCommand: true,
+    },
+  },
+  savePreferences: async (patch) => preferencePatches.push(patch),
+  handleTask: async (argv) => {
+    preferenceSessionTasks.push(argv);
+    return {
+      status: "ready",
+      task: argv.join(" "),
+      agentLoop: { agent: { provider: "codex-cli" }, turns: [] },
+    };
+  },
+  handleProviders: async () => ({ providers: [{ name: "codex-cli" }, { name: "grok-cli" }] }),
+  handleContinue: async () => ({ status: "ready" }),
+});
+assert.deepEqual(preferenceSessionTasks[0], [
+  "preference",
+  "task",
+  "--save",
+  "--agent-loop",
+  "--provider",
+  "codex-cli",
+  "--model",
+  "gpt-5.5",
+  "--reasoning",
+  "high",
+  "--context",
+  "1000000",
+  "--use-provider-command",
+]);
+assert.ok(preferenceSessionOutputs.some((message) => message.includes("odai 交互会话")));
+assert.ok(preferenceSessionOutputs.some((message) => message === "model: auto"));
+assert.ok(preferenceSessionOutputs.some((message) => message === "provider: grok-cli"));
+assert.ok(preferenceSessionOutputs.some((message) => message === "reasoning: auto"));
+assert.ok(preferenceSessionOutputs.some((message) => message === "context: auto"));
+assert.ok(preferenceSessionOutputs.some((message) => message === "Session CLI language updated."));
+assert.ok(preferenceSessionOutputs.some((message) => message === "auth: api-key, provider-command"));
+assert.ok(preferencePatches.some((patch) => patch.model === undefined && patch.provider === "codex-cli"));
+assert.ok(preferencePatches.some((patch) => patch.provider === "grok-cli"));
+assert.ok(preferencePatches.some((patch) => patch.reasoning === undefined));
+assert.ok(preferencePatches.some((patch) => patch.contextWindowTokens === undefined));
+assert.ok(preferencePatches.some((patch) => patch.language === "en"));
+assert.ok(
+  preferencePatches.some(
+    (patch) => patch.auth?.useApiKey === true && patch.auth?.useProviderCommand === true,
+  ),
+);
+
 const authInputs = [
   "/auth",
-  "/auth provider-command",
+  "/auth claude-cli",
   "/models",
   "auth task",
   "/auth clear",
@@ -7524,7 +7724,7 @@ await runInteractiveSession({
   },
   handleContinue: async () => ({ status: "ready" }),
 });
-assert.deepEqual(authModelsArgs[0], ["--use-provider-command"]);
+assert.deepEqual(authModelsArgs[0], ["--use-provider-command=claude-cli"]);
 assert.deepEqual(authTasks[0], [
   "auth",
   "task",
@@ -7532,7 +7732,7 @@ assert.deepEqual(authTasks[0], [
   "--agent-loop",
   "--provider",
   "auto",
-  "--use-provider-command",
+  "--use-provider-command=claude-cli",
 ]);
 assert.deepEqual(authTasks[1], [
   "cleared",
@@ -7543,7 +7743,9 @@ assert.deepEqual(authTasks[1], [
   "--provider",
   "auto",
 ]);
-assert.ok(authOutputs.some((message) => message.includes("Session auth updated")));
+assert.ok(authOutputs.some((message) => message === "auth: claude-cli"));
+assert.ok(authOutputs.some((message) => message === "auth: none"));
+assert.ok(!authOutputs.some((message) => /"useProviderCommand": true/.test(message)));
 assert.ok(authOutputs.some((message) => message.includes("models: 1/1 available")));
 assert.ok(authOutputs.some((message) => message.includes("blocked-sub: fetch failed: ECONNRESET")));
 
@@ -7566,6 +7768,8 @@ assert.ok(languageOutputs.some((message) => message.includes("命令: /providers
 assert.ok(languageOutputs.some((message) => message.includes("Session CLI language updated")));
 assert.ok(languageOutputs.some((message) => message.includes("Commands: /providers")));
 assert.ok(languageOutputs.some((message) => message.includes("Usage: /language <zh|en>")));
+assert.ok(!languageOutputs.some((message) => /"language": "en"/.test(message)));
+assert.ok(!languageOutputs.some((message) => message.trim().startsWith("{")));
 assert.ok(
   languageTranscript.some(
     (event) => event.type === "command-result" && event.command === "language" && event.result?.language === "en",

@@ -7,9 +7,11 @@ skills-lock.json
 .odai/agents.json
 .odai/policy.json
 .odai/providers.json
+.odai/preferences.json
 .odai/secrets.env
 !.odai/*.example.json
 .odai/runs
 .odai/sessions
+cli/.odai/
 
 plans/odai-*-runs

@@ -103,7 +103,7 @@ export function createProviderRegistryFromEnvironment(env = process.env, options
     createClaudeCliProvider({
       command: facts.claudeCliCommand,
       installed: facts.claudeCli,
-      allowProviderCommand: options.allowProviderCommand,
+      allowProviderCommand: providerCommandAllowed(options, "claude-cli"),
       model: env.ODAI_CLAUDE_MODEL,
       executableEnv: facts.claudeCliExecutableEnv,
       executableConfigured: facts.claudeCliExecutableConfigured,
@@ -114,7 +114,7 @@ export function createProviderRegistryFromEnvironment(env = process.env, options
     createCodexCliProvider({
       command: facts.codexCliCommand,
       installed: facts.codexCli,
-      allowProviderCommand: options.allowProviderCommand,
+      allowProviderCommand: providerCommandAllowed(options, "codex-cli"),
       model: env.ODAI_CODEX_MODEL,
       executableEnv: facts.codexCliExecutableEnv,
       executableConfigured: facts.codexCliExecutableConfigured,
@@ -124,7 +124,7 @@ export function createProviderRegistryFromEnvironment(env = process.env, options
     createGrokCliProvider({
       command: facts.grokCliCommand,
       installed: facts.grokCli,
-      allowProviderCommand: options.allowProviderCommand,
+      allowProviderCommand: providerCommandAllowed(options, "grok-cli"),
       model: env.ODAI_GROK_MODEL,
       executableEnv: facts.grokCliExecutableEnv,
       executableConfigured: facts.grokCliExecutableConfigured,
@@ -133,7 +133,7 @@ export function createProviderRegistryFromEnvironment(env = process.env, options
   registry.register(
     createClaudeAgentSdkProvider({
       installed: facts.claudeAgentSdk,
-      allowProviderCommand: options.allowProviderCommand,
+      allowProviderCommand: providerCommandAllowed(options, "claude-agent-sdk"),
       pathToClaudeCodeExecutable: env.CLAUDE_CODE_EXECUTABLE,
       model: env.ODAI_CLAUDE_MODEL,
     }),
@@ -563,7 +563,7 @@ function createProviderFromConfig(providerConfig, env, options) {
       inputMode: providerConfig.inputMode,
       capabilities: providerConfig.capabilities,
       installed: commandExists(providerConfig.command),
-      allowProviderCommand: options.allowProviderCommand,
+      allowProviderCommand: providerCommandAllowed(options, providerConfig.name),
       runCommand: options.runCommand,
     });
   }
@@ -579,6 +579,29 @@ function createProviderFromConfig(providerConfig, env, options) {
   }
 
   throw new Error(`Unsupported provider config type: ${providerConfig.type}`);
+}
+
+function providerCommandAllowed(options = {}, providerName = "") {
+  if (options.allowProviderCommand) return true;
+  if (typeof options.allowProviderCommandFor === "function") {
+    return Boolean(options.allowProviderCommandFor(providerName));
+  }
+  return normalizeProviderCommandAllowList(
+    options.allowedProviderCommands ?? options.providerCommandProviders,
+  ).has(providerName);
+}
+
+function normalizeProviderCommandAllowList(value) {
+  if (value instanceof Set) {
+    return new Set([...value].map(normalizeNonEmptyString).filter(Boolean));
+  }
+  if (Array.isArray(value)) {
+    return new Set(value.map(normalizeNonEmptyString).filter(Boolean));
+  }
+  if (typeof value === "string") {
+    return new Set(value.split(",").map(normalizeNonEmptyString).filter(Boolean));
+  }
+  return new Set();
 }
 
 function resolveConfiguredApiKey(providerConfig = {}, env = process.env) {

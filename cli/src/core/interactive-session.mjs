@@ -47,6 +47,8 @@ export async function runInteractiveSession({
   readInputLoop = true,
   language = detectLanguage(),
   languageState,
+  initialPreferences = {},
+  savePreferences,
 } = {}) {
   if (!ask) {
     throw new Error("Interactive session requires an ask function.");
@@ -90,13 +92,14 @@ export async function runInteractiveSession({
     });
   }
 
-  let defaultProvider = "auto";
-  let defaultModel;
-  let defaultReasoning;
-  let defaultContextWindowTokens;
+  let defaultProvider = initialPreferences.provider || "auto";
+  let defaultModel = initialPreferences.model;
+  let defaultReasoning = initialPreferences.reasoning;
+  let defaultContextWindowTokens = initialPreferences.contextWindowTokens;
   let sessionAuth = {
-    useApiKey: false,
-    useProviderCommand: false,
+    useApiKey: Boolean(initialPreferences.auth?.useApiKey),
+    useProviderCommand: Boolean(initialPreferences.auth?.useProviderCommand),
+    providerCommands: normalizeProviderCommandList(initialPreferences.auth?.providerCommands),
   };
   let lastTaskArgv = Array.isArray(resumeContext?.lastTaskArgv) && resumeContext.lastTaskArgv.length > 0
     ? normalizeTaskArgv(resumeContext.lastTaskArgv, {
@@ -162,7 +165,10 @@ export async function runInteractiveSession({
         current: activeLanguage(),
         setLanguage: setActiveLanguage,
       });
-      write(formatJson(result));
+      if (result.status === "ready") {
+        await savePreferences?.({ language: result.language });
+      }
+      write(formatInteractiveStatus(result));
       await record({ type: "command-result", command: "language", argv, result });
       continue;
     }
@@ -197,9 +203,11 @@ export async function runInteractiveSession({
         sessionAuth = {
           useApiKey: Boolean(result.session?.useApiKey),
           useProviderCommand: Boolean(result.session?.useProviderCommand),
+          providerCommands: normalizeProviderCommandList(result.session?.providerCommands),
         };
+        await savePreferences?.({ auth: sessionAuth });
       }
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "auth", argv }));
       await record({ type: "command-result", command: "auth", argv, result });
       continue;
     }
@@ -229,7 +237,7 @@ export async function runInteractiveSession({
           defaultProvider = selection.provider;
           defaultModel = selection.model;
         }
-        write(formatJson(selection));
+        write(formatSessionCommandResult(selection, { command: "model", argv }));
         await record({ type: "command-result", command: "model", argv, result: selection });
       } else {
         write(formatModelsResult(result, { json: argv.includes("--json") }));
@@ -248,8 +256,9 @@ export async function runInteractiveSession({
       });
       if (result.status === "ready" && result.provider) {
         defaultProvider = result.provider;
+        await savePreferences?.({ provider: defaultProvider });
       }
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "provider", argv }));
       await record({ type: "command-result", command: "provider", argv, result });
       continue;
     }
@@ -279,8 +288,12 @@ export async function runInteractiveSession({
       }
       if (result.status === "ready") {
         defaultModel = result.model || undefined;
+        await savePreferences?.({
+          provider: defaultProvider,
+          model: defaultModel,
+        });
       }
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "model", argv }));
       await record({ type: "command-result", command: "model", argv, result });
       continue;
     }
@@ -290,8 +303,9 @@ export async function runInteractiveSession({
       const result = updateDefaultReasoning({ argv, current: defaultReasoning });
       if (result.status === "ready") {
         defaultReasoning = result.reasoning || undefined;
+        await savePreferences?.({ reasoning: defaultReasoning });
       }
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "reasoning", argv }));
       await record({ type: "command-result", command: "reasoning", argv, result });
       continue;
     }
@@ -317,8 +331,9 @@ export async function runInteractiveSession({
       const result = updateDefaultContextWindow({ argv, current: defaultContextWindowTokens });
       if (result.status === "ready") {
         defaultContextWindowTokens = result.contextWindowTokens;
+        await savePreferences?.({ contextWindowTokens: defaultContextWindowTokens });
       }
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "context", argv }));
       await record({ type: "command-result", command: "context", argv, result });
       continue;
     }
@@ -331,7 +346,7 @@ export async function runInteractiveSession({
         defaultContextWindowTokens,
         sessionAuth,
       });
-      write(formatJson(result));
+      write(formatSessionCommandResult(result, { command: "settings" }));
       await record({ type: "command-result", command: "settings", result });
       continue;
     }
@@ -697,6 +712,13 @@ function appendSessionAuthArgv(argv = [], sessionAuth = {}) {
   }
   if (sessionAuth?.useProviderCommand && !hasOption(result, "--use-provider-command")) {
     result.push("--use-provider-command");
+  } else if (!sessionAuth?.useProviderCommand) {
+    for (const providerName of normalizeProviderCommandList(sessionAuth?.providerCommands)) {
+      const value = `--use-provider-command=${providerName}`;
+      if (!result.includes(value)) {
+        result.push(value);
+      }
+    }
   }
   return result;
 }
@@ -734,6 +756,67 @@ function updateSessionLanguage({ argv = [], current = "en", setLanguage } = {}) 
   };
 }
 
+function formatInteractiveStatus(result = {}) {
+  if (typeof result?.note === "string" && result.note) return result.note;
+  if (typeof result?.reason === "string" && result.reason) return result.reason;
+  if (typeof result?.error === "string" && result.error) return result.error;
+  return formatJson(result);
+}
+
+function formatSessionCommandResult(result = {}, { command, argv = [] } = {}) {
+  if (result?.status === "blocked" || result?.ok === false) {
+    return formatInteractiveStatus(result);
+  }
+  if (argv.length === 0 && typeof result?.note === "string" && result.note.startsWith("Use /")) {
+    return result.note;
+  }
+  if (command === "provider") {
+    return `provider: ${result.provider || "auto"}`;
+  }
+  if (command === "model") {
+    return `model: ${formatModelSelectionLabel(result)}`;
+  }
+  if (command === "reasoning") {
+    return `reasoning: ${result.display || result.reasoning || "auto"}`;
+  }
+  if (command === "context") {
+    return `context: ${result.display || formatContextWindowTokens(result.contextWindowTokens)}`;
+  }
+  if (command === "auth") {
+    return `auth: ${formatSessionAuth(result.session)}`;
+  }
+  if (command === "settings") {
+    return formatSessionSettings(result);
+  }
+  return formatInteractiveStatus(result);
+}
+
+function formatModelSelectionLabel(result = {}) {
+  if (result.selected) return result.selected;
+  if (!result.model) return "auto";
+  return result.model;
+}
+
+function formatSessionAuth(session = {}) {
+  const enabled = [];
+  if (session?.useApiKey) enabled.push("api-key");
+  if (session?.useProviderCommand) enabled.push("provider-command");
+  for (const providerName of normalizeProviderCommandList(session?.providerCommands)) {
+    enabled.push(providerName);
+  }
+  return enabled.length > 0 ? enabled.join(", ") : "none";
+}
+
+function formatSessionSettings(result = {}) {
+  return [
+    `provider: ${result.provider || "auto"}`,
+    `model: ${result.model || "auto"}`,
+    `reasoning: ${result.reasoning || "auto"}`,
+    `context: ${result.context || "auto"}`,
+    `auth: ${formatSessionAuth(result.auth)}`,
+  ].join("\n");
+}
+
 function updateSessionAuth({ argv = [], current = {} } = {}) {
   if (argv.length === 0) {
     return {
@@ -741,15 +824,17 @@ function updateSessionAuth({ argv = [], current = {} } = {}) {
       session: {
         useApiKey: Boolean(current.useApiKey),
         useProviderCommand: Boolean(current.useProviderCommand),
+        providerCommands: normalizeProviderCommandList(current.providerCommands),
       },
       note:
-        "Use /auth api-key, /auth provider-command, /auth all, or /auth clear. These confirmations are in-memory for this interactive session only.",
+        "Use /auth api-key, /auth claude-cli, /auth provider-command, /auth all, or /auth clear. Confirmations are saved in .odai/preferences.json.",
     };
   }
 
   const next = {
     useApiKey: Boolean(current.useApiKey),
     useProviderCommand: Boolean(current.useProviderCommand),
+    providerCommands: normalizeProviderCommandList(current.providerCommands),
   };
   for (const raw of argv) {
     const value = String(raw).trim().toLowerCase();
@@ -757,26 +842,46 @@ function updateSessionAuth({ argv = [], current = {} } = {}) {
       next.useApiKey = true;
     } else if (["provider-command", "command", "cli", "--use-provider-command"].includes(value)) {
       next.useProviderCommand = true;
+      next.providerCommands = [];
+    } else if (["claude-cli", "claude"].includes(value)) {
+      next.providerCommands = addUniqueProviderCommand(next.providerCommands, "claude-cli");
+    } else if (["claude-agent-sdk", "claude-sdk"].includes(value)) {
+      next.providerCommands = addUniqueProviderCommand(next.providerCommands, "claude-agent-sdk");
     } else if (value === "all") {
       next.useApiKey = true;
       next.useProviderCommand = true;
+      next.providerCommands = [];
     } else if (["clear", "none", "off", "reset"].includes(value)) {
       next.useApiKey = false;
       next.useProviderCommand = false;
+      next.providerCommands = [];
     } else {
       return {
         status: "blocked",
         session: next,
-        reason: "Usage: /auth [api-key|provider-command|all|clear]",
+        reason: "Usage: /auth [api-key|claude-cli|claude-agent-sdk|provider-command|all|clear]",
       };
     }
   }
   return {
     status: "ready",
     session: next,
-    note:
-      "Session auth updated. It affects later tasks and provider diagnostics in this REPL, but is not written to resume argv, transcripts, or workspace config.",
+    note: "Auth updated. It affects later tasks and provider diagnostics and is saved in .odai/preferences.json.",
   };
+}
+
+function normalizeProviderCommandList(value) {
+  if (value === undefined || value === null) return [];
+  const items = Array.isArray(value) ? value : String(value).split(",");
+  return [...new Set(
+    items
+      .map((item) => String(item || "").trim())
+      .filter(Boolean),
+  )].sort();
+}
+
+function addUniqueProviderCommand(list = [], providerName) {
+  return normalizeProviderCommandList([...normalizeProviderCommandList(list), providerName]);
 }
 
 async function updateDefaultProvider({ argv = [], current = "auto", handleProviders, commandName = "provider" } = {}) {
@@ -887,6 +992,7 @@ async function updateDefaultModel({ argv = [], currentProvider = "auto", current
       status: "ready",
       provider: providerCandidate,
       model,
+      selected: `${providerCandidate}:${model}`,
       note:
         "Session default provider and model updated. API key, external command, shell, and network confirmations still must be passed per task.",
     };
