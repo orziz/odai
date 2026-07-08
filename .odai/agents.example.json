@@ -1,0 +1,43 @@
+{
+  "usage": "Copy selected profiles into .odai/agents.json to tune subagent routing. Subagents cannot directly write files; candidate patches still require main-flow adoption.",
+  "agents": {
+    "deep_reviewer": {
+      "purpose": "long_context_code_review",
+      "tools": "read_only",
+      "providerRequirements": [
+        "code",
+        "long_context"
+      ],
+      "allowedOutputs": [
+        "findings",
+        "risks",
+        "missing_cases",
+        "questions"
+      ]
+    },
+    "cheap_challenger": {
+      "purpose": "low_cost_independent_challenge",
+      "tools": "none",
+      "providerRequirements": [
+        "reasoning"
+      ],
+      "allowedOutputs": [
+        "counterexamples",
+        "alternative_paths",
+        "assumptions"
+      ]
+    },
+    "patch_candidate": {
+      "purpose": "candidate_patch_only",
+      "tools": "virtual_patch_only",
+      "providerRequirements": [
+        "code"
+      ],
+      "allowedOutputs": [
+        "unified_diff",
+        "rationale",
+        "test_plan"
+      ]
+    }
+  }
+}

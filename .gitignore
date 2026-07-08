@@ -4,5 +4,12 @@
 skills-lock.json
 
 .claude/settings*.json
+.odai/agents.json
+.odai/policy.json
+.odai/providers.json
+.odai/secrets.env
+!.odai/*.example.json
+.odai/runs
+.odai/sessions
 
 plans/odai-*-runs

@@ -1,0 +1,49 @@
+{
+  "name": "odai-cli",
+  "version": "0.0.1",
+  "description": "Provider-neutral odai CLI agent runtime.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/api.mjs",
+  "exports": {
+    ".": "./src/api.mjs",
+    "./cli": "./src/index.mjs",
+    "./interactive": "./src/core/interactive-session.mjs",
+    "./i18n": "./src/runtime/i18n.mjs",
+    "./model-options": "./src/runtime/model-options.mjs",
+    "./update-check": "./src/runtime/update-check.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "odai": "./bin/odai.mjs"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "find . -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "phase0": "node ./bin/odai.mjs phase0",
+    "providers": "node ./bin/odai.mjs providers",
+    "pack:dry-run": "npm pack --dry-run",
+    "smoke": "node ./tests/phase0/smoke.mjs",
+    "test": "node ./tests/phase0/smoke.mjs"
+  },
+  "keywords": [
+    "agent",
+    "cli",
+    "llm",
+    "odai",
+    "orchestration"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

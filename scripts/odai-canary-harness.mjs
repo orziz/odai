@@ -235,6 +235,7 @@ function replacePlaceholders(testCase) {
     },
     9: {
       "⟨某文件⟩": "src/app.js",
+      "⟨引用文件⟩": "src/profile-card.js",
       "⟨A⟩": "_calc_title",
       "⟨B⟩": "_format_title",
     },
@@ -305,6 +306,7 @@ function copySkill(root, workdir) {
 }
 
 function createFixture(root, workdir, testCase) {
+  writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
   writeText(path.join(workdir, "README.md"), `# Odai Canary Fixture
 
 Tiny project used by the odai canary harness.
@@ -340,6 +342,15 @@ export class EventBus {
   off(fn) {
     this.listeners = this.listeners.filter((item) => item !== fn);
   }
+}
+`);
+  writeText(path.join(workdir, "src", "profile-card.js"), `import { _calc_title } from "./app.js";
+
+export function renderProfileCard(name) {
+  return {
+    title: _calc_title(name),
+    kind: "profile-card",
+  };
 }
 `);
   writeText(path.join(workdir, "tests", "test_app.mjs"), `import assert from "node:assert/strict";

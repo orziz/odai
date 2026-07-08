@@ -1,0 +1,63 @@
+{
+  "usage": "Copy one example object to .odai/policy.json only after confirming the sandbox and command allowlist are appropriate for this workspace.",
+  "checks": {
+    "preflight": "odai sandbox",
+    "smoke": "odai doctor --sandbox --smoke --allow-shell --save"
+  },
+  "examples": {
+    "docker": {
+      "shell": {
+        "allowExecution": true,
+        "allowedCommands": [
+          "node"
+        ],
+        "sandbox": {
+          "mode": "docker",
+          "image": "node:22-alpine",
+          "network": "none",
+          "readOnlyRoot": true,
+          "workdir": "/workspace"
+        }
+      },
+      "network": {
+        "allowRequests": false,
+        "allowedHosts": [],
+        "timeoutMs": 10000
+      }
+    },
+    "devcontainer": {
+      "shell": {
+        "allowExecution": true,
+        "allowedCommands": [
+          "node"
+        ],
+        "sandbox": {
+          "mode": "devcontainer",
+          "command": "devcontainer",
+          "workspaceFolder": ""
+        }
+      },
+      "network": {
+        "allowRequests": false,
+        "allowedHosts": [],
+        "timeoutMs": 10000
+      }
+    },
+    "macosSandboxExec": {
+      "shell": {
+        "allowExecution": true,
+        "allowedCommands": [
+          "node"
+        ],
+        "sandbox": {
+          "mode": "macos-sandbox-exec"
+        }
+      },
+      "network": {
+        "allowRequests": false,
+        "allowedHosts": [],
+        "timeoutMs": 10000
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{"ts":"2026-07-08T09:49:59.616Z","sessionId":"interactive-1783504199609","type":"session-start","initialTaskArgv":[]}
+{"ts":"2026-07-08T09:50:08.077Z","sessionId":"interactive-1783504199609","type":"input","line":"/lang"}
+{"ts":"2026-07-08T09:50:08.077Z","sessionId":"interactive-1783504199609","type":"command-result","command":"language","argv":[],"result":{"status":"ready","note":"Current CLI language: English. Use /language zh or /language en.","language":"en"}}
+{"ts":"2026-07-08T09:50:13.761Z","sessionId":"interactive-1783504199609","type":"input","line":"/language zh"}
+{"ts":"2026-07-08T09:50:13.764Z","sessionId":"interactive-1783504199609","type":"command-result","command":"language","argv":["zh"],"result":{"status":"ready","note":"当前会话的 CLI 语言已更新。","language":"zh"}}
+{"ts":"2026-07-08T09:50:16.340Z","sessionId":"interactive-1783504199609","type":"input","line":"exit"}
+{"ts":"2026-07-08T09:50:16.342Z","sessionId":"interactive-1783504199609","type":"session-end","reason":"user-exit"}
