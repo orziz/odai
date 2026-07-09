@@ -144,7 +144,6 @@ const {
   checkpointDir,
   rollbackWorkspaceFile,
   rollbackNewFile,
-  skillPack,
 } = await createBaseFixtures();
 
 const session = new SessionState({ id: "smoke" });
@@ -2769,12 +2768,13 @@ assert.ok(!JSON.stringify(cliAdoptRun).includes("patch-adoption-read-secret"));
 assert.ok(cliAdoptRun.evidence.reads.includes(cliAdoptFile));
 assert.ok(cliAdoptRun.evidence.writes.some((write) => write.path === cliAdoptFile));
 assert.equal(cliAdoptRun.usage.calls.length, 1);
-assert.equal(cliAdoptRun.skill.entrySha256, skillPack.entrySha256);
-assert.equal(cliAdoptRun.skill.supportFileCount, skillPack.supportFiles.length);
 assert.equal(cliAdoptRun.usage.calls[0].adopted, true);
 assert.ok(cliAdoptRun.evidence.events.some((event) => event.type === "provider-call-adopted"));
 const cliAdoptRecordJson = await readFile(cliAdoptRun.recordPath, "utf8");
 assert.ok(!cliAdoptRecordJson.includes("patch-adoption-read-secret"));
+const currentSkillPack = await loadSkillPack({ repoRoot });
+assert.equal(cliAdoptRun.skill.entrySha256, currentSkillPack.entrySha256);
+assert.equal(cliAdoptRun.skill.supportFileCount, currentSkillPack.supportFiles.length);
 
 const agentLoopRun = await runMockTask({
   repoRoot,

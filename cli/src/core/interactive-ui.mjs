@@ -4,8 +4,8 @@ import { redactString } from "../runtime/redaction.mjs";
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
 } from "../config/provider-config.mjs";
 import { discoverSkillsSync } from "./skill-discovery.mjs";
 
@@ -126,6 +126,7 @@ export function createInteractivePromptAsk({
           entries,
           selected,
           columns: output.columns || 100,
+          terminalRows: output.rows || 24,
           language: activeLanguage,
         });
         replacePromptRender({ output, rows, renderedLines });
@@ -213,24 +214,62 @@ function currentPromptLanguage({ env = process.env, language, languageState } = 
   return languageState?.value || language || detectLanguage({ env });
 }
 
-function promptRows({ prompt, line, entries = [], selected = 0, columns = 100, language = "en" } = {}) {
-  const maxSuggestions = 6;
-  const visible = entries.slice(0, maxSuggestions);
+function promptRows({
+  prompt,
+  line,
+  entries = [],
+  selected = 0,
+  columns = 100,
+  terminalRows = 24,
+  language = "en",
+} = {}) {
+  const maxSuggestions = promptSuggestionLimit({ terminalRows });
+  const { visible, start, total } = visibleWindow(entries, {
+    selected,
+    maxVisible: maxSuggestions,
+  });
   const rows = [];
   if (visible.length > 0) {
     rows.push(fitPromptRow("─".repeat(Math.max(20, Math.min(columns - 1, 80))), columns));
     const valueWidth = Math.min(28, Math.max(...visible.map((entry) => entry.value.length), 8));
     for (let i = 0; i < visible.length; i += 1) {
       const entry = visible[i];
-      const marker = i === selected ? "›" : " ";
+      const entryIndex = start + i;
+      const marker = entryIndex === selected ? "›" : " ";
       const value = entry.value.padEnd(valueWidth);
       const row = `${marker} ${value} ${entry.description || ""}`.trimEnd();
-      rows.push(i === selected ? `\x1b[7m${fitPromptRow(row, columns)}\x1b[0m` : fitPromptRow(row, columns));
+      rows.push(entryIndex === selected ? `\x1b[7m${fitPromptRow(row, columns)}\x1b[0m` : fitPromptRow(row, columns));
+    }
+    if (total > visible.length) {
+      rows.push(fitPromptRow(`  ${start + 1}-${start + visible.length}/${total}`, columns));
     }
   }
   rows.push(fitPromptRow(t(language, "prompt.footer"), columns));
   rows.push(fitPromptRow(`${prompt}${line}`, columns));
   return rows;
+}
+
+function promptSuggestionLimit({ terminalRows = 24 } = {}) {
+  const rows = Number(terminalRows || 24);
+  if (!Number.isFinite(rows) || rows <= 0) return 4;
+  // Keep room for the prompt, the key-hint footer, and nearby command output.
+  return Math.max(1, Math.min(6, rows - 6));
+}
+
+function visibleWindow(items = [], { selected = 0, maxVisible = 6 } = {}) {
+  const total = items.length;
+  if (total === 0) {
+    return { visible: [], start: 0, total: 0 };
+  }
+  const safeMax = Math.max(1, Math.min(total, Number(maxVisible) || 1));
+  const safeSelected = Math.max(0, Math.min(Number(selected) || 0, total - 1));
+  const half = Math.floor(safeMax / 2);
+  const start = Math.max(0, Math.min(safeSelected - half, total - safeMax));
+  return {
+    visible: items.slice(start, start + safeMax),
+    start,
+    total,
+  };
 }
 
 function replacePromptRender({ output, rows = [], renderedLines = 0 } = {}) {
@@ -352,15 +391,31 @@ function interactiveCompletionItems(
 
   if (command === "/auth") {
     return [
+      completionItem("select", t(language, "completion.auth.select")),
       completionItem("api-key", t(language, "completion.auth.apiKey")),
       completionItem("claude-cli", t(language, "completion.auth.claudeCli")),
+      completionItem("claude-agent-sdk", t(language, "completion.auth.claudeAgentSdk")),
       completionItem("provider-command", t(language, "completion.auth.providerCommand")),
+      completionItem("shell", t(language, "completion.auth.shell")),
+      completionItem("network", t(language, "completion.auth.network")),
       completionItem("all", t(language, "completion.auth.all")),
       completionItem("clear", t(language, "completion.auth.clear")),
     ];
   }
   if (command === "/provider") {
+    if (tokens[1] === "add" || tokens[1] === "set") {
+      return providerAddCompletionItems(language);
+    }
+    if (["remove", "delete", "rm", "clear"].includes(tokens[1])) {
+      return providerTargetCompletionItems(catalog, language);
+    }
     return [
+      completionItem("add", t(language, "completion.provider.add")),
+      completionItem("set", t(language, "completion.provider.set")),
+      completionItem("remove", t(language, "completion.provider.remove")),
+      completionItem("clear", t(language, "completion.provider.clear")),
+      completionItem("path", t(language, "completion.provider.path")),
+      completionItem("select", t(language, "completion.provider.select")),
       completionItem("auto", t(language, "completion.provider.auto")),
       ...catalog.providers.map((provider) => completionItem(provider, t(language, "completion.provider"))),
     ];
@@ -396,7 +451,19 @@ function interactiveCompletionItems(
     ];
   }
   if (command === "/providers") {
+    if (tokens[1] === "add" || tokens[1] === "set") {
+      return providerAddCompletionItems(language);
+    }
+    if (["remove", "delete", "rm", "clear"].includes(tokens[1])) {
+      return providerTargetCompletionItems(catalog, language);
+    }
     return [
+      completionItem("add", t(language, "completion.provider.add")),
+      completionItem("set", t(language, "completion.provider.set")),
+      completionItem("remove", t(language, "completion.provider.remove")),
+      completionItem("clear", t(language, "completion.provider.clear")),
+      completionItem("path", t(language, "completion.provider.path")),
+      completionItem("--json", t(language, "completion.providers.json")),
       completionItem("--use-api-key", t(language, "completion.providers.useApiKey")),
       completionItem("--use-provider-command", t(language, "completion.providers.useProviderCommand")),
     ];
@@ -455,10 +522,32 @@ function interactiveCompletionItems(
   return [];
 }
 
+function providerAddCompletionItems(language = "en") {
+  return [
+    completionItem("openai-compatible", t(language, "completion.provider.openaiCompatible")),
+    completionItem("--name", t(language, "completion.provider.name")),
+    completionItem("--base-url", t(language, "completion.provider.baseUrl")),
+    completionItem("--model", t(language, "completion.provider.model")),
+    completionItem("--models", t(language, "completion.provider.models")),
+    completionItem("--api-key-env", t(language, "completion.provider.apiKeyEnv")),
+    completionItem("--workspace", t(language, "completion.provider.workspace")),
+    completionItem("--replace", t(language, "completion.provider.replace")),
+  ];
+}
+
+function providerTargetCompletionItems(catalog = {}, language = "en") {
+  const providers = catalog.configuredProviders?.length ? catalog.configuredProviders : catalog.providers || [];
+  return [
+    ...providers.map((provider) => completionItem(provider, t(language, "completion.provider"))),
+    completionItem("--name", t(language, "completion.provider.name")),
+    completionItem("--workspace", t(language, "completion.provider.workspace")),
+  ];
+}
+
 function safeCompletionCatalog({ repoRoot: root = defaultRepoRoot, env = process.env } = {}) {
   try {
     const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: root, env });
-    const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+    const providerConfig = loadProviderConfig({ workspaceRoot: root, env });
     const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
       allowApiKey: false,
       allowProviderCommand: false,
@@ -476,13 +565,18 @@ function safeCompletionCatalog({ repoRoot: root = defaultRepoRoot, env = process
         modelLabels.push(`${provider.name}:${redactString(model)}`);
       }
     }
+    const configuredProviders = (providerConfig.providers || [])
+      .map((provider) => provider?.name)
+      .filter(Boolean);
     return {
       providers: (providerReport.providers || []).map((provider) => provider.name).filter(Boolean),
+      configuredProviders: [...new Set(configuredProviders)],
       models: [...new Set(modelLabels)].filter(Boolean),
     };
   } catch {
     return {
       providers: [],
+      configuredProviders: [],
       models: [],
     };
   }
@@ -490,20 +584,86 @@ function safeCompletionCatalog({ repoRoot: root = defaultRepoRoot, env = process
 
 export async function selectModelChoice({ input, output, rl, choices = [], prompt = "Select model" } = {}) {
   const models = choices.filter((choice) => choice?.label);
-  if (models.length === 0) {
-    return undefined;
+  return selectTtyChoice({
+    input,
+    output,
+    rl,
+    choices: models,
+    prompt,
+    emptyValue: undefined,
+    formatChoice: (choice) => ({
+      label: choice.label,
+      status: choice.available ? "ready" : choice.blockedReason || "blocked",
+      current: choice.current,
+    }),
+  });
+}
+
+export async function selectProviderChoice({ input, output, rl, choices = [], prompt = "Select provider" } = {}) {
+  return selectTtyChoice({
+    input,
+    output,
+    rl,
+    choices: choices.filter((choice) => choice?.label || choice?.value),
+    prompt,
+    emptyValue: undefined,
+    formatChoice: (choice) => ({
+      label: choice.label || choice.value,
+      status: choice.status || (choice.available === false ? choice.blockedReason || "blocked" : "ready"),
+      detail: choice.description || choice.kind || "",
+      current: choice.current,
+    }),
+  });
+}
+
+export async function selectAuthChoice({ input, output, rl, choices = [], prompt = "Select auth" } = {}) {
+  return selectTtyChoice({
+    input,
+    output,
+    rl,
+    choices: choices.filter((choice) => choice?.label || choice?.value),
+    prompt,
+    emptyValue: undefined,
+    formatChoice: (choice) => ({
+      label: choice.label || choice.value,
+      status: choice.status || "",
+      detail: choice.description || "",
+      current: choice.current,
+    }),
+  });
+}
+
+async function selectTtyChoice({
+  input,
+  output,
+  rl,
+  choices = [],
+  prompt = "Select",
+  emptyValue,
+  formatChoice = (choice) => ({ label: choice?.label || String(choice || "") }),
+} = {}) {
+  const items = choices;
+  if (items.length === 0) {
+    return emptyValue;
   }
   if (!input?.isTTY || !output?.isTTY || typeof input.setRawMode !== "function") {
-    return undefined;
+    return emptyValue;
   }
 
   return await new Promise((resolve) => {
-    let index = Math.max(0, models.findIndex((choice) => choice.current));
+    let index = Math.max(0, items.findIndex((choice) => choice.current));
     let renderedLines = 0;
     const wasRaw = input.isRaw;
-    const maxVisible = 12;
+    const maxVisible = modelChoiceLimit({ terminalRows: output.rows || 24 });
+
+    const clearRender = () => {
+      if (renderedLines <= 0) return;
+      output.write(`\x1b[${renderedLines}A\r\x1b[J`);
+      renderedLines = 0;
+    };
 
     const cleanup = () => {
+      clearRender();
       input.off("keypress", onKeypress);
       if (!wasRaw) {
         input.setRawMode(false);
@@ -513,16 +673,23 @@ export async function selectModelChoice({ input, output, rl, choices = [], promp
     };
 
     const render = () => {
-      const half = Math.floor(maxVisible / 2);
-      const start = Math.max(0, Math.min(index - half, models.length - maxVisible));
-      const visible = models.slice(start, start + maxVisible);
+      const { visible, start, total } = visibleWindow(items, {
+        selected: index,
+        maxVisible,
+      });
+      const labels = visible.map((choice) => formatChoice(choice).label || "");
+      const labelWidth = Math.min(36, Math.max(...labels.map((label) => label.length), 8));
       const rows = [
-        `${prompt} (${index + 1}/${models.length})`,
+        `${prompt} (${index + 1}/${total})`,
         ...visible.map((choice, offset) => {
           const choiceIndex = start + offset;
           const marker = choiceIndex === index ? ">" : " ";
-          const status = choice.available ? "ready" : choice.blockedReason || "blocked";
-          return `${marker} ${choice.label}  ${status}`;
+          const formatted = formatChoice(choice);
+          const current = formatted.current ? "*" : " ";
+          const label = String(formatted.label || "").padEnd(labelWidth);
+          const status = formatted.status ? ` ${formatted.status}` : "";
+          const detail = formatted.detail ? `  ${formatted.detail}` : "";
+          return fitPromptRow(`${marker}${current} ${label}${status}${detail}`, output.columns || 100);
         }),
         "Enter selects, Esc cancels.",
       ];
@@ -550,16 +717,16 @@ export async function selectModelChoice({ input, output, rl, choices = [], promp
         return;
       }
       if (key.name === "return" || key.name === "enter") {
-        finish(models[index]);
+        finish(items[index]);
         return;
       }
       if (key.name === "up") {
-        index = (index - 1 + models.length) % models.length;
+        index = (index - 1 + items.length) % items.length;
         render();
         return;
       }
       if (key.name === "down" || key.name === "tab") {
-        index = (index + 1) % models.length;
+        index = (index + 1) % items.length;
         render();
       }
     };
@@ -572,6 +739,12 @@ export async function selectModelChoice({ input, output, rl, choices = [], promp
     input.on("keypress", onKeypress);
     render();
   });
+}
+
+function modelChoiceLimit({ terminalRows = 24 } = {}) {
+  const rows = Number(terminalRows || 24);
+  if (!Number.isFinite(rows) || rows <= 0) return 8;
+  return Math.max(3, Math.min(12, rows - 5));
 }
 
 

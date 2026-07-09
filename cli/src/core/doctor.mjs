@@ -28,8 +28,8 @@ import { redactString, redactUrl } from "../runtime/redaction.mjs";
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
 } from "../config/provider-config.mjs";
 import { withProviderModelOverride, withRegistryModelOverride } from "../orchestrator/provider-model.mjs";
 
@@ -132,7 +132,7 @@ export async function runDoctor({
     return result;
   }
 
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+  const providerConfig = loadProviderConfig({ workspaceRoot: root, env });
   const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey: args.useApiKey,
     allowProviderCommand: args.useProviderCommand,

@@ -29,6 +29,7 @@ import {
   formatDoctorSummary,
   formatInteractiveStatus,
   formatJson,
+  formatProvidersResult,
   formatRollbackSummary,
   formatRunSummary,
   formatSessionCommandResult,
@@ -61,8 +62,11 @@ export async function runInteractiveSession({
   initialTaskArgv,
   handleTask,
   handleProviders,
+  handleProviderConfig,
   handleModels,
   selectModel,
+  selectProvider,
+  selectAuth,
   handleAgents,
   handleInit,
   handleDoctor,
@@ -269,7 +273,12 @@ export async function runInteractiveSession({
 
     if (line === "/auth" || line.startsWith("/auth ")) {
       const argv = parseInteractiveArgs(line.replace(/^\/auth\s*/, ""));
-      const result = updateSessionAuth({ argv, current: sessionAuth });
+      const wantsAuthPicker = (argv.length === 0 || (argv.length === 1 && argv[0] === "select")) && selectAuth;
+      const selectedAuth = wantsAuthPicker
+        ? await selectAuth(authSelectionChoices(sessionAuth), { prompt: "Select auth" })
+        : undefined;
+      const effectiveArgv = selectedAuth?.value ? [selectedAuth.value] : wantsAuthPicker ? [] : argv;
+      const result = updateSessionAuth({ argv: effectiveArgv, current: sessionAuth });
       if (result.status === "ready" && result.session) {
         sessionAuth = {
           useApiKey: Boolean(result.session?.useApiKey),
@@ -289,15 +298,27 @@ export async function runInteractiveSession({
           });
         }
       }
-      write(formatSessionCommandResult(result, { command: "auth", argv }));
-      await record({ type: "command-result", command: "auth", argv, result });
+      write(formatSessionCommandResult(result, { command: "auth", argv: effectiveArgv }));
+      await record({ type: "command-result", command: "auth", argv: effectiveArgv, result });
       continue;
     }
 
     if (line === "/providers" || line.startsWith("/providers ")) {
       const argv = parseInteractiveArgs(line.replace(/^\/providers\s*/, ""));
+      if (["add", "set", "remove", "delete", "rm", "clear", "path", "config"].includes(argv[0])) {
+        if (!handleProviderConfig) {
+          write("provider config handler is not available");
+          continue;
+        }
+        const result = providerConfigAllowedInInteractive(argv)
+          ? await handleProviderConfig(argv)
+          : interactiveProviderStdinBlocked();
+        write(formatJson(result));
+        await record({ type: "command-result", command: "providers", argv, result });
+        continue;
+      }
       const result = await handleProviders(appendSessionAuthArgv(argv, sessionAuth));
-      write(formatJson(result));
+      write(formatProvidersResult(result, { json: argv.includes("--json") }));
       await record({ type: "command-result", command: "providers", argv, result });
       continue;
     }
@@ -330,18 +351,39 @@ export async function runInteractiveSession({
 
     if (line === "/provider" || line.startsWith("/provider ")) {
       const argv = parseInteractiveArgs(line.replace(/^\/provider\s*/, ""));
+      if (["add", "set", "remove", "delete", "rm", "clear", "path", "config"].includes(argv[0])) {
+        if (!handleProviderConfig) {
+          write("provider config handler is not available");
+          continue;
+        }
+        const result = providerConfigAllowedInInteractive(argv)
+          ? await handleProviderConfig(argv)
+          : interactiveProviderStdinBlocked();
+        write(formatJson(result));
+        await record({ type: "command-result", command: "provider", argv, result });
+        continue;
+      }
+      const wantsProviderPicker = (argv.length === 0 || (argv.length === 1 && argv[0] === "select")) && selectProvider;
+      const selectedProvider = wantsProviderPicker
+        ? await selectProvider(providerSelectionChoices({
+            result: await handleProviders(appendSessionAuthArgv([], sessionAuth)),
+            current: defaultProvider,
+          }), { prompt: "Select provider" })
+        : undefined;
+      const providerPickerCancelled = wantsProviderPicker && !selectedProvider?.value;
+      const effectiveArgv = selectedProvider?.value ? [selectedProvider.value] : wantsProviderPicker ? [] : argv;
       const result = await updateDefaultProvider({
-        argv,
+        argv: effectiveArgv,
         current: defaultProvider,
         handleProviders,
         commandName: "provider",
       });
-      if (result.status === "ready" && result.provider) {
+      if (result.status === "ready" && result.provider && !providerPickerCancelled) {
         defaultProvider = result.provider;
         await savePreferences?.({ provider: defaultProvider });
       }
-      write(formatSessionCommandResult(result, { command: "provider", argv }));
-      await record({ type: "command-result", command: "provider", argv, result });
+      write(formatSessionCommandResult(result, { command: "provider", argv: effectiveArgv }));
+      await record({ type: "command-result", command: "provider", argv: effectiveArgv, result });
       continue;
     }
 
@@ -719,3 +761,92 @@ function publicSkillsSummary(result = {}) {
   };
 }
 
+function providerSelectionChoices({ result = {}, current = "auto" } = {}) {
+  const providers = Array.isArray(result.providers) ? result.providers.filter((provider) => provider?.name) : [];
+  return [
+    {
+      value: "auto",
+      label: "auto",
+      status: "router",
+      description: "let odai route",
+      current: current === "auto",
+    },
+    ...providers.map((provider) => ({
+      value: provider.name,
+      label: provider.name,
+      status: provider.available === false ? provider.blockedReason || "blocked" : "ready",
+      description: provider.kind || provider.auth || "",
+      current: provider.name === current,
+    })),
+  ];
+}
+
+function providerConfigAllowedInInteractive(argv = []) {
+  return !argv.some((item) => item === "--api-key-stdin" || String(item).startsWith("--api-key-stdin="));
+}
+
+function interactiveProviderStdinBlocked() {
+  return {
+    status: "blocked",
+    reason: "Use top-level `odai provider add|set ... --api-key-stdin` outside the interactive prompt to store a key.",
+  };
+}
+
+function authSelectionChoices(sessionAuth = {}) {
+  return [
+    {
+      value: "api-key",
+      label: "api-key",
+      status: sessionAuth.useApiKey ? "on" : "off",
+      description: "API providers",
+      current: Boolean(sessionAuth.useApiKey),
+    },
+    {
+      value: "provider-command",
+      label: "provider-command",
+      status: sessionAuth.useProviderCommand ? "on" : "off",
+      description: "subscription CLIs",
+      current: Boolean(sessionAuth.useProviderCommand),
+    },
+    {
+      value: "claude-cli",
+      label: "claude-cli",
+      status: sessionAuth.providerCommands?.includes?.("claude-cli") ? "on" : "off",
+      description: "only Claude CLI",
+      current: sessionAuth.providerCommands?.includes?.("claude-cli"),
+    },
+    {
+      value: "claude-agent-sdk",
+      label: "claude-agent-sdk",
+      status: sessionAuth.providerCommands?.includes?.("claude-agent-sdk") ? "on" : "off",
+      description: "only Claude Agent SDK",
+      current: sessionAuth.providerCommands?.includes?.("claude-agent-sdk"),
+    },
+    {
+      value: "shell",
+      label: "shell",
+      status: sessionAuth.allowShell ? "on" : "session",
+      description: "session-only shell gate",
+      current: Boolean(sessionAuth.allowShell),
+    },
+    {
+      value: "network",
+      label: "network",
+      status: sessionAuth.allowNetwork ? "on" : "session",
+      description: "session-only network gate",
+      current: Boolean(sessionAuth.allowNetwork),
+    },
+    {
+      value: "all",
+      label: "all",
+      status: sessionAuth.useApiKey && sessionAuth.useProviderCommand ? "on" : "off",
+      description: "API + provider CLI",
+    },
+    {
+      value: "clear",
+      label: "clear",
+      status: "reset",
+      description: "remove confirmations",
+    },
+  ];
+}

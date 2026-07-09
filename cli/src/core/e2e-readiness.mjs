@@ -1,7 +1,8 @@
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
-  loadWorkspaceProviderConfig,
+  loadProviderConfig,
+  loadWorkspaceEnvironment,
   publicProviderSource,
 } from "../config/provider-config.mjs";
 import { withRegistryModelOverride } from "../orchestrator/provider-model.mjs";
@@ -22,15 +23,16 @@ export function describeE2EReadiness({
   if (!workspaceRoot) {
     throw new Error("describeE2EReadiness requires workspaceRoot.");
   }
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot });
-  const registry = createProviderRegistryFromEnvironment(env, {
+  const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot, env });
+  const providerConfig = loadProviderConfig({ workspaceRoot, env });
+  const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey,
     allowProviderCommand,
     allowedProviderCommands,
     config: providerConfig,
   });
   const effectiveRegistry = withRegistryModelOverride(registry, modelOverride);
-  const providers = describeProviders(effectiveRegistry, env);
+  const providers = describeProviders(effectiveRegistry, workspaceEnv);
   const sandbox = describeSandboxReadiness({ workspaceRoot, ...sandboxOptions });
   const realProviders = providers.providers.filter((provider) => provider.kind !== "mock");
   const availableRealProviders = realProviders.filter((provider) => provider.available);

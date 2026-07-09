@@ -28,7 +28,7 @@ import { collectProviderSessions } from "../runtime/provider-session.mjs";
 import { Scheduler } from "../orchestrator/scheduler.mjs";
 import { withProviderModelOverride } from "../orchestrator/provider-model.mjs";
 import { adoptPatchProposal, summarizeMerge } from "../orchestrator/result-merger.mjs";
-import { createProviderRegistryFromEnvironment, loadWorkspaceEnvironment, loadWorkspaceProviderConfig } from "../config/provider-config.mjs";
+import { createProviderRegistryFromEnvironment, loadProviderConfig, loadWorkspaceEnvironment } from "../config/provider-config.mjs";
 import { loadWorkspacePolicyConfig } from "../config/policy-config.mjs";
 import { loadWorkspaceAgentProfiles } from "../config/agent-config.mjs";
 
@@ -95,7 +95,7 @@ export async function runMockTask({
     allowApiKey: args.useApiKey,
     allowProviderCommand: args.useProviderCommand,
     allowedProviderCommands: args.providerCommandProviders,
-    config: loadWorkspaceProviderConfig({ workspaceRoot: root }),
+    config: loadProviderConfig({ workspaceRoot: root, env: process.env }),
   });
   const scheduler = new Scheduler({
     providers,

@@ -2,8 +2,8 @@ import { describeWorkspaceAgentProfiles } from "../config/agent-config.mjs";
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
   publicProviderSource,
 } from "../config/provider-config.mjs";
 import { redactString } from "../runtime/redaction.mjs";
@@ -20,7 +20,7 @@ export function runAgents({ repoRoot: root = defaultRepoRoot, argv = [], env = p
   const args = parseAgentsArgs(argv);
   const description = describeWorkspaceAgentProfiles({ workspaceRoot: root });
   const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: root, env });
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+  const providerConfig = loadProviderConfig({ workspaceRoot: root, env });
   const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey: args.useApiKey,
     allowProviderCommand: args.useProviderCommand,

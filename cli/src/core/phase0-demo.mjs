@@ -10,8 +10,8 @@ import { collectProviderSessions } from "../runtime/provider-session.mjs";
 import { Scheduler } from "../orchestrator/scheduler.mjs";
 import {
   createProviderRegistryFromEnvironment,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
 } from "../config/provider-config.mjs";
 import { loadWorkspaceAgentProfiles } from "../config/agent-config.mjs";
 
@@ -36,7 +36,7 @@ export async function runPhase0Demo({ repoRoot: root = process.cwd(), allowApiKe
   const providers = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey,
     allowProviderCommand: false,
-    config: loadWorkspaceProviderConfig({ workspaceRoot: root }),
+    config: loadProviderConfig({ workspaceRoot: root, env: process.env }),
   });
 
   const scheduler = new Scheduler({

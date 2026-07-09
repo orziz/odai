@@ -27,8 +27,8 @@ import {
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
 } from "./config/provider-config.mjs";
 import { runInteractiveSession } from "./core/interactive-session.mjs";
 import {
@@ -102,7 +102,7 @@ export function listProviders({
   env = process.env,
 } = {}) {
   const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: repoRoot, env });
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: repoRoot });
+  const providerConfig = loadProviderConfig({ workspaceRoot: repoRoot, env });
   const providerCommandAuth = providerCommandAuthFromArgv(argv);
   const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey: enabledFlag(argv, "--use-api-key"),

@@ -131,6 +131,52 @@ export function formatRunSummary(result = {}, { workspaceRoot = process.cwd() } 
 
 
 
+export function formatProvidersResult(result = {}, { json = false } = {}) {
+  if (json) {
+    return formatJson(result);
+  }
+  const providers = Array.isArray(result.providers) ? result.providers : [];
+  const available = providers.filter((provider) => provider.available !== false).length;
+  const lines = [
+    `providers: ${available}/${providers.length} available`,
+  ];
+  if (providers.length === 0) {
+    lines.push("No providers are registered. Run odai init, then edit .odai/providers.json for custom providers.");
+  } else {
+    const nameWidth = Math.min(26, Math.max(...providers.map((provider) => String(provider.name || "").length), 8));
+    const kindWidth = Math.min(18, Math.max(...providers.map((provider) => String(provider.kind || "").length), 4));
+    lines.push(`${"name".padEnd(nameWidth)}  ${"state".padEnd(10)}  ${"kind".padEnd(kindWidth)}  auth`);
+    lines.push(`${"-".repeat(nameWidth)}  ${"-".repeat(10)}  ${"-".repeat(kindWidth)}  ${"-".repeat(18)}`);
+    for (const provider of providers) {
+      const state = provider.available === false ? provider.blockedReason || "blocked" : "ready";
+      const auth = provider.auth || provider.source?.type || "unknown";
+      lines.push(
+        [
+          redactString(String(provider.name || "")).padEnd(nameWidth),
+          redactString(String(state)).padEnd(10),
+          redactString(String(provider.kind || "")).padEnd(kindWidth),
+          redactString(String(auth)),
+        ].join("  ").trimEnd(),
+      );
+    }
+  }
+  const errors = Array.isArray(result.configErrors) ? result.configErrors : [];
+  if (errors.length > 0) {
+    lines.push(`config errors: ${errors.length}`);
+    for (const error of errors.slice(0, 4)) {
+      lines.push(`  ${redactString(error.field || error.provider || "config")}: ${redactString(error.message || "")}`);
+    }
+    if (errors.length > 4) {
+      lines.push(`  ... ${errors.length - 4} more`);
+    }
+  }
+  lines.push("Use /provider select to switch, /models select to pick a model, or /providers --json for details.");
+  lines.push("Use odai provider add|set|remove|clear to manage global providers, /provider path for file locations, or --workspace for project overrides.");
+  return lines.join("\n");
+}
+
+
+
 export function formatRunModel(result = {}) {
   const model = result.agentLoop?.finalOutput?.model
     || result.agentLoop?.turns?.findLast?.((turn) => turn?.output?.model)?.output?.model
@@ -581,5 +627,3 @@ export function formatDoctorSummary(result = {}, { workspaceRoot = process.cwd()
 export function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
-
-

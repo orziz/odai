@@ -66,6 +66,7 @@ import {
   runMilestones,
   runModels,
   runMockTask,
+  runProviderConfigCommand,
   runSandboxReadiness,
   runSandboxSmoke,
   runSessions,
@@ -306,6 +307,236 @@ assert.ok(
   ),
 );
 assert.ok(providerExample.providers.some((provider) => provider.type === "ollama"));
+
+const providerAddRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-provider-add-"));
+const providerAddHome = path.join(providerAddRoot, "home");
+const providerAddEnv = { ODAI_HOME: providerAddHome };
+const providerPath = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  argv: ["path"],
+  env: providerAddEnv,
+});
+assert.equal(providerPath.status, "ready");
+assert.equal(providerPath.providersFile, path.join(providerAddHome, "providers.json"));
+assert.equal(providerPath.secretsFile, path.join(providerAddHome, "secrets.env"));
+assert.equal(providerPath.workspaceProvidersFile, path.join(providerAddRoot, ".odai", "providers.json"));
+assert.equal(providerPath.preferencesFile, path.join(providerAddRoot, ".odai", "preferences.json"));
+const cliProviderPath = await runCliExecutable(["provider", "path"]);
+assert.equal(cliProviderPath.timedOut, false);
+assert.equal(cliProviderPath.code, 0, cliProviderPath.stderr);
+const cliProviderPathJson = JSON.parse(cliProviderPath.stdout);
+assert.equal(cliProviderPathJson.status, "ready");
+assert.equal(
+  normalizePathForCompare(cliProviderPathJson.workspaceProvidersFile),
+  normalizePathForCompare(path.join(repoRoot, ".odai", "providers.json")),
+);
+const providerAdd = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: [
+    "add",
+    "--name",
+    "relay-test",
+    "--base-url",
+    "https://relay.example/v1",
+    "--model",
+    "gpt-relay",
+    "--models",
+    "gpt-relay,gpt-relay-large",
+    "--api-key",
+    "sk-relaytest1234567890abcdef",
+  ],
+});
+assert.equal(providerAdd.status, "ready");
+assert.equal(providerAdd.action, "created");
+assert.equal(providerAdd.scope, "global");
+assert.equal(providerAdd.provider, "relay-test");
+assert.equal(providerAdd.apiKeyEnv, "ODAI_PROVIDER_RELAY_TEST_API_KEY");
+assert.equal(providerAdd.secretStored, true);
+assert.ok(providerAdd.next.some((entry) => entry.includes("doctor --provider relay-test --use-api-key")));
+assert.ok(!JSON.stringify(providerAdd).includes("sk-relaytest1234567890abcdef"));
+const providerAddConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.deepEqual(providerAddConfig.providers, [
+  {
+    type: "openai-compatible",
+    name: "relay-test",
+    baseUrl: "https://relay.example/v1",
+    apiKeyEnv: "ODAI_PROVIDER_RELAY_TEST_API_KEY",
+    model: "gpt-relay",
+    models: ["gpt-relay", "gpt-relay-large"],
+    capabilities: ["reasoning", "code"],
+  },
+]);
+const providerAddSecrets = await readFile(path.join(providerAddHome, "secrets.env"), "utf8");
+assert.ok(providerAddSecrets.includes("ODAI_PROVIDER_RELAY_TEST_API_KEY="));
+assert.ok(providerAddSecrets.includes("sk-relaytest1234567890abcdef"));
+const providerDuplicate = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["add", "--name", "relay-test", "--base-url", "https://relay2.example/v1"],
+});
+assert.equal(providerDuplicate.status, "blocked");
+assert.match(providerDuplicate.reason, /already exists/);
+const providerReplace = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: [
+    "add",
+    "openai-compatible",
+    "--name",
+    "relay-test",
+    "--base-url",
+    "https://relay2.example/v1",
+    "--api-key-env",
+    "RELAY_TEST_KEY",
+    "--replace",
+  ],
+});
+assert.equal(providerReplace.status, "ready");
+assert.equal(providerReplace.action, "updated");
+const providerReplaceConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.equal(providerReplaceConfig.providers[0].baseUrl, "https://relay2.example/v1");
+assert.equal(providerReplaceConfig.providers[0].apiKeyEnv, "RELAY_TEST_KEY");
+const providerSet = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: [
+    "set",
+    "--name",
+    "relay-test",
+    "--base-url",
+    "https://relay3.example/v1",
+    "--model",
+    "gpt-relay-set",
+  ],
+});
+assert.equal(providerSet.status, "ready");
+assert.equal(providerSet.action, "updated");
+const providerSetConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.equal(providerSetConfig.providers[0].baseUrl, "https://relay3.example/v1");
+assert.equal(providerSetConfig.providers[0].model, "gpt-relay-set");
+assert.equal(providerSetConfig.providers[0].apiKeyEnv, "RELAY_TEST_KEY");
+const providerSetModelOnly = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["set", "--name", "relay-test", "--model", "gpt-relay-set-2"],
+});
+assert.equal(providerSetModelOnly.status, "ready");
+const providerSetModelOnlyConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.equal(providerSetModelOnlyConfig.providers[0].baseUrl, "https://relay3.example/v1");
+assert.equal(providerSetModelOnlyConfig.providers[0].model, "gpt-relay-set-2");
+const providerSetPositional = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["set", "relay-test", "--base-url", "https://relay4.example/v1"],
+});
+assert.equal(providerSetPositional.status, "ready");
+const providerSetPositionalConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.equal(providerSetPositionalConfig.providers[0].baseUrl, "https://relay4.example/v1");
+providerSetPositionalConfig.providers.push({
+  type: "openai-compatible",
+  name: "direct-relay",
+  baseUrl: "https://direct-relay.example/v1",
+  apiKey: "sk-directrelay1234567890abcdef",
+});
+await writeFile(path.join(providerAddHome, "providers.json"), `${JSON.stringify(providerSetPositionalConfig, null, 2)}\n`, "utf8");
+const providerDirectSet = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["set", "direct-relay", "--model", "direct-relay-model"],
+});
+assert.equal(providerDirectSet.status, "ready");
+assert.ok(!JSON.stringify(providerDirectSet).includes("sk-directrelay1234567890abcdef"));
+const providerDirectSetConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+const providerDirectSetEntry = providerDirectSetConfig.providers.find((provider) => provider.name === "direct-relay");
+assert.equal(providerDirectSetEntry.apiKey, "sk-directrelay1234567890abcdef");
+assert.equal(providerDirectSetEntry.model, "direct-relay-model");
+const providerSecretAdd = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: [
+    "add",
+    "secret-relay",
+    "--base-url",
+    "https://secret-relay.example/v1",
+    "--api-key",
+    "sk-secretrelay1234567890abcdef",
+  ],
+});
+assert.equal(providerSecretAdd.status, "ready");
+assert.equal(providerSecretAdd.apiKeyEnv, "ODAI_PROVIDER_SECRET_RELAY_API_KEY");
+const providerClear = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["clear", "secret-relay"],
+});
+assert.equal(providerClear.status, "ready");
+assert.equal(providerClear.action, "cleared");
+assert.equal(providerClear.secretRemoved, true);
+const providerClearConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+const providerCleared = providerClearConfig.providers.find((provider) => provider.name === "secret-relay");
+assert.ok(providerCleared);
+assert.equal(providerCleared.apiKeyEnv, undefined);
+const providerClearSecrets = await readFile(path.join(providerAddHome, "secrets.env"), "utf8");
+assert.ok(!providerClearSecrets.includes("ODAI_PROVIDER_SECRET_RELAY_API_KEY"));
+assert.ok(!providerClearSecrets.includes("sk-secretrelay1234567890abcdef"));
+const providerRemove = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["remove", "secret-relay"],
+});
+assert.equal(providerRemove.status, "ready");
+assert.equal(providerRemove.action, "removed");
+const providerRemoveConfig = JSON.parse(await readFile(path.join(providerAddHome, "providers.json"), "utf8"));
+assert.ok(!providerRemoveConfig.providers.some((provider) => provider.name === "secret-relay"));
+const providerWorkspaceAdd = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: [
+    "add",
+    "--name",
+    "project-relay",
+    "--base-url",
+    "https://project-relay.example/v1",
+    "--workspace",
+  ],
+});
+assert.equal(providerWorkspaceAdd.status, "ready");
+assert.equal(providerWorkspaceAdd.scope, "workspace");
+const providerWorkspaceConfig = JSON.parse(
+  await readFile(path.join(providerAddRoot, ".odai", "providers.json"), "utf8"),
+);
+assert.equal(providerWorkspaceConfig.providers[0].name, "project-relay");
+const providerWorkspaceRemove = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["remove", "project-relay", "--workspace"],
+});
+assert.equal(providerWorkspaceRemove.status, "ready");
+assert.equal(providerWorkspaceRemove.scope, "workspace");
+const providerWorkspaceRemoveConfig = JSON.parse(
+  await readFile(path.join(providerAddRoot, ".odai", "providers.json"), "utf8"),
+);
+assert.deepEqual(providerWorkspaceRemoveConfig.providers, []);
+const providerWizardAdd = await runProviderConfigCommand({
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  argv: ["add"],
+  inputIsTTY: true,
+  ask: async (question) => {
+    if (question.includes("Provider name")) return "wizard-relay";
+    if (question.includes("Base URL")) return "https://wizard-relay.example/v1";
+    if (question.includes("Default model")) return "wizard-model";
+    if (question.includes("Model hints")) return "wizard-model,wizard-model-large";
+    if (question.includes("Scope")) return "";
+    if (question.includes("Store API key")) return "n";
+    return "";
+  },
+});
+assert.equal(providerWizardAdd.status, "ready");
+assert.equal(providerWizardAdd.scope, "global");
+assert.equal(providerWizardAdd.provider, "wizard-relay");
+
 const policyExample = JSON.parse(await readFile(path.join(initRoot, ".odai", "policy.example.json"), "utf8"));
 assert.equal(policyExample.checks.preflight, "odai sandbox");
 assert.equal(policyExample.checks.smoke, "odai doctor --sandbox --smoke --allow-shell --save");
@@ -563,6 +794,7 @@ assert.ok(!sensitiveAgentJson.includes("agent-name-secret"));
 assert.ok(sensitiveAgentJson.includes("[redacted]"));
 
 const commandProviderRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-command-provider-"));
+const commandProviderEnv = { ODAI_HOME: path.join(commandProviderRoot, "home") };
 await mkdir(path.join(commandProviderRoot, ".odai"), { recursive: true });
 await symlinkOrCopyDirectory(path.join(repoRoot, "skills"), path.join(commandProviderRoot, "skills"));
 const commandProviderFile = path.join(commandProviderRoot, "command-provider-input.txt");
@@ -663,7 +895,11 @@ await writeFile(
   )}\n`,
   "utf8",
 );
-const authStatusBeforeMigration = await runAuthConfig({ repoRoot: commandProviderRoot, argv: ["status"], env: {} });
+const authStatusBeforeMigration = await runAuthConfig({
+  repoRoot: commandProviderRoot,
+  argv: ["status"],
+  env: commandProviderEnv,
+});
 const deepseekStatusBeforeAuth = authStatusBeforeMigration.providers.find((provider) => provider.name === "deepseek-api");
 assert.equal(deepseekStatusBeforeAuth.type, "built-in");
 assert.equal(deepseekStatusBeforeAuth.apiKeyEnv, "DEEPSEEK_API_KEY");
@@ -680,7 +916,11 @@ await chmod(fakeAuthClaudePath, 0o755);
 const commandAuthStatus = await runAuthConfig({
   repoRoot: commandProviderRoot,
   argv: ["status"],
-  env: { ODAI_CLAUDE_COMMAND: fakeAuthClaudePath, ODAI_CLAUDE_MODEL: "claude-auth-model" },
+  env: {
+    ...commandProviderEnv,
+    ODAI_CLAUDE_COMMAND: fakeAuthClaudePath,
+    ODAI_CLAUDE_MODEL: "claude-auth-model",
+  },
 });
 const claudeCommandAuth = commandAuthStatus.commands.find((provider) => provider.name === "claude-cli");
 assert.equal(normalizePathForCompare(claudeCommandAuth.command), normalizePathForCompare(fakeAuthClaudePath));
@@ -696,7 +936,7 @@ assert.equal(
 const claudeLoginDryRun = await runAuthConfig({
   repoRoot: commandProviderRoot,
   argv: ["login", "claude-cli", "--dry-run"],
-  env: { ODAI_CLAUDE_COMMAND: fakeAuthClaudePath },
+  env: { ...commandProviderEnv, ODAI_CLAUDE_COMMAND: fakeAuthClaudePath },
 });
 assert.equal(claudeLoginDryRun.status, "ready");
 assert.equal(claudeLoginDryRun.kind, "auth-login");
@@ -711,7 +951,7 @@ assert.ok(claudeLoginDryRun.next.some((entry) => entry.includes("doctor --provid
 const claudeLoginNoTty = await runAuthConfig({
   repoRoot: commandProviderRoot,
   argv: ["login", "claude-cli"],
-  env: { ODAI_CLAUDE_COMMAND: fakeAuthClaudePath },
+  env: { ...commandProviderEnv, ODAI_CLAUDE_COMMAND: fakeAuthClaudePath },
   inputIsTTY: false,
 });
 assert.equal(claudeLoginNoTty.status, "blocked");
@@ -720,19 +960,23 @@ assert.match(claudeLoginNoTty.reason, /requires a TTY/);
 const codexLoginBlocked = await runAuthConfig({
   repoRoot: commandProviderRoot,
   argv: ["login", "codex-cli", "--dry-run"],
-  env: {},
+  env: commandProviderEnv,
 });
 assert.equal(codexLoginBlocked.status, "blocked");
 assert.match(codexLoginBlocked.reason, /Only claude-cli login/);
 const deepseekAuthConfig = await runAuthConfig({
   repoRoot: commandProviderRoot,
   argv: ["provider", "deepseek-api", "--api-key", "sk-deepseektest1234567890abcdef"],
-  env: {},
+  env: commandProviderEnv,
 });
 assert.equal(deepseekAuthConfig.status, "ready");
 assert.equal(deepseekAuthConfig.provider, "deepseek-api");
 assert.equal(deepseekAuthConfig.apiKeyEnv, "DEEPSEEK_API_KEY");
-const deepseekStatusAfterAuth = await runAuthConfig({ repoRoot: commandProviderRoot, argv: ["status"], env: {} });
+const deepseekStatusAfterAuth = await runAuthConfig({
+  repoRoot: commandProviderRoot,
+  argv: ["status"],
+  env: commandProviderEnv,
+});
 assert.equal(
   deepseekStatusAfterAuth.providers.find((provider) => provider.name === "deepseek-api").secretPresent,
   true,
@@ -741,7 +985,7 @@ const directStatusBeforeMigration = authStatusBeforeMigration.providers.find(
   (provider) => provider.name === "direct-compatible",
 );
 assert.equal(directStatusBeforeMigration.directSecretInConfig, true);
-const authMigration = await runAuthConfig({ repoRoot: commandProviderRoot, argv: ["migrate"], env: {} });
+const authMigration = await runAuthConfig({ repoRoot: commandProviderRoot, argv: ["migrate"], env: commandProviderEnv });
 assert.equal(authMigration.status, "ready");
 assert.deepEqual(authMigration.migrated, [
   { provider: "direct-compatible", apiKeyEnv: "ODAI_PROVIDER_DIRECT_COMPATIBLE_API_KEY" },
@@ -757,7 +1001,7 @@ assert.ok(
 );
 const managedSecretModelCatalog = await runModels({
   repoRoot: commandProviderRoot,
-  env: {},
+  env: commandProviderEnv,
   argv: ["--provider", "direct-compatible"],
   fetchImpl: async (url, request = {}) => {
     assert.equal(request.headers.authorization, "Bearer sk-directcompatibletest1234567890abcdef");
@@ -784,7 +1028,7 @@ assert.equal(managedSecretModelCatalog.flags.useApiKey, false);
 assert.ok(managedSecretModelCatalog.models.some((model) => model.label === "direct-compatible:managed-secret-live-model"));
 const deepseekManagedSecretModelCatalog = await runModels({
   repoRoot: commandProviderRoot,
-  env: {},
+  env: commandProviderEnv,
   argv: ["--provider", "deepseek-api"],
   fetchImpl: async (url, request = {}) => {
     assert.equal(request.headers.authorization, "Bearer sk-deepseektest1234567890abcdef");
@@ -804,6 +1048,7 @@ const modelDiscoveryFetchCalls = [];
 const modelCatalog = await runModels({
   repoRoot: commandProviderRoot,
   env: {
+    ...commandProviderEnv,
     OPENAI_API_KEY: "present",
     ODAI_OPENAI_MODEL: "openai-configured-model",
     TEST_COMPATIBLE_API_KEY: "compatible-key",
@@ -890,7 +1135,7 @@ assert.ok(modelCatalog.models.some((model) => model.label === "direct-compatible
 assert.ok(modelCatalog.models.some((model) => model.label === "ollama-local:ollama-live-model"));
 const codexCliModelCatalog = await runModels({
   repoRoot: commandProviderRoot,
-  env: { ODAI_CODEX_COMMAND: process.execPath },
+  env: { ...commandProviderEnv, ODAI_CODEX_COMMAND: process.execPath },
   argv: ["--provider", "codex-cli", "--use-provider-command"],
   runCommand: (command, args) => {
     assert.equal(normalizePathForCompare(command), normalizePathForCompare(process.execPath));
@@ -917,7 +1162,11 @@ assert.ok(codexCliModelCatalog.models.some((model) => model.label === "codex-cli
 assert.equal(codexCliModelCatalog.providers.find((provider) => provider.name === "codex-cli").modelDiscovery.status, "ready");
 const claudeCliModelCatalog = await runModels({
   repoRoot: commandProviderRoot,
-  env: { ODAI_CLAUDE_COMMAND: process.execPath, ODAI_CLAUDE_MODEL: "claude-configured-model" },
+  env: {
+    ...commandProviderEnv,
+    ODAI_CLAUDE_COMMAND: process.execPath,
+    ODAI_CLAUDE_MODEL: "claude-configured-model",
+  },
   argv: ["--provider", "claude-cli", "--use-provider-command"],
 });
 assert.ok(claudeCliModelCatalog.models.some((model) => model.label === "claude-cli:claude-configured-model"));
@@ -948,7 +1197,7 @@ assert.match(blockedModelsText, /blocked-sub: fetch failed: ECONNRESET/);
 const modelCompletion = completeInteractiveLine({
   line: "/model test-compatible:c",
   repoRoot: commandProviderRoot,
-  env: {},
+  env: commandProviderEnv,
   language: "en",
 });
 assert.deepEqual(modelCompletion[0], []);
@@ -956,14 +1205,14 @@ assert.equal(modelCompletion[1], "test-compatible:c");
 const slashModelCompletions = describeInteractiveCompletions({
   line: "/mo",
   repoRoot: commandProviderRoot,
-  env: {},
+  env: commandProviderEnv,
   language: "en",
 });
 assert.ok(slashModelCompletions.some((entry) => entry.value === "/model" && /Switch the active model/.test(entry.description)));
 const slashModelCompletionsZh = describeInteractiveCompletions({
   line: "/mo",
   repoRoot: commandProviderRoot,
-  env: {},
+  env: commandProviderEnv,
   language: "zh",
 });
 assert.ok(slashModelCompletionsZh.some((entry) => entry.value === "/model" && /切换当前模型/.test(entry.description)));
@@ -971,11 +1220,27 @@ assert.deepEqual(
   completeInteractiveLine({
     line: "/mo",
     repoRoot: commandProviderRoot,
-    env: {},
+    env: commandProviderEnv,
     language: "en",
   })[0],
   ["/model", "/models"],
 );
+const slashProviderCompletions = describeInteractiveCompletions({
+  line: "/provider ",
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  language: "en",
+});
+assert.ok(slashProviderCompletions.some((entry) => entry.value === "set" && /update/i.test(entry.description)));
+assert.ok(slashProviderCompletions.some((entry) => entry.value === "remove" && /Remove/.test(entry.description)));
+assert.ok(slashProviderCompletions.some((entry) => entry.value === "clear" && /API key/.test(entry.description)));
+const providerClearCompletions = describeInteractiveCompletions({
+  line: "/provider clear ",
+  repoRoot: providerAddRoot,
+  env: providerAddEnv,
+  language: "en",
+});
+assert.ok(providerClearCompletions.some((entry) => entry.value === "relay-test"));
 
 const transcript = await createWorkspaceTranscript({ workspaceRoot: sessionTmp, sessionId: "test/session" });
 await transcript.append({ type: "session-start" });

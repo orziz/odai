@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   inspectProviderEnvironment,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
   managedProviderApiKeyEnv,
+  providerConfigPaths,
 } from "../config/provider-config.mjs";
 import { redactString, redactUrl } from "../runtime/redaction.mjs";
 import {
@@ -55,7 +56,8 @@ export async function runAuthConfig({
 }
 
 function authConfigStatus({ repoRoot: root = defaultRepoRoot, env = process.env } = {}) {
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+  const paths = providerConfigPaths({ workspaceRoot: root, env });
+  const providerConfig = loadProviderConfig({ workspaceRoot: root, env });
   const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: root, env });
   const providerFacts = inspectProviderEnvironment(workspaceEnv);
   const builtInProviders = [...BUILT_IN_AUTH_PROVIDERS.values()].map((provider) => ({
@@ -69,7 +71,7 @@ function authConfigStatus({ repoRoot: root = defaultRepoRoot, env = process.env 
     directSecretInConfig: false,
     next: workspaceEnv[provider.apiKeyEnv]
       ? "Ready. Use /auth api-key or --use-api-key when probing or running this provider."
-      : `Run odai auth provider ${provider.name} --api-key-stdin to store a local key in .odai/secrets.env.`,
+      : `Run odai auth provider ${provider.name} --api-key-stdin to store a local key in the global secrets.env.`,
   }));
   const providers = [
     ...builtInProviders,
@@ -103,9 +105,10 @@ function authConfigStatus({ repoRoot: root = defaultRepoRoot, env = process.env 
     kind: "auth-config",
     providers,
     commands: commandAuthStatuses({ facts: providerFacts, env: workspaceEnv }),
-    secretsFile: path.join(".odai", "secrets.env"),
+    secretsFile: paths.globalSecretsFile,
+    workspaceSecretsFile: paths.workspaceSecretsFile,
     note:
-      "providers.json is user-editable provider metadata. API keys are local machine secrets in .odai/secrets.env; apiKeyEnv is managed by odai auth commands. Subscription CLI login is handled by the provider CLI itself; odai only records command discovery and probe guidance.",
+      "Provider metadata and API keys are global by default under ODAI_HOME or ~/.odai. Workspace .odai/providers.json and .odai/secrets.env can still override project-specific providers.",
   };
 }
 
@@ -380,12 +383,18 @@ async function configureProviderAuth({ repoRoot: root = defaultRepoRoot, argv = 
     };
   }
   const args = parseAuthProviderArgs(argv.slice(1));
-  const { filePath, config } = await readWorkspaceProvidersJson(root);
+  const paths = providerConfigPaths({ workspaceRoot: root, env });
+  const providerConfigSource = await readProviderConfigForAuth({
+    providerName,
+    globalFilePath: paths.globalProvidersFile,
+    workspaceFilePath: paths.workspaceProvidersFile,
+  });
+  const { filePath, config, scope } = providerConfigSource;
   const provider = (config.providers || []).find((entry) => entry?.name === providerName);
   const builtInProvider = BUILT_IN_AUTH_PROVIDERS.get(providerName);
   if (!provider) {
     if (builtInProvider) {
-      return await configureBuiltInProviderAuth({ repoRoot: root, provider: builtInProvider, args });
+      return await configureBuiltInProviderAuth({ repoRoot: root, provider: builtInProvider, args, env });
     }
     return {
       status: "blocked",
@@ -426,7 +435,7 @@ async function configureProviderAuth({ repoRoot: root = defaultRepoRoot, argv = 
       provider: provider.name,
       apiKeyEnv: provider.apiKeyEnv,
       secretPresent: Boolean(loadWorkspaceEnvironment({ workspaceRoot: root, env })[provider.apiKeyEnv]),
-      note: "Updated provider apiKeyEnv. Use your shell or .odai/secrets.env to provide the value.",
+      note: "Updated provider apiKeyEnv. Use your shell or the matching global/workspace secrets.env to provide the value.",
     };
   }
   const apiKey = args.apiKeyStdin ? (await readStdin()).trim() : args.apiKey;
@@ -441,20 +450,25 @@ async function configureProviderAuth({ repoRoot: root = defaultRepoRoot, argv = 
     : managedProviderApiKeyEnv(provider.name);
   provider.apiKeyEnv = envName;
   delete provider.apiKey;
-  await writeWorkspaceSecrets({ workspaceRoot: root, values: { [envName]: apiKey } });
+  await writeSecretsFile({
+    filePath: scope === "global" ? paths.globalSecretsFile : paths.workspaceSecretsFile,
+    values: { [envName]: apiKey },
+  });
   await writeWorkspaceProvidersJson(filePath, config);
   return {
     status: "ready",
     kind: "auth-provider",
     provider: provider.name,
     apiKeyEnv: envName,
-    secretsFile: path.join(".odai", "secrets.env"),
-    providersFile: path.join(".odai", "providers.json"),
-    note: "Stored the provider key in local secrets.env and backfilled providers.json with the managed apiKeyEnv name.",
+    scope,
+    secretsFile: scope === "global" ? paths.globalSecretsFile : path.join(".odai", "secrets.env"),
+    providersFile: scope === "global" ? paths.globalProvidersFile : path.join(".odai", "providers.json"),
+    note: "Stored the provider key in the matching global/workspace secrets.env and backfilled providers.json with the managed apiKeyEnv name.",
   };
 }
 
-async function configureBuiltInProviderAuth({ repoRoot: root = defaultRepoRoot, provider, args = {} } = {}) {
+async function configureBuiltInProviderAuth({ repoRoot: root = defaultRepoRoot, provider, args = {}, env = process.env } = {}) {
+  const paths = providerConfigPaths({ workspaceRoot: root, env });
   if (args.clear) {
     return {
       status: "blocked",
@@ -480,14 +494,15 @@ async function configureBuiltInProviderAuth({ repoRoot: root = defaultRepoRoot, 
       apiKeyEnv: provider.apiKeyEnv,
     };
   }
-  await writeWorkspaceSecrets({ workspaceRoot: root, values: { [provider.apiKeyEnv]: apiKey } });
+  await writeSecretsFile({ filePath: paths.globalSecretsFile, values: { [provider.apiKeyEnv]: apiKey } });
   return {
     status: "ready",
     kind: "auth-provider",
     provider: provider.name,
     apiKeyEnv: provider.apiKeyEnv,
-    secretsFile: path.join(".odai", "secrets.env"),
-    note: "Stored the built-in provider key in local secrets.env.",
+    scope: "global",
+    secretsFile: paths.globalSecretsFile,
+    note: "Stored the built-in provider key in the global secrets.env.",
   };
 }
 
@@ -529,9 +544,33 @@ function providerDirectApiKey(provider = {}) {
 
 async function readWorkspaceProvidersJson(workspaceRoot) {
   const filePath = path.join(workspaceRoot, ".odai", "providers.json");
+  return {
+    filePath,
+    ...(await readProvidersJsonFile(filePath)),
+  };
+}
+
+async function readProviderConfigForAuth({ providerName, globalFilePath, workspaceFilePath } = {}) {
+  const globalConfig = await readProvidersJsonFile(globalFilePath);
+  const globalProvider = (globalConfig.config.providers || []).find((entry) => entry?.name === providerName);
+  if (globalProvider) {
+    return {
+      filePath: globalFilePath,
+      config: globalConfig.config,
+      scope: "global",
+    };
+  }
+  const workspaceConfig = await readProvidersJsonFile(workspaceFilePath);
+  return {
+    filePath: workspaceFilePath,
+    config: workspaceConfig.config,
+    scope: "workspace",
+  };
+}
+
+async function readProvidersJsonFile(filePath) {
   try {
     return {
-      filePath,
       config: JSON.parse(await readFile(filePath, "utf8")),
     };
   } catch (error) {
@@ -551,7 +590,13 @@ async function writeWorkspaceProvidersJson(filePath, config = {}) {
 }
 
 async function writeWorkspaceSecrets({ workspaceRoot, values = {} } = {}) {
-  const filePath = path.join(workspaceRoot, ".odai", "secrets.env");
+  return await writeSecretsFile({
+    filePath: path.join(workspaceRoot, ".odai", "secrets.env"),
+    values,
+  });
+}
+
+async function writeSecretsFile({ filePath, values = {} } = {}) {
   let current = {};
   try {
     current = parseSecretEnvText(await readFile(filePath, "utf8"));

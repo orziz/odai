@@ -1,9 +1,9 @@
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
+  loadProviderSecretEnv,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
-  loadWorkspaceSecretEnv,
 } from "../config/provider-config.mjs";
 import { withRegistryModelOverride } from "../orchestrator/provider-model.mjs";
 import { redactString } from "../runtime/redaction.mjs";
@@ -26,9 +26,9 @@ export async function runModels({
   runCommand = defaultModelDiscoveryRunCommand,
 } = {}) {
   const args = parseModelArgs(argv);
-  const secretEnv = loadWorkspaceSecretEnv({ workspaceRoot: root });
+  const secretEnv = loadProviderSecretEnv({ workspaceRoot: root, env });
   const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: root, env });
-  const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+  const providerConfig = loadProviderConfig({ workspaceRoot: root, env });
   const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
     allowApiKey: args.useApiKey,
     allowProviderCommand: args.useProviderCommand,
@@ -141,5 +141,3 @@ export function formatModelsList(result = {}) {
   lines.push("Use --json for discovery diagnostics and provider readiness.");
   return lines.join("\n");
 }
-
-

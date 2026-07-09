@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import path from "node:path";
 import { ProviderRegistry } from "../orchestrator/provider-registry.mjs";
 import { createAnthropicApiProvider } from "../providers/anthropic-api.mjs";
@@ -164,8 +165,36 @@ export function createProviderRegistryFromEnvironment(env = process.env, options
   return registry;
 }
 
+export function odaiHome(env = process.env) {
+  return path.resolve(env.ODAI_HOME || path.join(homedir(), ".odai"));
+}
+
+export function providerConfigPaths({ workspaceRoot = process.cwd(), env = process.env } = {}) {
+  const globalRoot = odaiHome(env);
+  return {
+    globalRoot,
+    globalProvidersFile: path.join(globalRoot, "providers.json"),
+    globalSecretsFile: path.join(globalRoot, "secrets.env"),
+    workspaceRoot,
+    workspaceProvidersFile: path.join(workspaceRoot, ".odai", "providers.json"),
+    workspaceSecretsFile: path.join(workspaceRoot, ".odai", "secrets.env"),
+  };
+}
+
+export function loadProviderConfig({ workspaceRoot = process.cwd(), env = process.env } = {}) {
+  const paths = providerConfigPaths({ workspaceRoot, env });
+  return mergeProviderConfigs([
+    shouldUseGlobalConfig(env) ? readProviderConfigFile(paths.globalProvidersFile) : {},
+    readProviderConfigFile(paths.workspaceProvidersFile),
+  ]);
+}
+
 export function loadWorkspaceProviderConfig({ workspaceRoot }) {
   const filePath = path.join(workspaceRoot, ".odai", "providers.json");
+  return readProviderConfigFile(filePath);
+}
+
+function readProviderConfigFile(filePath) {
   try {
     return normalizeWorkspaceProviderConfig(JSON.parse(readFileSync(filePath, "utf8")), filePath);
   } catch (error) {
@@ -184,8 +213,45 @@ export function loadWorkspaceProviderConfig({ workspaceRoot }) {
   }
 }
 
-export function loadWorkspaceSecretEnv({ workspaceRoot }) {
-  const filePath = path.join(workspaceRoot, ".odai", "secrets.env");
+function mergeProviderConfigs(configs = []) {
+  const providersByName = new Map();
+  const errors = [];
+  for (const config of configs) {
+    for (const provider of config.providers || []) {
+      providersByName.set(provider.name, provider);
+    }
+    if (Array.isArray(config.errors)) {
+      errors.push(...config.errors);
+    }
+  }
+  const result = {
+    providers: [...providersByName.values()],
+  };
+  if (errors.length > 0) {
+    result.errors = errors;
+  }
+  return result.providers.length > 0 || result.errors ? result : {};
+}
+
+export function loadWorkspaceSecretEnv({ workspaceRoot, env = process.env } = {}) {
+  return loadSecretEnvFile(providerConfigPaths({ workspaceRoot, env }).workspaceSecretsFile);
+}
+
+export function loadGlobalSecretEnv({ env = process.env } = {}) {
+  if (!shouldUseGlobalConfig(env)) {
+    return {};
+  }
+  return loadSecretEnvFile(providerConfigPaths({ env }).globalSecretsFile);
+}
+
+export function loadProviderSecretEnv({ workspaceRoot, env = process.env } = {}) {
+  return {
+    ...loadGlobalSecretEnv({ env }),
+    ...loadWorkspaceSecretEnv({ workspaceRoot, env }),
+  };
+}
+
+function loadSecretEnvFile(filePath) {
   try {
     return parseWorkspaceSecretEnv(readFileSync(filePath, "utf8"));
   } catch (error) {
@@ -196,9 +262,13 @@ export function loadWorkspaceSecretEnv({ workspaceRoot }) {
   }
 }
 
+function shouldUseGlobalConfig(env = process.env) {
+  return env === process.env || Boolean(env?.ODAI_HOME);
+}
+
 export function loadWorkspaceEnvironment({ workspaceRoot, env = process.env } = {}) {
   return {
-    ...loadWorkspaceSecretEnv({ workspaceRoot }),
+    ...loadProviderSecretEnv({ workspaceRoot, env }),
     ...env,
   };
 }

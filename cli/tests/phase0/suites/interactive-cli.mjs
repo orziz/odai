@@ -645,6 +645,85 @@ assert.equal(modelSelectChoices[0].label, "codex-cli:gpt-5.5");
 assert.ok(modelSelectOutputs.some((message) => message === "model: codex-cli:gpt-5.5"));
 assert.ok(!modelSelectOutputs.some((message) => /"selected": "codex-cli:gpt-5\.5"/.test(message)));
 
+const pickerInputs = ["/provider select", "/auth select", "picker task", "/exit"];
+const pickerOutputs = [];
+const pickerProviderArgs = [];
+const pickerProviderChoices = [];
+const pickerAuthChoices = [];
+const pickerTasks = [];
+const pickerPreferencePatches = [];
+await runInteractiveSession({
+  ask: async () => pickerInputs.shift(),
+  write: (message) => pickerOutputs.push(message),
+  savePreferences: async (patch) => pickerPreferencePatches.push(patch),
+  handleTask: async (argv) => {
+    pickerTasks.push(argv);
+    return {
+      status: "ready",
+      task: argv.join(" "),
+      agentLoop: { agent: { provider: "mock-main" }, turns: [] },
+    };
+  },
+  handleProviders: async (argv) => {
+    pickerProviderArgs.push(argv);
+    return {
+      providers: [
+        { name: "mock-main", kind: "Provider", available: true, auth: "mock" },
+        { name: "blocked-main", kind: "Provider", available: false, blockedReason: "missing key" },
+      ],
+    };
+  },
+  selectProvider: async (choices, options) => {
+    assert.equal(options.prompt, "Select provider");
+    pickerProviderChoices.push(...choices);
+    return choices.find((choice) => choice.value === "mock-main");
+  },
+  selectAuth: async (choices, options) => {
+    assert.equal(options.prompt, "Select auth");
+    pickerAuthChoices.push(...choices);
+    return choices.find((choice) => choice.value === "api-key");
+  },
+  handleContinue: async () => ({ status: "ready" }),
+});
+assert.deepEqual(pickerProviderArgs, [[], []]);
+assert.equal(pickerProviderChoices[0].value, "auto");
+assert.equal(pickerProviderChoices[0].current, true);
+assert.equal(pickerProviderChoices.find((choice) => choice.value === "mock-main")?.status, "ready");
+assert.equal(pickerProviderChoices.find((choice) => choice.value === "blocked-main")?.status, "missing key");
+assert.equal(pickerAuthChoices.find((choice) => choice.value === "api-key")?.status, "off");
+assert.deepEqual(pickerTasks[0], [
+  "picker",
+  "task",
+  "--save",
+  "--agent-loop",
+  "--provider",
+  "mock-main",
+  "--use-api-key",
+]);
+assert.ok(pickerOutputs.some((message) => message === "provider: mock-main"));
+assert.ok(pickerOutputs.some((message) => message === "auth: api-key"));
+assert.ok(pickerPreferencePatches.some((patch) => patch.provider === "mock-main"));
+assert.ok(pickerPreferencePatches.some((patch) => patch.auth?.useApiKey === true));
+
+const pickerCancelInputs = ["/provider select", "/auth select", "/exit"];
+const pickerCancelOutputs = [];
+const pickerCancelPatches = [];
+await runInteractiveSession({
+  ask: async () => pickerCancelInputs.shift(),
+  write: (message) => pickerCancelOutputs.push(message),
+  savePreferences: async (patch) => pickerCancelPatches.push(patch),
+  handleTask: async (argv) => ({ status: "ready", task: argv.join(" ") }),
+  handleProviders: async () => ({ providers: [{ name: "mock-main" }] }),
+  selectProvider: async () => undefined,
+  selectAuth: async () => undefined,
+  handleContinue: async () => ({ status: "ready" }),
+});
+assert.ok(pickerCancelOutputs.some((message) => message.includes("Use /provider <name|auto>")));
+assert.ok(pickerCancelOutputs.some((message) => message.includes("Use /auth api-key")));
+assert.ok(!pickerCancelOutputs.some((message) => message.includes("not registered: select")));
+assert.ok(!pickerCancelOutputs.some((message) => message.includes("Usage: /auth")));
+assert.equal(pickerCancelPatches.length, 0);
+
 const preferenceSessionInputs = [
   "preference task",
   "/model auto",

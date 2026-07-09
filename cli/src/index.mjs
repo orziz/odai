@@ -5,6 +5,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { runInteractiveSession } from "./core/interactive-session.mjs";
 import { runAuthConfig } from "./core/auth-config.mjs";
+import { runProviderConfigCommand } from "./core/provider-config-command.mjs";
 import {
   runAcceptance,
   runAudit,
@@ -23,7 +24,9 @@ import {
   createInteractiveCompleter,
   createInteractivePromptAsk,
   describeInteractiveCompletions,
+  selectAuthChoice,
   selectModelChoice,
+  selectProviderChoice,
 } from "./core/interactive-ui.mjs";
 import { initWorkspace } from "./core/init-workspace.mjs";
 import {
@@ -63,8 +66,8 @@ import { EvidenceLedger } from "./runtime/evidence-ledger.mjs";
 import {
   createProviderRegistryFromEnvironment,
   describeProviders,
+  loadProviderConfig,
   loadWorkspaceEnvironment,
-  loadWorkspaceProviderConfig,
 } from "./config/provider-config.mjs";
 import { loadWorkspacePolicyConfig } from "./config/policy-config.mjs";
 import { continueLatestRun, parseResumeArgs } from "./core/continue-run.mjs";
@@ -76,7 +79,9 @@ export {
   completeInteractiveLine,
   createInteractiveCompleter,
   describeInteractiveCompletions,
+  selectAuthChoice,
   selectModelChoice,
+  selectProviderChoice,
 } from "./core/interactive-ui.mjs";
 export {
   runAgents,
@@ -84,6 +89,9 @@ export {
 export {
   runAuthConfig,
 } from "./core/auth-config.mjs";
+export {
+  runProviderConfigCommand,
+} from "./core/provider-config-command.mjs";
 export {
   formatModelsList,
   runModels,
@@ -140,9 +148,17 @@ export async function main(argv) {
     return;
   }
 
+  if (
+    command === "provider" ||
+    (command === "providers" && ["add", "set", "remove", "delete", "rm", "clear", "path", "config"].includes(argv[1]))
+  ) {
+    console.log(JSON.stringify(await runProviderConfigCommand({ repoRoot, argv: argv.slice(1) }), null, 2));
+    return;
+  }
+
   if (command === "providers") {
     const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: repoRoot, env: process.env });
-    const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: repoRoot });
+    const providerConfig = loadProviderConfig({ workspaceRoot: repoRoot, env: process.env });
     const providerCommandAuth = providerCommandAuthFromArgv(argv);
     const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
       allowApiKey: hasFlag(argv, "--use-api-key"),
@@ -300,7 +316,7 @@ export async function main(argv) {
   if (command === "--help" || command === "-h") {
     console.log(
       [
-        "Usage: odai [task] | odai resume [task] | odai run <task> | <init|phase0|providers|models|auth|agents|policy|setup|status|audit|evidence|governance|acceptance|milestones|sandbox|e2e|sessions|skills|doctor|continue|rollback|canary-runner>",
+        "Usage: odai [task] | odai resume [task] | odai run <task> | <init|phase0|provider|providers|models|auth|agents|policy|setup|status|audit|evidence|governance|acceptance|milestones|sandbox|e2e|sessions|skills|doctor|continue|rollback|canary-runner>",
         "Default: odai <task> starts the interactive CLI, runs the task with --provider auto, then stays at odai>.",
         "Script mode: odai run <task> executes once and prints JSON for automation.",
         "Model options: use --model <model>, --reasoning <minimal|low|medium|high>, and --context <200k|1m>; in the interactive CLI use /model, /reasoning, /context, and /settings.",
@@ -310,6 +326,7 @@ export async function main(argv) {
         "Doctor: odai doctor --all probes all explicitly available providers without local tools; --model <name> supplies a task-level model for this probe; odai doctor --setup --save stores the setup guide for continue.",
         "Status: odai status summarizes local gates, saved external evidence, and next runnable checks.",
         "Models: odai models [--provider <name>] [--use-api-key] [--use-provider-command] actively discovers available model names; add --json for provider readiness details.",
+        "Provider config: odai provider path shows global and workspace config files; odai provider add opens a setup wizard; odai provider set updates or creates a channel; odai provider remove <name> deletes one; odai provider clear <name> clears its API-key binding. Provider config is global by default; pass --workspace for project-local overrides.",
         "Auth config: odai auth status | odai auth login claude-cli | odai auth migrate | odai auth provider <name> --api-key-stdin manages local secrets and subscription CLI login handoff.",
         "Audit: odai audit reports whether the current plan-backed completion claim is proven by executable evidence.",
         "Evidence: odai evidence audits saved real provider and strong sandbox evidence from .odai/runs without running anything.",
@@ -381,7 +398,7 @@ export async function runCliSession({ repoRoot: root = repoRoot, initialTaskArgv
         }),
       handleProviders: (providerArgv = []) => {
         const workspaceEnv = loadWorkspaceEnvironment({ workspaceRoot: root, env: process.env });
-        const providerConfig = loadWorkspaceProviderConfig({ workspaceRoot: root });
+        const providerConfig = loadProviderConfig({ workspaceRoot: root, env: process.env });
         const providerCommandAuth = providerCommandAuthFromArgv(providerArgv);
         const registry = createProviderRegistryFromEnvironment(workspaceEnv, {
           allowApiKey: hasFlag(providerArgv, "--use-api-key"),
@@ -391,9 +408,30 @@ export async function runCliSession({ repoRoot: root = repoRoot, initialTaskArgv
         });
         return describeProviders(registry, workspaceEnv);
       },
+      handleProviderConfig: (providerConfigArgv = []) =>
+        runProviderConfigCommand({
+          repoRoot: root,
+          argv: providerConfigArgv,
+        }),
       handleModels: (modelsArgv = []) => runModels({ repoRoot: root, argv: modelsArgv }),
       selectModel: (choices, options = {}) =>
         selectModelChoice({
+          input,
+          output,
+          rl,
+          choices,
+          prompt: options.prompt,
+        }),
+      selectProvider: (choices, options = {}) =>
+        selectProviderChoice({
+          input,
+          output,
+          rl,
+          choices,
+          prompt: options.prompt,
+        }),
+      selectAuth: (choices, options = {}) =>
+        selectAuthChoice({
           input,
           output,
           rl,
