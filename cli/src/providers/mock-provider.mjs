@@ -145,6 +145,45 @@ function runMockAgentLoopTurn({ name, agent, input, onEvent, model }) {
     return output;
   }
 
+  if (/ask user control/i.test(String(input.task || ""))) {
+    output.text = "Mock agent needs a user decision.";
+    output.toolIntents = [
+      {
+        type: "ask-user",
+        question: "Should I continue with the mock change?",
+      },
+    ];
+    return output;
+  }
+
+  if (/complete control/i.test(String(input.task || ""))) {
+    output.text = "Mock agent finished.";
+    output.toolIntents = [
+      {
+        type: "complete",
+        summary: "Mock completion without more tools.",
+      },
+    ];
+    return output;
+  }
+
+  if (/spawn subagent control/i.test(String(input.task || ""))) {
+    output.text = "Mock agent requests a reviewer subagent.";
+    output.toolIntents = [
+      {
+        type: "spawn-subagent",
+        profile: "reviewer",
+        provider: "auto",
+        reason: "Independent review after mock work.",
+      },
+      {
+        type: "complete",
+        summary: "Main mock work complete; reviewer requested.",
+      },
+    ];
+    return output;
+  }
+
   if (turn === 1 && input.target && typeof input.content === "string") {
     output.toolIntents = [
       {

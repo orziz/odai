@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
@@ -167,15 +168,44 @@ function createDockerSandboxCommand({ command = [], workspaceRoot, sessionTmp, s
 }
 
 function createMacOsSandboxProfile({ workspaceRoot, sessionTmp }) {
+  const roots = uniqueSandboxRoots([workspaceRoot, sessionTmp]);
   return [
     "(version 1)",
     '(deny default)',
     '(import "system.sb")',
     '(allow process*)',
     '(allow file-read*)',
-    `(allow file-write* (subpath ${quoteSandboxPath(workspaceRoot)}))`,
-    `(allow file-write* (subpath ${quoteSandboxPath(sessionTmp)}))`,
+    ...roots.map((root) => `(allow file-write* (subpath ${quoteSandboxPath(root)}))`),
   ].join("\n");
+}
+
+function uniqueSandboxRoots(paths = []) {
+  const roots = new Set();
+  for (const value of paths) {
+    for (const resolved of resolveSandboxPathAliases(value)) {
+      roots.add(resolved);
+    }
+  }
+  return [...roots];
+}
+
+function resolveSandboxPathAliases(filePath) {
+  const raw = String(filePath || "");
+  if (!raw) return [];
+  const aliases = new Set([raw]);
+  try {
+    aliases.add(realpathSync(raw));
+  } catch {
+    // Path may not exist yet; keep the original string for profile matching.
+  }
+  // macOS often exposes /var and /tmp as /private/var and /private/tmp.
+  if (raw.startsWith("/var/") || raw === "/var" || raw.startsWith("/tmp/") || raw === "/tmp") {
+    aliases.add(`/private${raw}`);
+  }
+  if (raw.startsWith("/private/var/") || raw === "/private/var" || raw.startsWith("/private/tmp/") || raw === "/private/tmp") {
+    aliases.add(raw.replace(/^\/private/, ""));
+  }
+  return [...aliases].filter(Boolean);
 }
 
 function quoteSandboxPath(filePath) {

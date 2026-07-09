@@ -6,6 +6,9 @@ import {
 } from "../config/provider-config.mjs";
 import { withRegistryModelOverride } from "../orchestrator/provider-model.mjs";
 import { describeSandboxReadiness } from "./sandbox-readiness.mjs";
+import {
+  normalizeProviderCommandProviders,
+} from "./cli-args.mjs";
 
 export function describeE2EReadiness({
   workspaceRoot,
@@ -116,12 +119,6 @@ export function describeE2EReadiness({
     runnableCommands: buildRunnableCommands({ requirements, availableRealProviders, modelOverride }),
     note: "This readiness report does not call real providers or execute shell sandboxes. Use the listed commands only after the required credentials, CLI auth, and sandbox policy are intentionally configured.",
   };
-}
-
-function normalizeProviderCommandProviders(value) {
-  if (value === undefined || value === null) return [];
-  const items = Array.isArray(value) ? value : String(value).split(",");
-  return [...new Set(items.map((item) => String(item || "").trim()).filter(Boolean))].sort();
 }
 
 function providerSummary(provider) {

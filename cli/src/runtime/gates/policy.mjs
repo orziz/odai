@@ -4,11 +4,11 @@ import path from "node:path";
 
 export function policyGate(intent, context) {
   if (!["list", "read", "search", "write"].includes(intent.type) || !intent.path) {
-    if (intent.type === "ask-user" || intent.type === "complete") {
+    if (intent.type === "ask-user" || intent.type === "complete" || intent.type === "spawn-subagent") {
       return {
         allow: false,
         gate: "policy",
-        reason: `Model intent '${intent.type}' is not an executable runtime tool; use assistant text or the main interactive flow.`,
+        reason: `Model intent '${intent.type}' is not an executable runtime tool; the main agent loop handles control intents.`,
       };
     }
 

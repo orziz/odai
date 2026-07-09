@@ -1,6 +1,11 @@
 import path from "node:path";
 import { redactProviderSessionValue } from "./redaction.mjs";
 import { isProtectedModelPath } from "./path-classifier.mjs";
+import {
+  compressConversationContext,
+  compressPreviousToolResults,
+  shouldCompressConversationContext,
+} from "./context-compress.mjs";
 
 const PUBLIC_SESSION_KEYS = [
   "id",
@@ -85,14 +90,36 @@ export function collectProviderSessions(calls = []) {
 }
 
 export function prepareProviderInput({ input = {}, provider, workspaceRoot } = {}) {
+  const contextWindowTokens = resolveContextWindowTokens(input);
+  // Resume session must be selected from the raw context before sanitization
+  // strips providerSessions / authorization fields from model-visible input.
   const resumeProviderSession = selectResumeProviderSession({
     conversationContext: input.conversationContext,
     provider,
   });
+  // Sanitize always; compress only when oversized or explicitly requested.
+  let conversationContext = sanitizeProviderConversationContext(input.conversationContext, {
+    workspaceRoot,
+  });
+  if (
+    shouldCompressConversationContext(conversationContext, {
+      contextWindowTokens,
+      compressContext: input.compressContext,
+    })
+  ) {
+    conversationContext = compressConversationContext(conversationContext, {
+      contextWindowTokens,
+      compressContext: input.compressContext,
+    });
+  }
   const prepared = sanitizeProviderInput({
     ...input,
-    conversationContext: sanitizeProviderConversationContext(input.conversationContext, { workspaceRoot }),
-  }, { workspaceRoot });
+    conversationContext,
+  }, {
+    workspaceRoot,
+    contextWindowTokens,
+    compressContext: input.compressContext,
+  });
   if (resumeProviderSession) {
     prepared.resumeProviderSession = resumeProviderSession;
   } else {
@@ -101,7 +128,18 @@ export function prepareProviderInput({ input = {}, provider, workspaceRoot } = {
   return prepared;
 }
 
-function sanitizeProviderInput(input = {}, { workspaceRoot } = {}) {
+function resolveContextWindowTokens(input = {}) {
+  const fromOptions = input?.modelOptions?.contextWindowTokens;
+  if (Number.isFinite(fromOptions) && fromOptions > 0) {
+    return Math.floor(fromOptions);
+  }
+  if (Number.isFinite(input?.contextWindowTokens) && input.contextWindowTokens > 0) {
+    return Math.floor(input.contextWindowTokens);
+  }
+  return undefined;
+}
+
+function sanitizeProviderInput(input = {}, { workspaceRoot, contextWindowTokens, compressContext } = {}) {
   const prepared = { ...input };
   if (Array.isArray(prepared.files)) {
     prepared.files = prepared.files.map((filePath) => sanitizeProviderPath(filePath, { workspaceRoot }));
@@ -115,6 +153,16 @@ function sanitizeProviderInput(input = {}, { workspaceRoot } = {}) {
   if (Array.isArray(prepared.toolIntents)) {
     prepared.toolIntents = prepared.toolIntents.map((intent) => sanitizeProviderToolIntent(intent, { workspaceRoot }));
   }
+  if (Array.isArray(prepared.previousToolResults)) {
+    const sanitizedResults = prepared.previousToolResults.map((entry) =>
+      sanitizeProviderValue(entry, { workspaceRoot }),
+    );
+    prepared.previousToolResults = compressPreviousToolResults(sanitizedResults, {
+      maxResults: Number.isFinite(contextWindowTokens) && contextWindowTokens < 32000 ? 8 : 12,
+      force: compressContext === true,
+    });
+  }
+  // conversationContext already handled in prepareProviderInput; do not double-compress here.
   return prepared;
 }
 

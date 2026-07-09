@@ -9,6 +9,11 @@ import {
   managedProviderApiKeyEnv,
 } from "../config/provider-config.mjs";
 import { redactString, redactUrl } from "../runtime/redaction.mjs";
+import {
+  optionToken,
+  hasFlag,
+  enabledFlagValue,
+} from "./cli-args.mjs";
 
 const defaultRepoRoot = process.cwd();
 const BUILT_IN_AUTH_PROVIDERS = new Map([
@@ -628,38 +633,6 @@ function publicErrorCause(cause) {
     result.message = redactString(cause.message);
   }
   return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function optionToken(item = "") {
-  const value = String(item);
-  const separator = value.indexOf("=");
-  if (separator <= 0) {
-    return {
-      name: value,
-      value: undefined,
-      hasInlineValue: false,
-    };
-  }
-  return {
-    name: value.slice(0, separator),
-    value: value.slice(separator + 1),
-    hasInlineValue: true,
-  };
-}
-
-function hasFlag(argv = [], name) {
-  return argv.some((item) => {
-    const option = optionToken(item);
-    return option.name === name && enabledFlagValue(option);
-  });
-}
-
-function enabledFlagValue(option = {}) {
-  if (!option.hasInlineValue) return true;
-  const value = String(option.value || "").trim().toLowerCase();
-  if (["", "1", "true", "yes", "on"].includes(value)) return true;
-  if (["0", "false", "no", "off"].includes(value)) return false;
-  return false;
 }
 
 async function readStdin() {

@@ -7,10 +7,11 @@ import {
   loadWorkspaceEnvironment,
   loadWorkspaceProviderConfig,
 } from "../config/provider-config.mjs";
+import { discoverSkillsSync } from "./skill-discovery.mjs";
 
 const defaultRepoRoot = process.cwd();
-function slashCommandItems(language = "en") {
-  return [
+function slashCommandItems(language = "en", { repoRoot: root = defaultRepoRoot, env = process.env } = {}) {
+  const runtimeCommands = [
     completionItem("/model", t(language, "slash.model")),
     completionItem("/models", t(language, "slash.models")),
     completionItem("/provider", t(language, "slash.provider")),
@@ -32,10 +33,23 @@ function slashCommandItems(language = "en") {
     completionItem("/run", t(language, "slash.run")),
     completionItem("/init", t(language, "slash.init")),
     completionItem("/policy", t(language, "slash.policy")),
+    completionItem("/skills", t(language, "slash.skills")),
     completionItem("/help", t(language, "slash.help")),
     completionItem("/retry", t(language, "slash.retry")),
     completionItem("/exit", t(language, "slash.exit")),
   ];
+  // Direct /skill-name entries (Claude-style), never overriding reserved runtime commands.
+  const skillItems = discoverSkillsSync({ workspaceRoot: root, env })
+    .filter((skill) => !skill.reservedClash)
+    .map((skill) =>
+      completionItem(
+        `/${skill.name}`,
+        skill.system
+          ? t(language, "slash.skillSystem")
+          : skill.description || t(language, "slash.skill", { name: skill.name }),
+      ),
+    );
+  return [...runtimeCommands, ...skillItems];
 }
 
 function completionItem(value, description = "") {
@@ -318,7 +332,7 @@ function interactiveCompletionItems(
   const tokens = trimmed.split(/\s+/);
   const command = tokens[0] || "";
   if (tokens.length <= 1 && !/\s$/.test(trimmed)) {
-    return slashCommandItems(language);
+    return slashCommandItems(language, { repoRoot: root, env });
   }
 
   const catalog = safeCompletionCatalog({ repoRoot: root, env });

@@ -3,6 +3,9 @@ import {
   readLatestWorkspaceTranscript,
 } from "./transcript-store.mjs";
 import { redactString } from "../runtime/redaction.mjs";
+import {
+  optionToken,
+} from "./cli-args.mjs";
 
 const defaultRepoRoot = process.cwd();
 
@@ -48,23 +51,6 @@ function parseSessionsArgs(argv) {
     }
   }
   return args;
-}
-
-function optionToken(item = "") {
-  const value = String(item);
-  const separator = value.indexOf("=");
-  if (separator <= 0) {
-    return {
-      name: value,
-      value: undefined,
-      hasInlineValue: false,
-    };
-  }
-  return {
-    name: value.slice(0, separator),
-    value: value.slice(separator + 1),
-    hasInlineValue: true,
-  };
 }
 
 function publicError(error) {

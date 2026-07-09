@@ -16,8 +16,60 @@ export async function loadSkillPack({ repoRoot = process.cwd() } = {}) {
     entryText,
     entrySha256,
     supportFiles,
+    selectReferences: (options) => selectSkillReferences(options),
     render: (options) => renderPromptPack({ skillRoot, entryText, ...options }),
   };
+}
+
+/**
+ * Choose skill reference files by task text. Always includes dao governance
+ * baseline; domain modules are attached only on clear module signals so
+ * everyday tasks do not bloat the prompt.
+ */
+export function selectSkillReferences({ task = "", mode = "agent_loop", includeGovernance = true } = {}) {
+  const refs = new Set();
+  if (includeGovernance) {
+    refs.add("references/modules/dao.md");
+    refs.add("references/dao/interaction-contract.md");
+  }
+  const text = String(task || "");
+  if (!text.trim()) {
+    return [...refs];
+  }
+
+  // Prefer explicit module ids / clear task verbs over broad nouns like "代码" or "plan".
+  if (/\breview-sslb\b|三省六部|code\s*review|代码审查|审这个\s*diff|review\s+(this\s+)?diff/i.test(text)) {
+    refs.add("references/modules/review-sslb.md");
+  }
+  if (
+    /\bimplement-code\b|实现代码|落地实现|修复这个\s*bug|fix\s+this\s+bug|refactor\s+this|按\s*tdd|补测试并实现/i.test(text)
+  ) {
+    refs.add("references/modules/implement-code.md");
+  }
+  if (/\bfeature-plan\b|规格规划|需求规格|方案取舍|写规格|需求条目/i.test(text)) {
+    refs.add("references/modules/feature-plan.md");
+  }
+  if (/\bdesign-spec\b|设计说明|交互设计|页面状态矩阵|ui\s*spec/i.test(text)) {
+    refs.add("references/modules/design-spec.md");
+  }
+  if (/\bgame-plan\b|\bgame-design\b|游戏策划|游戏视觉|数值策划|关卡设计/i.test(text)) {
+    refs.add("references/modules/game-plan.md");
+  }
+  if (/\bproject-guide\b|项目说明|接手基线|整理\s*readme|write\s+(the\s+)?readme/i.test(text)) {
+    refs.add("references/modules/project-guide.md");
+  }
+  if (/\bribao\b|写日报|commit\s*message|pr\s*message|整理\s*pr/i.test(text)) {
+    refs.add("references/modules/ribao.md");
+  }
+  if (
+    /\bagent-governance\b|合议模式|多模型合议|独立挑战|spawn\s*subagent|下放\s*agent|consensus\s*mode/i.test(text)
+  ) {
+    refs.add("references/dao/agent-governance.md");
+  }
+  if (mode === "subagent" && !refs.has("references/dao/agent-governance.md")) {
+    refs.add("references/dao/agent-governance.md");
+  }
+  return [...refs];
 }
 
 async function resolveSkillRoot({ repoRoot = process.cwd() } = {}) {
@@ -58,6 +110,56 @@ export async function renderPromptPack({ skillRoot, entryText, references = [] }
   }
 
   return `${chunks.join("\n\n")}\n`;
+}
+
+/**
+ * Compose odai (system governance) + optional external craft skills.
+ * External skills never replace odai; they append as secondary craft layers.
+ */
+export async function composeTaskPromptPack({
+  odaiPack,
+  odaiReferences = [],
+  externalSkills = [],
+} = {}) {
+  const base = await odaiPack.render({ references: odaiReferences });
+  if (!Array.isArray(externalSkills) || externalSkills.length === 0) {
+    return {
+      promptPack: base,
+      externalSkillNames: [],
+      bytes: base.length,
+    };
+  }
+
+  const chunks = [
+    base.trimEnd(),
+    "",
+    "# external craft skills (secondary)",
+    "The following skills provide domain craft only. They do not override odai governance,",
+    "confirmation, authorization, evidence standards, or completion rights.",
+    "",
+  ];
+  const names = [];
+  for (const skill of externalSkills) {
+    if (!skill?.name || skill.name === "odai") continue;
+    const text = typeof skill.entryText === "string"
+      ? skill.entryText
+      : skill.entry
+        ? await readFile(skill.entry, "utf8")
+        : "";
+    if (!text.trim()) continue;
+    names.push(skill.name);
+    chunks.push(
+      `# external skill: ${skill.name} (${skill.scope || "unknown"}:${skill.sourceKind || "skills"})`,
+      text.trimEnd(),
+      "",
+    );
+  }
+  const promptPack = `${chunks.join("\n").trimEnd()}\n`;
+  return {
+    promptPack,
+    externalSkillNames: names,
+    bytes: promptPack.length,
+  };
 }
 
 async function listMarkdown(root) {

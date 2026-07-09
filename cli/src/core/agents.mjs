@@ -7,6 +7,13 @@ import {
   publicProviderSource,
 } from "../config/provider-config.mjs";
 import { redactString } from "../runtime/redaction.mjs";
+import {
+  appendUnique,
+  optionToken,
+  applyProviderCommandOption,
+  normalizeProviderCommandProviders,
+  enabledFlagValue,
+} from "./cli-args.mjs";
 
 const defaultRepoRoot = process.cwd();
 export function runAgents({ repoRoot: root = defaultRepoRoot, argv = [], env = process.env } = {}) {
@@ -170,69 +177,4 @@ function parseAgentsArgs(argv = []) {
     }
   }
   return args;
-}
-
-function appendUnique(items, value) {
-  if (!items.includes(value)) {
-    items.push(value);
-  }
-}
-
-function optionToken(item = "") {
-  const value = String(item);
-  const separator = value.indexOf("=");
-  if (separator <= 0) {
-    return {
-      name: value,
-      value: undefined,
-      hasInlineValue: false,
-    };
-  }
-  return {
-    name: value.slice(0, separator),
-    value: value.slice(separator + 1),
-    hasInlineValue: true,
-  };
-}
-
-function applyProviderCommandOption(args, option = {}) {
-  if (!option.hasInlineValue) {
-    args.useProviderCommand = true;
-    args.providerCommandProviders = [];
-    return;
-  }
-
-  const value = String(option.value || "").trim();
-  const normalized = value.toLowerCase();
-  if (["", "1", "true", "yes", "on"].includes(normalized)) {
-    args.useProviderCommand = true;
-    args.providerCommandProviders = [];
-    return;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    args.useProviderCommand = false;
-    args.providerCommandProviders = [];
-    return;
-  }
-
-  args.useProviderCommand = false;
-  args.providerCommandProviders = normalizeProviderCommandProviders(value);
-}
-
-function normalizeProviderCommandProviders(value) {
-  if (value === undefined || value === null) return [];
-  const items = Array.isArray(value) ? value : String(value).split(",");
-  return [...new Set(
-    items
-      .map((item) => String(item || "").trim())
-      .filter(Boolean),
-  )].sort();
-}
-
-function enabledFlagValue(option = {}) {
-  if (!option.hasInlineValue) return true;
-  const value = String(option.value || "").trim().toLowerCase();
-  if (["", "1", "true", "yes", "on"].includes(value)) return true;
-  if (["0", "false", "no", "off"].includes(value)) return false;
-  return false;
 }

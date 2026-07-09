@@ -1,6 +1,6 @@
 {
   "name": "odai-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Provider-neutral odai CLI agent runtime.",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "odai": "./bin/odai.mjs"
+    "odai": "bin/odai.mjs"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -49,7 +49,8 @@
     "providers": "node ./bin/odai.mjs providers",
     "pack:dry-run": "npm pack --dry-run",
     "smoke": "node ./tests/phase0/smoke.mjs",
-    "test": "node ./tests/phase0/smoke.mjs"
+    "test:optimizations": "node ./tests/phase0/optimizations.mjs",
+    "test": "node ./tests/phase0/smoke.mjs && node ./tests/phase0/optimizations.mjs"
   },
   "keywords": [
     "agent",

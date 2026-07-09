@@ -1,4 +1,14 @@
-const ALLOWED_INTENT_TYPES = new Set(["list", "read", "search", "write", "shell", "network", "ask-user", "complete"]);
+const ALLOWED_INTENT_TYPES = new Set([
+  "list",
+  "read",
+  "search",
+  "write",
+  "shell",
+  "network",
+  "ask-user",
+  "complete",
+  "spawn-subagent",
+]);
 
 export function parseToolIntentEnvelope(text) {
   const payload = parseJsonPayload(text);
@@ -111,6 +121,24 @@ function normalizeToolIntent(intent) {
     return {
       type: "complete",
       summary: typeof intent.summary === "string" ? intent.summary : "",
+      risk: normalizeRisk(intent.risk),
+    };
+  }
+
+  if (intent.type === "spawn-subagent") {
+    const profile = typeof intent.profile === "string" && intent.profile.trim()
+      ? intent.profile.trim()
+      : "reviewer";
+    return {
+      type: "spawn-subagent",
+      profile,
+      provider: typeof intent.provider === "string" && intent.provider.trim()
+        ? intent.provider.trim()
+        : "auto",
+      model: typeof intent.model === "string" && intent.model.trim()
+        ? intent.model.trim()
+        : undefined,
+      reason: typeof intent.reason === "string" ? intent.reason : undefined,
       risk: normalizeRisk(intent.risk),
     };
   }

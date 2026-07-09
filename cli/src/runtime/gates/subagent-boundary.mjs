@@ -11,7 +11,7 @@ export function subagentBoundaryGate(intent) {
     };
   }
 
-  if (intent.type === "ask-user" || intent.type === "complete") {
+  if (intent.type === "ask-user" || intent.type === "complete" || intent.type === "spawn-subagent") {
     return {
       allow: false,
       gate: "subagent-boundary",

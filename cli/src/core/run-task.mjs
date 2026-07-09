@@ -1,13 +1,25 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadSkillPack } from "./skill-pack.mjs";
+import {
+  composeTaskPromptPack,
+  loadSkillPack,
+  selectSkillReferences,
+} from "./skill-pack.mjs";
+import {
+  discoverSkillsSync,
+  loadExternalSkillPack,
+  matchSkillsInTask,
+  normalizeSkillName,
+} from "./skill-discovery.mjs";
 import { writeRunRecord, writeWorkspaceRunRecord } from "./run-store.mjs";
 import { SessionState } from "./session-state.mjs";
 import { appendUnique, applyProviderCommandOption, enabledFlagValue, optionToken } from "./cli-args.mjs";
 import { publicError, publicTaskText } from "./public-summaries.mjs";
 import { publicToolResult } from "../runtime/redaction.mjs";
 import { runAgentLoop } from "../runtime/agent-loop.mjs";
+import { resolveAgentLoopMaxTurns } from "../runtime/agent-control.mjs";
+import { compressConversationContext } from "../runtime/context-compress.mjs";
 import { normalizeModelOptions, parseContextWindowTokens } from "../runtime/model-options.mjs";
 import { EvidenceLedger } from "../runtime/evidence-ledger.mjs";
 import { ToolDispatcher } from "../runtime/tool-dispatcher.mjs";
@@ -32,9 +44,32 @@ export async function runMockTask({
   const args = parseRunArgs(argv);
   const sessionTmp = providedSessionTmp || (await mkdtemp(path.join(tmpdir(), "odai-cli-run-")));
   const skillPack = await loadSkillPack({ repoRoot: root });
-  const promptPack = await skillPack.render({
-    references: ["references/modules/dao.md", "references/dao/interaction-contract.md"],
+  const skillReferences = selectSkillReferences({
+    task: args.task,
+    mode: args.agentLoop ? "agent_loop" : "subagent",
   });
+  const discovered = discoverSkillsSync({ workspaceRoot: root });
+  const requestedSkills = uniqueSkillNames([
+    ...args.skills,
+    ...matchSkillsInTask(args.task, discovered),
+  ]).filter((name) => name && name !== "odai");
+  const externalSkills = [];
+  for (const name of requestedSkills) {
+    try {
+      externalSkills.push(await loadExternalSkillPack(name, { workspaceRoot: root }));
+    } catch {
+      // Unknown skill names are ignored for auto-hit; explicit --skill still records absence below.
+    }
+  }
+  const composed = await composeTaskPromptPack({
+    odaiPack: skillPack,
+    odaiReferences: skillReferences,
+    externalSkills,
+  });
+  const promptPack = composed.promptPack;
+  const missingExplicitSkills = args.skills.filter(
+    (name) => name !== "odai" && !composed.externalSkillNames.includes(name),
+  );
 
   const session = providedSession || new SessionState({ id: `run-${Date.now()}` });
   const evidence = providedEvidence || new EvidenceLedger();
@@ -73,6 +108,11 @@ export async function runMockTask({
     reasoning: args.reasoning,
     contextWindowTokens: args.contextWindowTokens,
   });
+  const resolvedMaxTurns = resolveAgentLoopMaxTurns({
+    maxTurns: args.maxTurns,
+    maxTurnsExplicit: args.maxTurnsExplicit,
+    reasoning: modelOptions?.reasoning || args.reasoning,
+  });
 
   let agentLoopRun;
   let subagentRun;
@@ -99,15 +139,70 @@ export async function runMockTask({
           toolIntents: args.toolIntents,
           promptPack,
           promptPackBytes: promptPack.length,
+          skillReferences,
+          // prepareProviderInput compresses automatically; pass raw context through.
           conversationContext,
           modelOptions,
         },
         dispatcher,
         evidence,
         usageLedger,
-        maxTurns: args.maxTurns,
+        maxTurns: resolvedMaxTurns,
         onEvent,
       });
+      // spawn-subagent is advisory by default: recorded on the agent loop result and
+      // evidence, but not auto-executed. Explicit --auto-spawn is required, and only
+      // completed agent loops may fan out (failed/limit/needs_user must not schedule).
+      const canAutoSpawn = Boolean(
+        args.autoSpawn
+        && agentLoopRun?.completed === true
+        && Array.isArray(agentLoopRun?.spawnRequests)
+        && agentLoopRun.spawnRequests.length > 0,
+      );
+      if (canAutoSpawn) {
+        const spawnedSpecs = agentLoopRun.spawnRequests.map((request) => ({
+          profile: request.profile || "reviewer",
+          provider: request.provider || "auto",
+          model: request.model,
+        }));
+        const spawnBatch = await runSubagentReviewBatch({
+          specs: spawnedSpecs,
+          scheduler,
+          mainProviderName: effectivePrimaryProviderName,
+          excludeProviderNames: args.excludeProviderNames,
+          input: {
+            task: args.task,
+            files: args.files,
+            target: args.target,
+            content: args.content,
+            promptPack,
+            promptPackBytes: promptPack.length,
+            skillReferences,
+            mainMode: "agent_loop",
+            spawnReason: "main_agent_spawn_request",
+            conversationContext,
+            modelOptions,
+          },
+          evidence,
+        });
+        subagentReviews.push(...spawnBatch.reviews);
+        subagentFailures = spawnBatch.failures;
+        if (subagentFailures.length > 0) {
+          const error = new Error(`Spawned subagent batch failed: ${subagentFailures.length} failed`);
+          error.failures = subagentFailures;
+          throw error;
+        }
+      } else if (
+        agentLoopRun?.completed === true
+        && Array.isArray(agentLoopRun?.spawnRequests)
+        && agentLoopRun.spawnRequests.length > 0
+      ) {
+        evidence.recordEvent("spawn-requests-pending", {
+          count: agentLoopRun.spawnRequests.length,
+          requests: agentLoopRun.spawnRequests,
+          note: "Spawn requests were recorded but not auto-executed. Pass --auto-spawn to schedule them.",
+        });
+      }
     } else {
       subagentRun = await scheduler.runSubagent({
         profileName: args.profile,
@@ -120,6 +215,7 @@ export async function runMockTask({
           content: args.content,
           promptPack,
           promptPackBytes: promptPack.length,
+          skillReferences,
           toolIntents: args.toolIntents,
           conversationContext,
           modelOptions,
@@ -141,6 +237,7 @@ export async function runMockTask({
           content: args.content,
           promptPack,
           promptPackBytes: promptPack.length,
+          skillReferences,
           mainMode: args.agentLoop ? "agent_loop" : "subagent",
           conversationContext,
           modelOptions,
@@ -191,10 +288,15 @@ export async function runMockTask({
     modelOptions,
     skill: {
       name: skillPack.name,
-      promptPackBytes: promptPack.length,
+      promptPackBytes: composed.bytes,
       entrySha256: skillPack.entrySha256,
       supportFileCount: skillPack.supportFiles.length,
+      references: skillReferences,
+      external: composed.externalSkillNames,
+      externalRequested: requestedSkills,
+      externalMissing: missingExplicitSkills.length > 0 ? missingExplicitSkills : undefined,
     },
+    maxTurns: args.agentLoop ? resolvedMaxTurns : undefined,
     mode: args.agentLoop ? "agent_loop" : "subagent",
     providerSelection: args.provider === "auto"
       ? {
@@ -209,6 +311,13 @@ export async function runMockTask({
       argv: buildResumeArgv(args),
     },
     agentLoop: agentLoopRun,
+    spawnRequests: Array.isArray(agentLoopRun?.spawnRequests) ? agentLoopRun.spawnRequests : undefined,
+    spawnAutoExecuted: Boolean(
+      args.autoSpawn
+      && agentLoopRun?.completed === true
+      && Array.isArray(agentLoopRun?.spawnRequests)
+      && agentLoopRun.spawnRequests.length > 0,
+    ),
     subagent: subagentRun ? summarizeMerge(subagentRun) : undefined,
     subagentReviews,
     subagentFailures,
@@ -244,10 +353,18 @@ function resultNote({ agentLoopRun, subagentRun, patchAdoption, runError, usageS
       ? "Mock patch proposal adopted by the main flow after an evidence read."
       : "Provider patch proposal adopted by the main flow after an evidence read.";
   }
+  const pendingSpawns = agentLoopRun?.completed === true
+    && Array.isArray(agentLoopRun?.spawnRequests)
+    ? agentLoopRun.spawnRequests.length
+    : 0;
   if (agentLoopRun) {
-    return providerKind === "mock"
+    const base = providerKind === "mock"
       ? "Mock agent loop dispatched tool intents through odai runtime; no real model was called."
       : "Provider agent loop dispatched model output through odai runtime gates; local tools remained under odai control.";
+    if (pendingSpawns > 0) {
+      return `${base} ${pendingSpawns} spawn-subagent request(s) were recorded; pass --auto-spawn to schedule them.`;
+    }
+    return base;
   }
   return providerKind === "mock"
     ? "Mock run only; no real provider output has been adopted."
@@ -347,10 +464,24 @@ function buildResumeArgv(args) {
     ...args.files.flatMap((file) => ["--file", file]),
     ...(args.target ? ["--target", args.target] : []),
     ...(args.adoptPatch ? ["--adopt-patch"] : []),
-    ...(Number.isFinite(args.maxTurns) && args.maxTurns !== 4 ? ["--max-turns", String(args.maxTurns)] : []),
+    ...(args.maxTurnsExplicit && Number.isFinite(args.maxTurns) ? ["--max-turns", String(args.maxTurns)] : []),
+    ...(args.autoSpawn ? ["--auto-spawn"] : []),
+    ...args.skills.flatMap((skill) => ["--skill", skill]),
     ...args.subagents.flatMap((subagent) => ["--subagent", formatSubagentSpec(subagent)]),
     ...args.excludeProviderNames.flatMap((provider) => ["--exclude-provider", provider]),
   ];
+}
+
+function uniqueSkillNames(names = []) {
+  const seen = new Set();
+  const result = [];
+  for (const raw of names) {
+    const name = normalizeSkillName(raw);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
 }
 
 function parseRunArgs(argv) {
@@ -370,6 +501,9 @@ function parseRunArgs(argv) {
     adoptPatch: false,
     agentLoop: false,
     maxTurns: 4,
+    maxTurnsExplicit: false,
+    autoSpawn: false,
+    skills: [],
     subagents: [],
     toolIntents: [],
     excludeProviderNames: [],
@@ -421,6 +555,13 @@ function parseRunArgs(argv) {
     } else if (option.name === "--max-turns") {
       const value = option.hasInlineValue ? option.value : argv[++i];
       args.maxTurns = Number(value);
+      args.maxTurnsExplicit = true;
+    } else if (option.name === "--auto-spawn") {
+      args.autoSpawn = enabledFlagValue(option);
+    } else if (option.name === "--skill") {
+      const value = option.hasInlineValue ? option.value : argv[++i];
+      const name = normalizeSkillName(value);
+      if (name) appendUnique(args.skills, name);
     } else if (option.name === "--subagent") {
       const value = option.hasInlineValue ? option.value : argv[++i];
       args.subagents.push(parseSubagentSpec(value));
@@ -502,3 +643,6 @@ function formatSubagentSpec(spec = {}) {
   }
   return `${spec.profile}:${spec.provider || "auto"}:${spec.model}`;
 }
+
+// Re-export for callers/tests that import compression from run-task.
+export { compressConversationContext } from "../runtime/context-compress.mjs";

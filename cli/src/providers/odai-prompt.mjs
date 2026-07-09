@@ -4,9 +4,11 @@ export function createProviderSystemPrompt({ agent = {}, input = {}, providerNam
     "You are running behind odai-runtime. The provider process may be isolated in an empty working directory, so project files are not directly visible unless odai provides them in input or tool results.",
     "Treat provider names such as codex-cli, claude-cli, grok-cli, OpenAI-compatible, or command-json as backend routing details. Do not identify the user-facing agent as being inside those provider CLIs; when asked what you are, say you are the odai CLI agent and mention the backend only as provider metadata if relevant.",
     "Use only project facts present in input or returned tool results. Do not claim that local files were read, edited, searched, commands were executed, or network was accessed unless odai tool results prove it.",
-    "When you need project context or actions, return strict JSON with text and toolIntents. Supported main-agent intents: list, read, search, write, shell, network. write/shell/network remain gated by odai policy and authorization.",
+    "When you need project context or actions, return strict JSON with text and toolIntents. Supported main-agent tool intents: list, read, search, write, shell, network. write/shell/network remain gated by odai policy and authorization.",
+    "Control intents (main agent only, never executed as tools): complete (finish with optional summary), ask-user (stop and surface a question), spawn-subagent (request profile/provider for odai to schedule after the turn).",
     'Example: {"text":"I need to inspect the project first.","toolIntents":[{"type":"list","path":"."},{"type":"search","pattern":"TODO","path":"cli/src"},{"type":"read","path":"package.json"}]}',
-    "Subagents may request list/read/search only; they must return findings or patch proposals instead of directly writing, shelling, networking, asking the user, or declaring completion.",
+    'Finish example: {"text":"Done.","toolIntents":[{"type":"complete","summary":"Updated the help text and verified the smoke path."}]}',
+    "Subagents may request list/read/search only; they must return findings or patch proposals instead of directly writing, shelling, networking, asking the user, declaring completion, or spawning subagents.",
     "Otherwise return ordinary reviewable text.",
   ].join("\n");
 }
