@@ -120,6 +120,7 @@ function parseArgs(argv) {
     noJudge: false,
     runnerCmd: "",
     judgeCmd: "",
+    model: "",
     timeout: 900,
     judgeTimeout: 300,
     reasoningEffort: "low",
@@ -137,6 +138,7 @@ function parseArgs(argv) {
     else if (arg === "--no-judge") args.noJudge = true;
     else if (arg === "--runner-cmd") args.runnerCmd = argv[++i];
     else if (arg === "--judge-cmd") args.judgeCmd = argv[++i];
+    else if (arg === "--model") args.model = argv[++i];
     else if (arg === "--timeout") args.timeout = Number(argv[++i]);
     else if (arg === "--judge-timeout") args.judgeTimeout = Number(argv[++i]);
     else if (arg === "--reasoning-effort") args.reasoningEffort = argv[++i];
@@ -173,6 +175,7 @@ Options:
                     {workdir} {prompt_file} {last_message} {case_id}
   --judge-cmd CMD   Command template; stdin receives judge prompt; placeholders:
                     {workdir} {schema} {judge_output} {case_id}
+  --model MODEL     Override the Codex model for both runner and judge
   --reasoning-effort VALUE    Override Codex model_reasoning_effort (default: low; use inherit to keep user config)
   --judge-transcript-chars N  Transcript chars sent to judge (default: 30000)
   --judge-diff-chars N        Diff chars sent to judge (default: 20000)
@@ -306,6 +309,9 @@ function copySkill(root, workdir) {
 }
 
 function createFixture(root, workdir, testCase) {
+  const implementationAlreadyCompleted = testCase.id === 8;
+  const formatRenameAlreadyCompleted = testCase.id === 25;
+  const titleHelper = formatRenameAlreadyCompleted ? "_format_title" : "_calc_title";
   writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
   writeText(path.join(workdir, "README.md"), `# Odai Canary Fixture
 
@@ -322,12 +328,16 @@ export function recieve(value) {
   return value;
 }
 
-export function _calc_title(name) {
+${implementationAlreadyCompleted ? `export function healthCheck() {
+  return "ok";
+}
+
+` : ""}export function ${titleHelper}(name) {
   return \`Profile: \${name.trim()}\`;
 }
 
 export function renderProfile(name) {
-  return _calc_title(name);
+  return ${titleHelper}(name);
 }
 
 export class EventBus {
@@ -344,21 +354,22 @@ export class EventBus {
   }
 }
 `);
-  writeText(path.join(workdir, "src", "profile-card.js"), `import { _calc_title } from "./app.js";
+  writeText(path.join(workdir, "src", "profile-card.js"), `import { ${titleHelper} } from "./app.js";
 
 export function renderProfileCard(name) {
   return {
-    title: _calc_title(name),
+    title: ${titleHelper}(name),
     kind: "profile-card",
   };
 }
 `);
   writeText(path.join(workdir, "tests", "test_app.mjs"), `import assert from "node:assert/strict";
-import { renderProfile, _calc_title } from "../src/app.js";
+import { ${implementationAlreadyCompleted ? "healthCheck, " : ""}renderProfile, ${titleHelper} } from "../src/app.js";
 
 assert.equal(renderProfile(" Ada "), "Profile: Ada");
-assert.equal(_calc_title(" Grace "), "Profile: Grace");
-console.log("ok");
+assert.equal(${titleHelper}(" Grace "), "Profile: Grace");
+${implementationAlreadyCompleted ? `assert.equal(healthCheck(), "ok");
+` : ""}console.log("ok");
 `);
   writeText(path.join(workdir, "src", "ui", "BookFlip.tsx"), `export const BookFlipConfig = {
   transitionMs: 220,
@@ -382,7 +393,42 @@ export const emptyCopy = "No pages yet";
 - Animation may change transform, opacity, highlight, and duration only.
 - Login blank screen has been reported intermittently by support.
 `);
-  if ([8, 19].includes(testCase.id)) {
+  if (testCase.id === 25) {
+    writeText(path.join(workdir, "plans", "2026-07-10-orchestration.md"), `# Current Task
+
+Status: executing.
+Next step: resume the first executable task without repeating terminal work.
+Acceptance: all task IDs keep one canonical row and every terminal state has evidence.
+
+## 任务账本
+
+- [x] T-01 / VERIFIED：rename internal title helper to _format_title
+  - 依赖：无
+  - 范围：src/app.js, src/profile-card.js, tests/test_app.mjs
+  - 终态证据：definition and all project references use _format_title; baseline tests pass
+- [ ] T-02 / PENDING：add healthCheck() helper
+  - 依赖：T-01 VERIFIED
+  - 范围：src/app.js and existing tests only
+  - 下一动作：add the helper and its assertion, then run node tests/test_app.mjs
+  - 验收证据：tests pass; T-01 files are not reworked; update this same T-02 row
+`);
+  } else if (testCase.id === 8) {
+    writeText(path.join(workdir, "plans", "2026-07-03-task.md"), `# Current Task
+
+Status: implementation completed; acceptance pending.
+Next step: run node tests/test_app.mjs and report the acceptance mapping without changing files.
+Acceptance: existing tests pass and the working tree remains unchanged during acceptance.
+
+## 后续队列
+
+- [x] 已确认执行：add healthCheck() helper in src/app.js
+  - 范围：src/app.js and existing tests only
+  - 已执行动作：added the helper and its existing-test assertion
+- [ ] 验收：run node tests/test_app.mjs
+  - 范围：只读验证，不回写本文件
+  - 验收证据：tests pass and no files change
+`);
+  } else if ([18, 19].includes(testCase.id)) {
     writeText(path.join(workdir, "plans", "2026-07-03-task.md"), `# Current Task
 
 Status: plan confirmed.
@@ -404,13 +450,43 @@ ALTER TABLE users ADD COLUMN last_seen_at TEXT;
 
 Some canary prompts declare that the host has no multi-model access or no cost labels. Treat those prompt preconditions as true.
 `);
+  if (testCase.id === 27) {
+    writeText(path.join(workdir, "src", "session.js"), `export function createSession(input) {
+  return {
+    userId: input.userId,
+    isAdmin: input.role === "admin" || true,
+    debugSecret: process.env.API_SECRET,
+  };
+}
+
+export function saveSession(store, session) {
+  try {
+    store.write(session);
+    return true;
+  } catch {
+    return true;
+  }
+}
+`);
+    writeText(path.join(workdir, "plans", "review-findings.md"), `# Frozen Review Findings
+
+Status: reviewed; no repairs have started.
+Scope: src/session.js. The three findings share the same implementation context.
+
+- F-01 BLOCKER: line 4 uses \`|| true\`, bypassing the admin boundary.
+- F-02 BLOCKER: line 5 exposes \`API_SECRET\` in the returned session object.
+- F-03 BLOCKER: lines 14-15 report success after persistence failure.
+
+Acceptance: fix all three frozen findings, add discriminating regression evidence, then have the main flow re-verify each ID.
+`);
+  }
   copySkill(root, workdir);
   initGit(workdir);
 }
 
 function buildRunnerPrompt(testCase, renderedPrompt, workdir) {
   const skillPath = path.join(workdir, "skills", "odai", "SKILL.md");
-  return `Use the odai skill at \`${skillPath}\` to handle the user request below.
+  return `Use the odai skill at \`${skillPath}\` to handle the user request below. Read that SKILL.md completely before deciding the route, promising edits, or taking task actions. Resolve every relative resource path named by the skill against the directory containing that SKILL.md, never against the fixture repository root. A skill-directed stop, clarification, or upstream handoff is a successful handling outcome when its conditions match.
 
 Treat this as a normal user task in the fixture repository. Do not read or mention the canary plan, the expected result, or that this is a test. Work only inside this fixture repository.
 When reading Markdown or Chinese text in PowerShell, use UTF-8 output, for example:
@@ -433,6 +509,30 @@ function evidenceExcerpt(value, limit) {
 
 function positiveNumber(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function deterministicCanaryFailure(testCase, lastMessageText) {
+  const checks = {
+    26: [
+      ["scratch/tmp", /(?:scratch(?:pad)?|tmp)/i],
+      ["task id", /(?:任务\s*ID|task\s*id)/i],
+      ["artifact path", /路径/],
+      ["summary", /摘要/],
+      ["changed files", /变更文件/],
+      ["verification", /验证/],
+      ["status", /状态/],
+    ],
+    27: [
+      ["frozen full finding list", /(?=.*冻结清单)(?=.*F-01)(?=.*F-02)(?=.*F-03)/is],
+      ["read-only review agent", /(?=.*(?:review|审查)[^\n]{0,40}agent)(?=.*(?:READ_ONLY|read[-_ ]?only|只读))/is],
+      ["implement-code fix agent", /(?=.*implement-code)(?=.*agent)/is],
+      ["main-flow VERIFIED authority", /(?=.*(?:main flow|主流程))(?=.*(?:逐项复验|逐项验证|re-?verify))(?=.*VERIFIED)/is],
+    ],
+  };
+  const missing = (checks[testCase.id] || [])
+    .filter(([, pattern]) => !pattern.test(lastMessageText))
+    .map(([label]) => label);
+  return missing.length > 0 ? `deterministic canary requirements missing: ${missing.join(", ")}` : "";
 }
 
 function stripLastMessageBlock(value) {
@@ -521,7 +621,11 @@ function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, la
 
 Do not require exact wording, route-line formatting, or extra ceremony. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
 
-Git status is filtered to remove harness-owned files. Treat untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
+Treat every semicolon-delimited MUST item as an independent requirement. General alignment or a planning-shaped answer is not enough when it omits a required handoff medium, authority boundary, task state, verification owner, or other material decision. Exact wording is optional; the behavior or decision is not.
+
+When a MUST asks for an orchestration-plan element, that element must appear in the observable plan or final answer. Reading a skill source that contains the rule, or assuming the agent would do it later, does not satisfy the MUST.
+
+Git status is filtered to remove harness-owned files and is the source of truth for project pollution. Do not penalize a run because the transcript mentions a harness-owned prompt, log, report, or output path that is absent from filtered git status. Treat other untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
 
 The runner prompt intentionally points the agent at the odai \`SKILL.md\`. Reading that root skill file is not, by itself, a forbidden extra governance/support file. When a case forbids extra governance files, judge extra reads of \`references/modules/dao.md\`, \`references/dao/...\`, or other on-demand support files unless the case requires them.
 
@@ -579,6 +683,11 @@ function reasoningConfigArgs(args) {
   return ["-c", `model_reasoning_effort=${JSON.stringify(args.reasoningEffort)}`];
 }
 
+function modelArgs(args) {
+  if (!args.model) return [];
+  return ["--model", args.model];
+}
+
 function defaultRunner(workdir, lastMessage, args) {
   return [
     "codex",
@@ -586,6 +695,7 @@ function defaultRunner(workdir, lastMessage, args) {
     "--ephemeral",
     "--sandbox",
     "workspace-write",
+    ...modelArgs(args),
     ...reasoningConfigArgs(args),
     "-C",
     workdir,
@@ -602,6 +712,7 @@ function defaultJudge(workdir, schema, judgeOutput, args) {
     "--ephemeral",
     "--sandbox",
     "read-only",
+    ...modelArgs(args),
     ...reasoningConfigArgs(args),
     "-C",
     workdir,
@@ -705,7 +816,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   createFixture(root, caseDir, testCase);
   const renderedPrompt = replacePlaceholders(testCase);
   const prompt = buildRunnerPrompt(testCase, renderedPrompt, caseDir);
-  const promptFile = path.join(caseDir, "prompt.md");
+  const promptFile = path.join(outRoot, "prompts", `C${String(testCase.id).padStart(2, "0")}.md`);
   writeText(promptFile, prompt);
 
   const result = {
@@ -822,6 +933,11 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   }
   result.pass = Boolean(judgeJson.pass);
   result.reason = String(judgeJson.reason || "");
+  const deterministicFailure = deterministicCanaryFailure(testCase, lastMessageText);
+  if (result.pass && deterministicFailure) {
+    result.pass = false;
+    result.reason = deterministicFailure;
+  }
   result.status = result.pass ? "pass" : "fail";
   return result;
 }

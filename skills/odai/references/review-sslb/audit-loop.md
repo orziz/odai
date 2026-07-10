@@ -36,5 +36,6 @@
 
 落地与回归测试纪律按 `references/modules/implement-code.md`，本节只补回路口径：
 
+- 多个已确认 BLOCKER 适合批修时，由主审冻结完整清单后按 `references/dao/execution-orchestration.md` 另派实现 agent；审查 subagent 仍保持只读。
 - 有稳定自动化测试接缝时，先补一条能**触发该缺陷的回归测试**，再跑定向测试；涉及共享边界时继续跑相关包 / workspace 级验证（按宿主语言的工作区口径）。若接缝确实不存在或环境无法构造，不强造仪式化测试；记录原因，改用能对准原缺陷场景的最强可用证据，并保持未覆盖风险可见。
 - 不得把“subagent 认为已修”当证据；修复后由主审 agent 实际复核（读 / 跑）确认，再把 clean round 归零重数。

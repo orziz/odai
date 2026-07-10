@@ -9,6 +9,7 @@ source-of-truth 全部在 `skills/` 下，没有任何多端镜像产物：
 ```text
 skills/odai/             统一入口 source skill
   SKILL.md               入口正文
+  agents/openai.yaml     宿主 UI 元数据
   references/modules/    内部模块正文（dao、game-*、feature-plan 等）
   references/*/          模块级规则、说明等 support files
   assets/*/              模块级模板等资源
@@ -18,7 +19,7 @@ scripts/                 仓库维护与评测 harness
 assets/                  README 配图
 ```
 
-分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不再生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。
+分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。`cli/skills/odai/` 是 npm 包的 bundled fallback snapshot，不是第二 source；只能由 `node cli/scripts/sync-skill-snapshot.mjs` 从 canonical source 生成，并用 `--check` 防止漂移。
 
 ## 命名约定
 
@@ -52,7 +53,11 @@ assets/                  README 配图
 2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`。
 3. source 稳定后，分发交给 skills.sh（`npx skills add`）；canonical source 就是 `skills/` 本身，无需再生成任何安装产物。
 
-改入口、路由门、交互契约、实施准入、验收口径、agent 治理或 canary 用例后，至少先跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成；规则小改且环境可用时跑 `node scripts/odai-canary-harness.mjs --smoke --run`，大改跑全量，并把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary.md`。
+改入口、路由门、交互契约、实施准入、验收口径、agent 治理或 canary 用例后：
+
+1. 跑 `node scripts/validate-odai-skill.mjs` 检查 frontmatter、UI 元数据、资源引用和长规则预警。
+2. 跑 `node cli/scripts/sync-skill-snapshot.mjs`，再跑 `node cli/scripts/sync-skill-snapshot.mjs --check` 确认 bundled snapshot 无漂移。
+3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary.md`。
 
 标准安装入口：
 

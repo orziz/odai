@@ -1,0 +1,4 @@
+interface:
+  display_name: "odai"
+  short_description: "以道为总控的项目任务治理、路由、实施接力与验收统一入口"
+  default_prompt: "使用 $odai 接管这个项目任务，先判断路径、边界与验收，再推进到当前范围内可交付结果。"
