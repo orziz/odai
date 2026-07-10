@@ -121,9 +121,13 @@ function parseArgs(argv) {
     runnerCmd: "",
     judgeCmd: "",
     model: "",
+    runnerModel: "",
+    judgeModel: "",
     timeout: 900,
     judgeTimeout: 300,
     reasoningEffort: "low",
+    runnerReasoningEffort: "",
+    judgeReasoningEffort: "",
     judgeTranscriptChars: 30000,
     judgeDiffChars: 20000,
     judgeStatusChars: 5000,
@@ -139,9 +143,13 @@ function parseArgs(argv) {
     else if (arg === "--runner-cmd") args.runnerCmd = argv[++i];
     else if (arg === "--judge-cmd") args.judgeCmd = argv[++i];
     else if (arg === "--model") args.model = argv[++i];
+    else if (arg === "--runner-model") args.runnerModel = argv[++i];
+    else if (arg === "--judge-model") args.judgeModel = argv[++i];
     else if (arg === "--timeout") args.timeout = Number(argv[++i]);
     else if (arg === "--judge-timeout") args.judgeTimeout = Number(argv[++i]);
     else if (arg === "--reasoning-effort") args.reasoningEffort = argv[++i];
+    else if (arg === "--runner-reasoning-effort") args.runnerReasoningEffort = argv[++i];
+    else if (arg === "--judge-reasoning-effort") args.judgeReasoningEffort = argv[++i];
     else if (arg === "--judge-transcript-chars") args.judgeTranscriptChars = Number(argv[++i]);
     else if (arg === "--judge-diff-chars") args.judgeDiffChars = Number(argv[++i]);
     else if (arg === "--judge-status-chars") args.judgeStatusChars = Number(argv[++i]);
@@ -175,8 +183,14 @@ Options:
                     {workdir} {prompt_file} {last_message} {case_id}
   --judge-cmd CMD   Command template; stdin receives judge prompt; placeholders:
                     {workdir} {schema} {judge_output} {case_id}
-  --model MODEL     Override the Codex model for both runner and judge
-  --reasoning-effort VALUE    Override Codex model_reasoning_effort (default: low; use inherit to keep user config)
+  --model MODEL     Compatibility override for both runner and judge
+  --runner-model MODEL        Override only the runner model
+  --judge-model MODEL         Override only the judge model
+  --reasoning-effort VALUE    Compatibility override for both reasoning efforts (default: low)
+  --runner-reasoning-effort VALUE  Override only runner effort
+  --judge-reasoning-effort VALUE   Override only judge effort; use inherit to keep user config
+                    Model and reasoning flags apply to the default codex exec commands;
+                    custom command templates must select their own model.
   --judge-transcript-chars N  Transcript chars sent to judge (default: 30000)
   --judge-diff-chars N        Diff chars sent to judge (default: 20000)
   --judge-status-chars N      Status chars sent to judge (default: 5000)
@@ -528,6 +542,13 @@ function deterministicCanaryFailure(testCase, lastMessageText) {
       ["implement-code fix agent", /(?=.*implement-code)(?=.*agent)/is],
       ["main-flow VERIFIED authority", /(?=.*(?:main flow|主流程))(?=.*(?:逐项复验|逐项验证|re-?verify))(?=.*VERIFIED)/is],
     ],
+    29: [
+      ["interaction-contract source path", /references\/dao\/interaction-contract\.md/],
+      ["implement-code source path", /references\/modules\/implement-code\.md/],
+      ["complete pre-write read", /(?=.*(?:首次写入前|before[^\n]{0,20}write))(?=.*(?:完整读取|read[^\n]{0,20}(?:complete|full)))/is],
+      ["summary is not a substitute", /(?=.*摘要)(?=.*(?:不得替代|不能替代|not[^\n]{0,20}substitut))/is],
+      ["no source, no write", /(?=.*(?:无法访问|不可访问|cannot access))(?=.*(?:不得写入|不能写入|no write))/is],
+    ],
   };
   const missing = (checks[testCase.id] || [])
     .filter(([, pattern]) => !pattern.test(lastMessageText))
@@ -619,11 +640,7 @@ function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, la
   const compactTranscript = compactTranscriptForJudge(transcript);
   return `You are judging one odai canary run. Decide only from the observable transcript, git diff, and git status.
 
-Do not require exact wording, route-line formatting, or extra ceremony. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
-
-Treat every semicolon-delimited MUST item as an independent requirement. General alignment or a planning-shaped answer is not enough when it omits a required handoff medium, authority boundary, task state, verification owner, or other material decision. Exact wording is optional; the behavior or decision is not.
-
-When a MUST asks for an orchestration-plan element, that element must appear in the observable plan or final answer. Reading a skill source that contains the rule, or assuming the agent would do it later, does not satisfy the MUST.
+Do not require exact wording, route-line formatting, or extra ceremony. Treat each materially distinct observable behavior in MUST and MUST NOT as independent; do not let general alignment hide an omitted handoff, authority, state, verification, or stop condition. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
 
 Git status is filtered to remove harness-owned files and is the source of truth for project pollution. Do not penalize a run because the transcript mentions a harness-owned prompt, log, report, or output path that is absent from filtered git status. Treat other untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
 
@@ -678,14 +695,30 @@ function formatTemplate(template, values) {
   return result;
 }
 
-function reasoningConfigArgs(args) {
-  if (!args.reasoningEffort || args.reasoningEffort === "inherit") return [];
-  return ["-c", `model_reasoning_effort=${JSON.stringify(args.reasoningEffort)}`];
+function resolvedRunnerEffort(args) {
+  return args.runnerReasoningEffort || args.reasoningEffort;
 }
 
-function modelArgs(args) {
-  if (!args.model) return [];
-  return ["--model", args.model];
+function resolvedJudgeEffort(args) {
+  return args.judgeReasoningEffort || args.reasoningEffort;
+}
+
+function resolvedRunnerModel(args) {
+  return args.runnerModel || args.model;
+}
+
+function resolvedJudgeModel(args) {
+  return args.judgeModel || args.model;
+}
+
+function reasoningConfigArgs(value) {
+  if (!value || value === "inherit") return [];
+  return ["-c", `model_reasoning_effort=${JSON.stringify(value)}`];
+}
+
+function modelArgs(value) {
+  if (!value) return [];
+  return ["--model", value];
 }
 
 function defaultRunner(workdir, lastMessage, args) {
@@ -695,8 +728,8 @@ function defaultRunner(workdir, lastMessage, args) {
     "--ephemeral",
     "--sandbox",
     "workspace-write",
-    ...modelArgs(args),
-    ...reasoningConfigArgs(args),
+    ...modelArgs(resolvedRunnerModel(args)),
+    ...reasoningConfigArgs(resolvedRunnerEffort(args)),
     "-C",
     workdir,
     "-o",
@@ -712,8 +745,8 @@ function defaultJudge(workdir, schema, judgeOutput, args) {
     "--ephemeral",
     "--sandbox",
     "read-only",
-    ...modelArgs(args),
-    ...reasoningConfigArgs(args),
+    ...modelArgs(resolvedJudgeModel(args)),
+    ...reasoningConfigArgs(resolvedJudgeEffort(args)),
     "-C",
     workdir,
     "--output-schema",
@@ -881,10 +914,6 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.runner_exit = timedOut ? null : runnerResult.status;
   result.transcript_file = transcriptFile;
   result.compact_transcript_file = compactTranscriptFile;
-  if (timedOut) {
-    result.status = "runner-timeout";
-    return result;
-  }
 
   const diff = gitDiff(caseDir);
   const diffFile = path.join(caseDir, "diff.patch");
@@ -899,6 +928,11 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.status_file = statusFile;
   result.metrics.status_paths = changedPathCount(status);
 
+  if (timedOut) {
+    result.status = "runner-timeout";
+    result.reason = "runner timed out; partial diff and status captured";
+    return result;
+  }
   if (runnerResult.status !== 0) {
     result.status = "runner-failed";
     result.reason = `runner exit ${runnerResult.status}`;
@@ -923,16 +957,35 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
     : runShell(judge, { cwd: caseDir, input: judgePrompt, timeoutSeconds: args.judgeTimeout });
   result.metrics.judge_duration_ms = Date.now() - judgeStartedAt;
   writeText(judgeLog, `${judgeResult.stdout || ""}${judgeResult.stderr || ""}`);
-  result.judge_exit = judgeResult.status;
+  const judgeTimedOut = judgeResult.error && judgeResult.error.code === "ETIMEDOUT";
+  result.judge_exit = judgeTimedOut ? null : judgeResult.status;
   result.judge_file = existsSync(judgeOutput) ? judgeOutput : judgeLog;
   const judgeJson = parseJudgeJson(judgeOutput, `${judgeResult.stdout || ""}${judgeResult.stderr || ""}`);
+  if (judgeTimedOut) {
+    result.status = "judge-timeout";
+    result.reason = "judge timed out";
+    return result;
+  }
   if (judgeResult.status !== 0 || !judgeJson) {
     result.status = "judge-failed";
     result.reason = `judge exit ${judgeResult.status}; json=${Boolean(judgeJson)}`;
     return result;
   }
+  if (judgeJson.confidence === "low") {
+    result.status = "judge-inconclusive";
+    result.reason = `low-confidence judge: ${String(judgeJson.reason || "")}`;
+    return result;
+  }
   result.pass = Boolean(judgeJson.pass);
   result.reason = String(judgeJson.reason || "");
+  if (result.pass && (!Array.isArray(judgeJson.must_met) || judgeJson.must_met.length === 0)) {
+    result.pass = false;
+    result.reason = "judge returned pass without any MUST evidence";
+  }
+  if (result.pass && Array.isArray(judgeJson.forbidden_hit) && judgeJson.forbidden_hit.length > 0) {
+    result.pass = false;
+    result.reason = `judge returned pass with forbidden hits: ${judgeJson.forbidden_hit.join(", ")}`;
+  }
   const deterministicFailure = deterministicCanaryFailure(testCase, lastMessageText);
   if (result.pass && deterministicFailure) {
     result.pass = false;
@@ -944,12 +997,19 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
 
 function writeReport(outRoot, results, dryRun, skillBudget) {
   const metrics = summarizeMetrics(results);
+  const statusCounts = Object.fromEntries(
+    [...new Set(results.map((item) => item.status))]
+      .sort()
+      .map((status) => [status, results.filter((item) => item.status === status).length]),
+  );
   const report = {
     generated_at: new Date().toISOString(),
     mode: dryRun ? "dry-run" : "run",
     total: results.length,
     pass: results.filter((item) => item.status === "pass").length,
     fail: results.filter((item) => item.status === "fail").length,
+    unresolved: results.filter((item) => !["pass", "fail"].includes(item.status)).length,
+    status_counts: statusCounts,
     metrics,
     skill_budget: skillBudget,
     results,
@@ -962,6 +1022,8 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- total: ${report.total}`,
     `- pass: ${report.pass}`,
     `- fail: ${report.fail}`,
+    `- unresolved / not-run: ${report.unresolved}`,
+    `- status counts: ${Object.entries(statusCounts).map(([status, count]) => `${status}=${count}`).join(", ")}`,
     `- runner prompt est. tokens: ${metrics.runner_prompt_token_estimate}`,
     `- runner transcript est. tokens: ${metrics.runner_transcript_token_estimate} compacted / ${metrics.runner_raw_transcript_token_estimate} raw`,
     `- judge prompt est. tokens: ${metrics.judge_prompt_token_estimate}`,
@@ -1006,7 +1068,10 @@ function main() {
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         judge: args.run && !args.noJudge,
-        reasoning_effort: args.reasoningEffort,
+        runner_model: resolvedRunnerModel(args) || "inherit",
+        judge_model: resolvedJudgeModel(args) || "inherit",
+        runner_reasoning_effort: resolvedRunnerEffort(args) || "inherit",
+        judge_reasoning_effort: resolvedJudgeEffort(args) || "inherit",
         judge_transcript_chars: args.judgeTranscriptChars,
         judge_diff_chars: args.judgeDiffChars,
         judge_status_chars: args.judgeStatusChars,
