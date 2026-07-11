@@ -16,7 +16,7 @@
 
 ## clean round 计数
 
-- 任务要求连续 N 轮 clean 时，**任何代码或文档修改、任何真实 BLOCKER、任何失败的验证**都把计数归零。
+- 任务要求连续 N 轮 clean 时，固定审查范围内的代码 / 文档修改、会改变该范围证据基线的外部修改、任何真实 BLOCKER 或失败验证，都把计数归零；明确无关且不影响证据基线的范围外改动不重置。
 - 重新计数只基于**当前 checkout**：不复用旧线程，也不复用修复前的 clean 结论。
 - 每轮外显一行：`clean round x/N｜本轮：CLEAN / 发现 BLOCKER（归零）｜固定范围：<本轮扫描范围>`。
 - 只有连续 N 轮全 CLEAN（无任何 BLOCKER、无任何改动、无失败验证）才算收敛；维护观察存在不阻止收敛，但必须在主文件留痕，不被静默吞掉。
@@ -28,7 +28,7 @@
 - 本回路要求 `review-sslb` 自身是主审 agent（能启动并管理扫描 subagent）；它若反过来是被 `道` 下放的子 agent，则受 `references/dao/agent-governance.md` 递归保护，不得展开多 subagent 扫描——此时不下放，由上游主流程直接主控。
 - 只有当前主审 agent 可启动和管理 subagent；subagent 只做**只读扫描**，并报告 `CLEAN` / `BLOCKER` / `NON-BLOCKING` / `WATCH` 及复现路径。
 - subagent **不得**：修改文件、启动新的 subagent（递归保护）、继续派生复查轮次、宣布 clean round 完成或宣布收敛。这些权威只属主审 agent。
-- 每轮 subagent 数量与扫描范围由主审 agent **固定**；发现 BLOCKER 由主审 agent 修复并重启计数，不由 subagent 自行推进。
+- 每轮 subagent 数量与扫描范围由主审 agent **固定**。发现 BLOCKER 后由主审冻结并核证 finding；只有用户已授权修复时，才回交主流程按 `implement-code` 实施，主审与扫描 subagent 全程保持只读。未授权时只报告并停止计数，不得擅自写入。
 - 派给 subagent 的任务说明**必须含递归保护**：只读、不改文件、不启动 subagent、不重试轮次，只报告发现与复现路径。
 - subagent 工具不可用、配额失败或中断：记为**验证未完成**（按契约工具失败口径），不得靠扩增 subagent 数量替代一次完整验证。
 
@@ -36,6 +36,6 @@
 
 落地与回归测试纪律按 `references/modules/implement-code.md`，本节只补回路口径：
 
-- 多个已确认 BLOCKER 适合批修时，由主审冻结完整清单后按 `references/dao/execution-orchestration.md` 另派实现 agent；审查 subagent 仍保持只读。
+- 多个已确认 BLOCKER 适合批修时，由主审冻结完整清单后回交主流程按 `implement-code` 批修；只有 `references/dao/agent-routing-gate.md` 命中且宿主允许时，才按 `references/dao/execution-orchestration.md` 交给独立实现 agent。审查 subagent 始终只读。
 - 有稳定自动化测试接缝时，先补一条能**触发该缺陷的回归测试**，再跑定向测试；涉及共享边界时继续跑相关包 / workspace 级验证（按宿主语言的工作区口径）。若接缝确实不存在或环境无法构造，不强造仪式化测试；记录原因，改用能对准原缺陷场景的最强可用证据，并保持未覆盖风险可见。
 - 不得把“subagent 认为已修”当证据；修复后由主审 agent 实际复核（读 / 跑）确认，再把 clean round 归零重数。

@@ -4,9 +4,10 @@
 
 ## 唯一真相在哪
 
-source-of-truth 全部在 `skills/` 下，没有任何多端镜像产物：
+可编辑的 source-of-truth 全部在 `skills/` 下；除 npm 包所需的生成型 fallback snapshot 外，不维护多端安装镜像：
 
 ```text
+AGENTS.md               仓库级 agent 维护约束
 skills/odai/             统一入口 source skill
   SKILL.md               入口正文
   agents/openai.yaml     宿主 UI 元数据
@@ -58,6 +59,8 @@ assets/                  README 配图
 1. 跑 `node scripts/validate-odai-skill.mjs` 检查 frontmatter、UI 元数据、资源引用和长规则预警。
 2. 跑 `node cli/scripts/sync-skill-snapshot.mjs`，再跑 `node cli/scripts/sync-skill-snapshot.mjs --check` 确认 bundled snapshot 无漂移。
 3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary.md`。
+
+`cli` 的 `pretest`、`presmoke`、`prepack` 与 `prepublishOnly` 只执行 snapshot `--check`，不得自动覆盖漂移；显式维护动作才运行 `sync:skill`。CI 也必须在任何同步动作之前先执行 source 校验与 snapshot `--check`。
 
 标准安装入口：
 

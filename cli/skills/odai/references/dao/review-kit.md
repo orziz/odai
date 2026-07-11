@@ -38,4 +38,4 @@
 
 直接实施最低条件：目标明确、边界清楚、输入具备、环境可执行、无待确认项、不会造成明显不可逆副作用；UI 任务还需设计基线、复用策略和主要状态要求已明确。
 
-结果总结按 `implement-code` 核验目标偏离、风险、副作用、测试 / 文档、已跑与未跑验证、验收点与实际场景，再按 `references/dao/result-reporting.md` 回报。只有验收口径成立才标 `verified`；实现完成但环境限制验收时标 `ready`；无不越线后续动作才标 `blocked`。
+结果总结按 `implement-code` 核验目标偏离、风险、副作用、测试 / 文档、已跑与未跑验证、验收点与实际场景，再按 `references/dao/result-reporting.md` 回报。只有验收口径成立才标 `verified`；实现完成但环境限制验收时标 `implemented_unverified`；无不越线后续动作才标 `blocked`。

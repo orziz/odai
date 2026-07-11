@@ -11,7 +11,7 @@ const warnings = [];
 
 const skillFile = path.join(skillRoot, "SKILL.md");
 const skillText = readFileSync(skillFile, "utf8");
-const frontmatterMatch = skillText.match(/^---\n([\s\S]*?)\n---/);
+const frontmatterMatch = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
 
 if (!frontmatterMatch) {
   failures.push("SKILL.md: missing or invalid YAML frontmatter");
@@ -78,6 +78,7 @@ const ownerMarkers = [
   { marker: "需求账本", owner: "references/feature-plan/planning-playbook.md" },
   { marker: "对症红信号", owner: "references/modules/implement-code.md" },
   { marker: "执行编排账本", owner: "references/dao/execution-orchestration.md" },
+  { marker: "生命周期状态以本节为唯一 owner", owner: "references/dao/dao-shu-fa-playbook.md" },
 ];
 
 for (const { marker, owner } of ownerMarkers) {
@@ -95,6 +96,14 @@ for (const relativePath of files.filter((file) => file.endsWith(".md"))) {
   const text = readFileSync(path.join(skillRoot, relativePath), "utf8");
   if (text.includes("需求条目账本")) {
     failures.push(`${relativePath}: deprecated duplicate term 需求条目账本`);
+  }
+  const readyLineNumbers = text
+    .split(/\r?\n/)
+    .flatMap((line, index) => line.includes("`ready`") ? [index + 1] : []);
+  for (const lineNumber of readyLineNumbers) {
+    if (!isAllowedLegacyReady(relativePath, text, lineNumber)) {
+      failures.push(`${relativePath}:${lineNumber}: deprecated ambiguous lifecycle state ready`);
+    }
   }
 }
 
@@ -143,4 +152,18 @@ function listFiles(root) {
 function isInside(parent, child) {
   const relative = path.relative(parent, child);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isAllowedLegacyReady(relativePath, text, lineNumber) {
+  const lines = text.split(/\r?\n/);
+  if (relativePath === "SKILL.md") {
+    const line = lines[lineNumber - 1];
+    return line.includes("旧版 `ready`") && line.includes("references/dao/dao-shu-fa-playbook.md");
+  }
+  if (relativePath !== "references/dao/dao-shu-fa-playbook.md") return false;
+
+  const ownerHeading = lines.findIndex((line) => line === "### 旧版 `ready` 迁移（owner）");
+  if (ownerHeading < 0 || lineNumber < ownerHeading + 1) return false;
+  const nextHeading = lines.findIndex((line, index) => index > ownerHeading && /^#{1,3}\s/.test(line));
+  return nextHeading < 0 || lineNumber <= nextHeading;
 }

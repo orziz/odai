@@ -22,7 +22,7 @@
 
 - 主层：
 - 裁决：
-- 状态：draft / reviewed / ready / executing / verified / blocked
+- 状态：draft / reviewed / ready_to_execute / executing / implemented_unverified / verified / blocked
 - 调用对象：
 - 下一步：
 - 阻断原因 / 解除条件：

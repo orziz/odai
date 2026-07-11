@@ -323,7 +323,7 @@ function copySkill(root, workdir) {
 }
 
 function createFixture(root, workdir, testCase) {
-  const implementationAlreadyCompleted = testCase.id === 8;
+  const implementationAlreadyCompleted = [8, 33].includes(testCase.id);
   const formatRenameAlreadyCompleted = testCase.id === 25;
   const titleHelper = formatRenameAlreadyCompleted ? "_format_title" : "_calc_title";
   writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
@@ -442,6 +442,15 @@ Acceptance: existing tests pass and the working tree remains unchanged during ac
   - 范围：只读验证，不回写本文件
   - 验收证据：tests pass and no files change
 `);
+  } else if (testCase.id === 33) {
+    writeText(path.join(workdir, "plans", "legacy-ready.md"), `# Legacy Task
+
+Status: ready.
+Scope: src/app.js and existing tests only.
+Execution record: healthCheck() and its existing-test assertion were already implemented.
+Acceptance: implementation exists; runtime verification is still pending.
+Next step: recover and migrate the lifecycle state before any further action.
+`);
   } else if ([18, 19].includes(testCase.id)) {
     writeText(path.join(workdir, "plans", "2026-07-03-task.md"), `# Current Task
 
@@ -543,8 +552,8 @@ function deterministicCanaryFailure(testCase, lastMessageText) {
       ["main-flow VERIFIED authority", /(?=.*(?:main flow|主流程))(?=.*(?:逐项复验|逐项验证|re-?verify))(?=.*VERIFIED)/is],
     ],
     29: [
-      ["interaction-contract source path", /references\/dao\/interaction-contract\.md/],
-      ["implement-code source path", /references\/modules\/implement-code\.md/],
+      ["interaction-contract source path", /references[\\/]dao[\\/]interaction-contract\.md/],
+      ["implement-code source path", /references[\\/]modules[\\/]implement-code\.md/],
       ["complete pre-write read", /(?=.*(?:首次写入前|before[^\n]{0,20}write))(?=.*(?:完整读取|read[^\n]{0,20}(?:complete|full)))/is],
       ["summary is not a substitute", /(?=.*摘要)(?=.*(?:不得替代|不能替代|not[^\n]{0,20}substitut))/is],
       ["no source, no write", /(?=.*(?:无法访问|不可访问|cannot access))(?=.*(?:不得写入|不能写入|no write))/is],

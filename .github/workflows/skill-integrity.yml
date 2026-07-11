@@ -1,0 +1,23 @@
+name: Skill integrity
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-odai:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate canonical skill
+        run: node scripts/validate-odai-skill.mjs
+      - name: Check CLI snapshot drift
+        run: node cli/scripts/sync-skill-snapshot.mjs --check
+      - name: Build canary fixtures
+        run: node scripts/odai-canary-harness.mjs --smoke

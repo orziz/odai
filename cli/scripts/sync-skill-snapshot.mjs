@@ -22,7 +22,10 @@ if (checkOnly) {
   const targetFiles = await listFiles(targetRoot).catch(() => []);
   const mismatches = await compareFileTrees({ sourceFiles, targetFiles });
   if (mismatches.length > 0) {
-    throw new Error(`cli skill snapshot is stale:\n${mismatches.map((item) => `- ${item}`).join("\n")}`);
+    throw new Error(
+      `cli skill snapshot is stale:\n${mismatches.map((item) => `- ${item}`).join("\n")}\n` +
+      "Canonical source is skills/odai. Move any intended snapshot-only edits there, review them, then run sync:skill explicitly.",
+    );
   }
   console.log(`cli skill snapshot is current (${sourceFiles.length} files).`);
 } else {
