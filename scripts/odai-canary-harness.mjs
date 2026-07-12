@@ -76,14 +76,26 @@ function buildSkillBudget(root) {
   };
 }
 
-function detectTrace(text, skillFiles = []) {
+function collectSupportPaths(text, skillFiles = []) {
   const value = String(text || "");
-  const supportFiles = new Set();
+  const paths = new Set();
   for (const match of value.matchAll(/(?:skills[\\/]+odai[\\/]+)?((?:references|assets)[\\/][^\s'"`<>)]*?\.(?:md|mjs|js))/g)) {
-    supportFiles.add(match[1].split("\\").join("/").replace(/\/+/g, "/"));
+    paths.add(match[1].split("\\").join("/").replace(/\/+/g, "/"));
   }
   for (const file of skillFiles) {
-    if (file !== "SKILL.md" && value.includes(file)) supportFiles.add(file);
+    if (file !== "SKILL.md" && value.includes(file)) paths.add(file);
+  }
+  return paths;
+}
+
+function detectTrace(text, skillFiles = []) {
+  const value = String(text || "");
+  const supportFileMentions = collectSupportPaths(value, skillFiles);
+  const supportFiles = new Set();
+  const contentReadCommand = /\b(?:Get-Content|Select-String|read_file|open_file|cat|type|more|less|head|tail|sed|awk|rg|grep)\b/i;
+  for (const line of value.split(/\r?\n/)) {
+    if (!contentReadCommand.test(line) || /\brg\s+--files\b/i.test(line)) continue;
+    for (const file of collectSupportPaths(line, skillFiles)) supportFiles.add(file);
   }
   const routes = [...value.matchAll(/路由：`?([^`｜\n]+)`?/g)].map((match) => match[1].trim());
   const triggers = [...value.matchAll(/触发：`?([^`｜\n]+)`?/g)].map((match) => match[1].trim());
@@ -91,9 +103,28 @@ function detectTrace(text, skillFiles = []) {
     routes: [...new Set(routes)],
     triggers: [...new Set(triggers)],
     support_files: [...supportFiles].sort(),
+    support_file_mentions: [...supportFileMentions].sort(),
     mentions_light_gate: value.includes("轻量证据门"),
     mentions_direct_gate: value.includes("直达核对"),
   };
+}
+
+function assertTraceDetection() {
+  const files = ["references/modules/dao.md", "references/dao/interaction-contract.md"];
+  const listing = detectTrace(
+    "Get-ChildItem -Recurse -File\nreferences/modules/dao.md\nreferences/dao/interaction-contract.md",
+    files,
+  );
+  if (listing.support_files.length !== 0 || listing.support_file_mentions.length !== 2) {
+    throw new Error("trace self-test failed: file listings must be mentions, not reads");
+  }
+  const reading = detectTrace(
+    "Get-Content -Raw skills/odai/references/modules/dao.md\nrg -n owner references/dao/interaction-contract.md",
+    files,
+  );
+  if (reading.support_files.length !== 2) {
+    throw new Error("trace self-test failed: explicit content commands must count as reads");
+  }
 }
 
 function changedPathCount(status) {
@@ -915,7 +946,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.metrics.runner_transcript_chars = transcript.length;
   result.metrics.runner_transcript_token_estimate = estimateTokens(transcript);
   result.metrics.last_message_chars = lastMessageText.length;
-  result.metrics.trace = detectTrace(transcript, skillFiles);
+  result.metrics.trace = detectTrace(rawTranscript, skillFiles);
   const transcriptFile = path.join(caseDir, "runner.log");
   writeText(transcriptFile, rawTranscript);
   const compactTranscriptFile = path.join(caseDir, "runner.compact.log");
@@ -1038,21 +1069,22 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- judge prompt est. tokens: ${metrics.judge_prompt_token_estimate}`,
     `- skill markdown est. tokens: ${skillBudget.total_token_estimate}`,
     "",
-    "| case | status | prompt tok est | transcript tok est | support refs | diff files | status paths | reason |",
-    "|---|---|---:|---:|---:|---:|---:|---|",
+    "| case | status | prompt tok est | transcript tok est | support reads | support mentions | diff files | status paths | reason |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---|",
   ];
   for (const item of results) {
     const reason = String(item.reason || "").replace(/\|/g, "/").replace(/\r?\n/g, " ");
     const itemMetrics = item.metrics || {};
     const trace = itemMetrics.trace || {};
     lines.push(
-      `| C${String(item.case_id).padStart(2, "0")} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${(trace.support_files || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
+      `| C${String(item.case_id).padStart(2, "0")} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
     );
   }
   writeText(path.join(outRoot, "report.md"), `${lines.join("\n")}\n`);
 }
 
 function main() {
+  assertTraceDetection();
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
   const planPath = path.resolve(root, args.plan);

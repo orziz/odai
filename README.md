@@ -21,6 +21,17 @@ It helps an agent:
 - avoid claiming that something was tested, delegated, reviewed, or verified when it was not
 - load specialist guidance only when the task needs it, instead of stuffing every rule into every turn
 
+## Validated Operating Envelope
+
+As of 2026-07-12, the frozen skill version has the following 40-case behavioral Canary results:
+
+| Runner | Judge | Result | Interpretation |
+|---|---|---:|---|
+| GPT-5.5 / medium | GPT-5.6 Sol / high | 40/40, 0 unresolved | Validated configuration, including four English-only governance-transfer cases |
+| GPT-5.4 Mini / low | GPT-5.5 / high | 25/40, 0 unresolved | Handles lightweight and explicit tasks, but is not a full-governance guarantee tier |
+
+These are observed configurations, not model-brand rankings or guarantees for untested hosts. Weaker models can still miss stop gates, evidence rescans, acceptance fields, or agent-handoff constraints. Use a model and reasoning tier comparable to the validated configuration when full governance reliability matters.
+
 ## 30-Second Start
 
 Install the unified entry point:
