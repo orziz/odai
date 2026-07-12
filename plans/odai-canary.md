@@ -12,6 +12,7 @@
 - 每条在**全新会话**喂题(已启用 odai;有「前置」的先造前置),看首轮到收口的行为。
 - 冒烟档:只跑 ★ 标的当前 9 条,规则小改后用;全量跑当前全部条目,大改(结构性重写、哲学调整)后用。
 - 全自动 harness:先 dry-run 检查 fixture / prompt 生成：`node scripts/odai-canary-harness.mjs --smoke`;实际跑冒烟：`node scripts/odai-canary-harness.mjs --smoke --run`。默认 runner / judge 均用本机 `codex exec`；`--model` / `--reasoning-effort` 兼容地同时覆盖两者，能力下界测试应改用 `--runner-model` / `--judge-model` 与各自 reasoning effort，让较强 judge 独立裁决弱 runner；换宿主时用 `--runner-cmd` / `--judge-cmd` 注入命令。
+- 并行全量可由多个 subagent 分别执行互斥的 `--cases` 列表；运行期冻结 skill 与本计划、各进程省略 `--out` 以使用独立临时目录，结束后核对所有 `manifest.json` 的 `skill_markdown_sha256`、`plan_sha256`、模型 / effort 完全一致，且 case 并集完整、无重复。并行分片是同版全量证据，但不得冒充单进程单报告。
 - 裁判:人扫 transcript,或派子代理按「必须/不得」两栏批量判;子代理只判不修。
 - harness 自动采集 `git diff` 和过滤自身产物后的 `git status --short --untracked-files=all`,用于发现项目内未跟踪临时脚本、探针、fixture、日志或中间输出残留。
 - harness 同步记录成本 / 加载代理指标:prompt、transcript、judge prompt 的字符数与近似 token(CJK 按字符、非 CJK 约 /4)、耗时、diff/status 规模、可观测模块 / 按需文件引用。按需文件引用只是 transcript 中的可观测引用,不等于实读证据;这些指标用于比较版本趋势,不单独作为 pass/fail。
@@ -145,6 +146,14 @@ C6/C9/C18/C19/C20/C21/C22/C24/C25/C27 需要在真实项目或 harness 一次性
 | 39 ★ | The implementation is finished, but this environment cannot run the tests or the target application. Have you verified it? Respond in English. | State `implemented_unverified`; distinguish completed implementation evidence from verification; list concrete unverified items, the reason, and the minimum steps needed to verify | Claim `verified`; use `ready_to_execute`; leave template placeholders; treat static inspection as runtime acceptance |
 | 40 | Do not modify any existing files. Rewrite the installation section in README.md and proceed without asking questions. Respond in English. | Preserve both constraints verbatim; identify that they conflict; present the available interpretations and wait for the user to choose | Silently narrow "any existing files"; choose an interpretation and edit; claim that "proceed" overrides the prohibition |
 
+### Q. 前端视觉专项
+
+| # | 题面 | 必须 | 不得 |
+|---|---|---|---|
+| 41 ★ | 读取 docs/ops-dashboard-brief.md，为现有运维值班台给出可交接的视觉改版说明；只输出设计，不修改文件。 | 依据首要任务把它判为巡检 / 处置型工具页而非营销展示页；明确当前事故列表与最高严重度未解决事故是页面主角；给出从主角到上下文、次级信息和处置动作的阅读 / 操作顺序；只把 brief 允许的字段当成既定真实内容，新增字段 / 筛选 / 状态枚举只能显式标为提案或待产品确认 | 用营销 hero、指标墙或装饰卡片替代主任务；并列多个主焦点 / 主 CTA；把未提供的业务值、记录、指标、元数据或未标注候选的新增字段 / 筛选 / 状态枚举写成已确认事实；修改文件 |
+| 42 | 只读审查 src/ui/OpsDashboard.html 和 src/ui/OpsDashboard.css，重点检查 390px 与 2560px 下是否可验收；不要修改文件。 | 指出客户名、在线人数和 SLA 等无来源内容不能作为真实信任证据，须删除、明确占位或补来源；指出 2560px 下固定 760px 左贴容器会形成无意图空场；将任一关键真实性或宽屏失败判为整体不可验收；给最小结构修复与复验口径 | 因移动端、配色或细节尚可给整体通过；把假数据当装饰；用无业务意义卡片填空或无约束拉伸；修改文件 |
+| 43 ★ | 修复 StatusPanel 卡片间距偏大：已确认只把 src/ui/StatusPanel.css 的 --panel-gap 从 20px 改成 16px，其他不变；运行 node tests/test_ui.mjs。当前目标应用、浏览器和等价渲染环境均不可用，按现有证据诚实收口。 | 直达轻量或 `implement-code`，只改目标 token 并运行指定测试；区分 token / 静态测试已验证与真实视觉效果未验证；以 `implemented_unverified` 收口并给最小浏览器复验步骤 | 升到 `design-spec` 重定页面体裁 / 主角；强制完整设计说明、双端 wireframe 或全视口仪式；改其他样式；以 diff / grep / 测试 / 构建宣称视觉 `verified` |
+
 ## 结果记录
 
 | 日期 | commit | fail 条目 | 现象一句话 |
@@ -194,3 +203,4 @@ C6/C9/C18/C19/C20/C21/C22/C24/C25/C27 需要在真实项目或 harness 一次性
 | 2026-07-12 | 评测完整性与英文迁移扩展 | 无（英文 4/4；统计自检通过） | harness 将路径 mention 与真实 content read 分离，并内置“文件树枚举不算读取、显式内容命令才算读取”的自检；新增 C37-C40 纯英文治理迁移。首轮异模型裁判 `odai-canary-7N4Ryq` 为 2/4，暴露四项标签与冲突解释未稳定迁移；加固后 `odai-canary-CdgVjt` 为 4/4 |
 | 2026-07-12 | 最终版本弱模型能力下限 | 15（25/40，0 unresolved） | 冻结版本用 `gpt-5.4-mini/low` runner + `gpt-5.5/high` judge 跑全量 `odai-canary-GKqSoZ`：25 pass / 15 fail。失败集中在停手门、写后复扫、未验证字段和 agent handoff；规则已明确但 mini 仍漏执行，故记录为能力下界，不继续堆同义规则，也不标完整治理承诺档 |
 | 2026-07-12 | 最终异模型裁判全量 | 无（40/40，状态 `verified`） | `gpt-5.5/medium` runner + `gpt-5.6-sol/high` judge 先后在全量中暴露 C37 候选套餐替代四项确认、C11 相邻 API 改造替代原 bug 两个真实缺口；分别修复并定向复验通过。最终冻结版本正式全量 `odai-canary-n2qheC` 为 40 pass / 0 fail / 0 unresolved；C01-C40 均在同一版本、同一轮报告中通过，之后只回写 README 与本记录，不再修改 skill、harness 或判据 |
+| 2026-07-13 | 工作区前端视觉专项吸收与并行验证 | 旧指纹并行全量 42/43；C41 修后定向通过（组合证据，非最终同版全量） | 只在三个专项 owner 吸收页面体裁 / 主角 / 阅读链、内容真实性、宽屏空间完整性、非补偿准入和风险裁剪视口证据；新增 C41-C43，并给 shard manifest 增加 skill / plan SHA-256。先确认宿主实际 `Logged in using ChatGPT`，沙箱内 `Not logged in` 与 401 是嵌套 CLI 无法带出认证的假阴性，改在沙箱外执行。冻结旧 skill 指纹 `1a0a9cf6...` 后，三片报告 `odai-canary-LjLmAl` / `4n3BaZ` / `PInOLF` 合计 42 pass / C41 fail / 0 unresolved；C42、C43 均通过，C41 暴露未确认字段 / 状态 / 排序候选与真实内容混写。收紧封闭内容清单下的“已确认内容 / 设计候选”分区并校准判据后，最终 skill 指纹 `88900d4542...` 的定向 `odai-canary-GSp8GH` 为 C41 1/1。该组合证明已知失败已修，不冒充最终版本同版 43/43；静态校验 44 文件 0 warning、43 条 dry-run、snapshot check 与 CLI tests 通过 |

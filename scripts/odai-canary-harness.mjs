@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -86,6 +87,21 @@ function collectSupportPaths(text, skillFiles = []) {
     if (file !== "SKILL.md" && value.includes(file)) paths.add(file);
   }
   return paths;
+}
+
+function fingerprintFiles(baseDir, relativePaths) {
+  const hash = createHash("sha256");
+  for (const relativePath of [...relativePaths].sort()) {
+    hash.update(relativePath);
+    hash.update("\0");
+    hash.update(readFileSync(path.join(baseDir, relativePath)));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function fingerprintText(value) {
+  return createHash("sha256").update(String(value)).digest("hex");
 }
 
 function detectTrace(text, skillFiles = []) {
@@ -431,6 +447,56 @@ export function getBookFlipStyle(state: "idle" | "turning") {
 }
 
 export const emptyCopy = "No pages yet";
+`);
+  writeText(path.join(workdir, "src", "ui", "StatusPanel.css"), `:root {
+  --panel-gap: 20px;
+}
+
+.status-panel {
+  display: grid;
+  gap: var(--panel-gap);
+}
+`);
+  writeText(path.join(workdir, "tests", "test_ui.mjs"), `import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const css = readFileSync(new URL("../src/ui/StatusPanel.css", import.meta.url), "utf8");
+assert.match(css, /--panel-gap:\\s*\\d+px/);
+assert.equal((css.match(/--panel-gap/g) || []).length, 2);
+console.log("ok");
+`);
+  writeText(path.join(workdir, "docs", "ops-dashboard-brief.md"), `# Operations Dashboard Brief
+
+Primary user: the on-call operator.
+Primary job: find the highest-severity unresolved incident and enter its response flow quickly.
+Trusted fields: incident id, service, severity, age, assignee, and status.
+No KPI, customer logo, online-user count, SLA claim, testimonial, or certification has been approved as real content.
+`);
+  writeText(path.join(workdir, "src", "ui", "OpsDashboard.html"), `<main class="dashboard-shell">
+  <header class="hero">
+    <p>Trusted by GlobalBank and Northstar</p>
+    <h1>Operations Intelligence</h1>
+    <p>12,481 users online · 99.99% SLA</p>
+  </header>
+  <section class="incident-list" aria-label="Unresolved incidents">
+    <article><strong>INC-1042 · payments-api · SEV-1</strong><button>Open response</button></article>
+    <article><strong>INC-1041 · search-api · SEV-2</strong><button>Open response</button></article>
+  </section>
+</main>
+`);
+  writeText(path.join(workdir, "src", "ui", "OpsDashboard.css"), `.dashboard-shell {
+  width: 760px;
+  margin-left: 24px;
+  padding: 24px;
+  background: linear-gradient(135deg, #111827, #312e81);
+  color: white;
+}
+
+.incident-list { display: grid; gap: 12px; }
+
+@media (max-width: 600px) {
+  .dashboard-shell { box-sizing: border-box; width: 100%; margin: 0; padding: 16px; }
+}
 `);
   writeText(path.join(workdir, "docs", "contracts.md"), `# Contracts
 
@@ -1092,6 +1158,8 @@ function main() {
   const selected = selectCases(allCases, args);
   const skillFiles = listSkillMarkdown(root);
   const skillBudget = buildSkillBudget(root);
+  const skillFingerprint = fingerprintFiles(path.join(root, "skills", "odai"), skillFiles);
+  const planFingerprint = fingerprintText(readText(planPath));
   if (selected.length === 0) {
     console.error("No cases selected.");
     return 2;
@@ -1116,6 +1184,8 @@ function main() {
         judge_transcript_chars: args.judgeTranscriptChars,
         judge_diff_chars: args.judgeDiffChars,
         judge_status_chars: args.judgeStatusChars,
+        skill_markdown_sha256: skillFingerprint,
+        plan_sha256: planFingerprint,
         skill_markdown_token_estimate: skillBudget.total_token_estimate,
       },
       null,
