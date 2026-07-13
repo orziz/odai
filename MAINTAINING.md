@@ -15,7 +15,7 @@ skills/odai/             统一入口 source skill
   references/*/          模块级规则、说明等 support files
   assets/*/              模块级模板等资源
 skills/skill-author/     仓库 source 作者维护 skill
-plans/                   金丝雀测试口径与结果记录
+plans/                   金丝雀测试口径与独立结果记录
 scripts/                 仓库维护与评测 harness
 assets/                  README 配图
 ```
@@ -58,7 +58,7 @@ assets/                  README 配图
 
 1. 跑 `node scripts/validate-odai-skill.mjs` 检查 frontmatter、UI 元数据、资源引用和长规则预警。
 2. 跑 `npm --prefix cli run pack:dry-run`，确认 npm 产物包含 bundled `skills/odai`，且结束后没有遗留 `cli/skills/`。
-3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary.md`。
+3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary-results.md`；测试定义与历史结果不得重新混写。
 
 `cli` 源码测试直接读取仓库根目录的 canonical skill，不依赖临时 bundle。`prepack` 只为 npm 产物注入 bundle；维护脚本和 CI 必须在打包结束后确认临时目录已被清理。
 

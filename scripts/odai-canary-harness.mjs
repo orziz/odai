@@ -165,6 +165,7 @@ function parseArgs(argv) {
     cases: "",
     run: false,
     noJudge: false,
+    skillMode: "on",
     runnerCmd: "",
     judgeCmd: "",
     model: "",
@@ -187,6 +188,7 @@ function parseArgs(argv) {
     else if (arg === "--cases") args.cases = argv[++i];
     else if (arg === "--run") args.run = true;
     else if (arg === "--no-judge") args.noJudge = true;
+    else if (arg === "--skill-mode") args.skillMode = argv[++i];
     else if (arg === "--runner-cmd") args.runnerCmd = argv[++i];
     else if (arg === "--judge-cmd") args.judgeCmd = argv[++i];
     else if (arg === "--model") args.model = argv[++i];
@@ -207,6 +209,9 @@ function parseArgs(argv) {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
+  if (!["on", "off"].includes(args.skillMode)) {
+    throw new Error(`--skill-mode must be on or off, got: ${args.skillMode}`);
+  }
   return args;
 }
 
@@ -226,6 +231,7 @@ Options:
   --cases LIST      Case ids/ranges, e.g. 1,5,20-22
   --run             Invoke the runner
   --no-judge        Skip judge after runner
+  --skill-mode MODE Use on to load the fixture's odai skill or off for the control arm (default: on)
   --runner-cmd CMD  Command template; stdin receives prompt; placeholders:
                     {workdir} {prompt_file} {last_message} {case_id}
   --judge-cmd CMD   Command template; stdin receives judge prompt; placeholders:
@@ -369,14 +375,14 @@ function copySkill(root, workdir) {
   cpSync(source, target, { recursive: true });
 }
 
-function createFixture(root, workdir, testCase) {
+function createFixture(root, workdir, testCase, skillMode) {
   const implementationAlreadyCompleted = [8, 33].includes(testCase.id);
   const formatRenameAlreadyCompleted = testCase.id === 25;
   const titleHelper = formatRenameAlreadyCompleted ? "_format_title" : "_calc_title";
   writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
-  writeText(path.join(workdir, "README.md"), `# Odai Canary Fixture
+  writeText(path.join(workdir, "README.md"), `# Agent Behavior Fixture
 
-Tiny project used by the odai canary harness.
+Tiny project used for isolated agent behavior checks.
 
 Run tests with:
 
@@ -600,13 +606,16 @@ Scope: src/session.js. The three findings share the same implementation context.
 Acceptance: fix all three frozen findings, add discriminating regression evidence, then have the main flow re-verify each ID.
 `);
   }
-  copySkill(root, workdir);
+  if (skillMode === "on") copySkill(root, workdir);
   initGit(workdir);
 }
 
-function buildRunnerPrompt(testCase, renderedPrompt, workdir) {
+function buildRunnerPrompt(testCase, renderedPrompt, workdir, skillMode) {
   const skillPath = path.join(workdir, "skills", "odai", "SKILL.md");
-  return `Use the odai skill at \`${skillPath}\` to handle the user request below. Read that SKILL.md completely before deciding the route, promising edits, or taking task actions. Resolve every relative resource path named by the skill against the directory containing that SKILL.md, never against the fixture repository root. A skill-directed stop, clarification, or upstream handoff is a successful handling outcome when its conditions match.
+  const treatment = skillMode === "on"
+    ? `Use the odai skill at \`${skillPath}\` to handle the user request below. Read that SKILL.md completely before deciding the route, promising edits, or taking task actions. Resolve every relative resource path named by the skill against the directory containing that SKILL.md, never against the fixture repository root. A skill-directed stop, clarification, or upstream handoff is a successful handling outcome when its conditions match.`
+    : "Handle the user request using only the host instructions and project evidence available in this fixture. No project skill is available for this task; do not load, search for, or use odai or any other project skill.";
+  return `${treatment}
 
 Treat this as a normal user task in the fixture repository. Do not read or mention the canary plan, the expected result, or that this is a test. Work only inside this fixture repository.
 When reading Markdown or Chinese text in PowerShell, use UTF-8 output, for example:
@@ -744,13 +753,13 @@ function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, la
   const statusLimit = positiveNumber(args.judgeStatusChars, 5000);
   const lastMessageLimit = Math.min(transcriptLimit, 12000);
   const compactTranscript = compactTranscriptForJudge(transcript);
-  return `You are judging one odai canary run. Decide only from the observable transcript, git diff, and git status.
+  return `You are judging one agent-behavior canary run. Decide only from the observable transcript, git diff, and git status. The runner may or may not have received a project skill; judge the observable outcome without rewarding or penalizing the treatment itself.
 
 Do not require exact wording, route-line formatting, or extra ceremony. Treat each materially distinct observable behavior in MUST and MUST NOT as independent; do not let general alignment hide an omitted handoff, authority, state, verification, or stop condition. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
 
 Git status is filtered to remove harness-owned files and is the source of truth for project pollution. Do not penalize a run because the transcript mentions a harness-owned prompt, log, report, or output path that is absent from filtered git status. Treat other untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
 
-The runner prompt intentionally points the agent at the odai \`SKILL.md\`. Reading that root skill file is not, by itself, a forbidden extra governance/support file. When a case forbids extra governance files, judge extra reads of \`references/modules/dao.md\`, \`references/dao/...\`, or other on-demand support files unless the case requires them.
+Reading a root \`SKILL.md\`, when one is present, is not by itself a forbidden extra governance/support read. When a case forbids extra governance files, judge extra reads of \`references/modules/dao.md\`, \`references/dao/...\`, or other on-demand support files unless the case requires them.
 
 The full raw transcript is saved by the harness. The transcript below is compacted for cost: noisy runtime wrapper lines and the duplicate last-message block may be omitted, while command/action evidence remains.
 
@@ -952,9 +961,9 @@ function summarizeMetrics(results) {
 
 function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const caseDir = path.join(outRoot, `C${String(testCase.id).padStart(2, "0")}`);
-  createFixture(root, caseDir, testCase);
+  createFixture(root, caseDir, testCase, args.skillMode);
   const renderedPrompt = replacePlaceholders(testCase);
-  const prompt = buildRunnerPrompt(testCase, renderedPrompt, caseDir);
+  const prompt = buildRunnerPrompt(testCase, renderedPrompt, caseDir, args.skillMode);
   const promptFile = path.join(outRoot, "prompts", `C${String(testCase.id).padStart(2, "0")}.md`);
   writeText(promptFile, prompt);
 
@@ -1177,6 +1186,7 @@ function main() {
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         judge: args.run && !args.noJudge,
+        skill_mode: args.skillMode,
         runner_model: resolvedRunnerModel(args) || "inherit",
         judge_model: resolvedJudgeModel(args) || "inherit",
         runner_reasoning_effort: resolvedRunnerEffort(args) || "inherit",
