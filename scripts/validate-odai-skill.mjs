@@ -11,6 +11,25 @@ const warnings = [];
 
 const skillFile = path.join(skillRoot, "SKILL.md");
 const skillText = readFileSync(skillFile, "utf8");
+const entryTokenEstimate = estimateTokens(skillText);
+if (entryTokenEstimate > 3200) {
+  failures.push(`SKILL.md: entry token estimate ${entryTokenEstimate} exceeds anti-bloat ceiling 3200`);
+} else if (entryTokenEstimate > 2600) {
+  warnings.push(`SKILL.md: entry token estimate ${entryTokenEstimate} exceeds review threshold 2600`);
+}
+const constitutionalCore = [
+  "- **道——少干预**：能直达就直达，能少读就少读；未稳时不妄作。",
+  "- **儒——正名实**：候选不是授权，实施不是验证，自报不是复验。",
+  "- **心——知行合一**：治理点已稳即行，以真实结果反照判断。",
+  "- **兵——先知后动**：先看证据、环境与胜点；失败补证、换向或止损。",
+  "- **法——守硬门**：定义只在 owner 展开；宿主、权限、工具契约高于本 skill。",
+  "",
+  "**模型即谋士**：主动端出相邻价值、二阶后果、风险与备路；不越权、不代拍。",
+].join("\n");
+const generalSection = skillText.match(/^## 总纲\r?\n([\s\S]*?)(?=^## )/m)?.[1] || "";
+if (!generalSection.includes(constitutionalCore)) {
+  failures.push("SKILL.md: constitutional core changed without updating the explicit ratification gate");
+}
 const frontmatterMatch = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
 
 if (!frontmatterMatch) {
@@ -78,8 +97,68 @@ const ownerMarkers = [
   { marker: "需求账本", owner: "references/feature-plan/planning-playbook.md" },
   { marker: "对症红信号", owner: "references/modules/implement-code.md" },
   { marker: "执行编排账本", owner: "references/dao/execution-orchestration.md" },
-  { marker: "生命周期状态以本节为唯一 owner", owner: "references/dao/dao-shu-fa-playbook.md" },
+  { marker: "生命周期状态以本节为唯一 owner", owner: "references/dao/verification-contract.md" },
 ];
+
+const discoverabilityChecks = [
+  {
+    path: "SKILL.md",
+    fragments: [".odai/local.md", "references/dao/local-overlay.md"],
+    label: "local overlay detection chain",
+  },
+  {
+    path: "SKILL.md",
+    fragments: ["不读被排除模块"],
+    label: "excluded adjacent-domain rule",
+  },
+  {
+    path: "references/dao/inquiry-discipline.md",
+    fragments: ["references/dao/agent-routing-gate.md"],
+    label: "capability escalation chain",
+  },
+  {
+    path: "SKILL.md",
+    fragments: ["自造输入", "不宣称修复"],
+    label: "cross-layer bug stop trigger",
+  },
+  {
+    path: "references/dao/diagnose-kit.md",
+    fragments: ["偶发 / 跨层写入硬门"],
+    label: "cross-layer bug write gate",
+  },
+  {
+    path: "references/review-sslb/ui-aesthetic-review.md",
+    fragments: ["真实性先手"],
+    label: "UI trust-evidence review gate",
+  },
+  {
+    path: "references/modules/implement-code.md",
+    fragments: ["完整命中集合", "旁路 / 兼容 / 误改风险", "覆盖回扫与相关测试"],
+    label: "broad-scope pre-write triad",
+  },
+  {
+    path: "references/review-sslb/ui-aesthetic-review.md",
+    fragments: ["应消失或出现的可见现象", "逐项通过条件"],
+    label: "UI unavailable-evidence retest contract",
+  },
+  {
+    path: "SKILL.md",
+    fragments: ["验收环境不可用", "必须先读完 `references/dao/verification-contract.md`", "未读不得实施或收口"],
+    label: "unavailable-verification load gate",
+  },
+  {
+    path: "references/dao/verification-contract.md",
+    fragments: ["复验对象", "动作 / 环境", "可判定通过条件"],
+    label: "implemented-unverified closure triad",
+  },
+];
+
+for (const check of discoverabilityChecks) {
+  const text = readFileSync(path.join(skillRoot, check.path), "utf8");
+  for (const fragment of check.fragments) {
+    if (!text.includes(fragment)) failures.push(`${check.path}: missing ${check.label}: ${fragment}`);
+  }
+}
 
 for (const { marker, owner } of ownerMarkers) {
   let foundInOwner = false;
@@ -127,6 +206,12 @@ function unquote(value) {
   return value;
 }
 
+function estimateTokens(value) {
+  const text = String(value || "");
+  const cjkChars = (text.match(/[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef\uac00-\ud7af]/g) || []).length;
+  return Math.ceil(cjkChars + (text.length - cjkChars) / 4);
+}
+
 function requireQuotedField(text, key) {
   const match = text.match(new RegExp(`^\\s*${key}:\\s*("(?:[^"\\\\]|\\\\.)*")\\s*$`, "m"));
   if (!match) {
@@ -160,9 +245,9 @@ function isAllowedLegacyReady(relativePath, text, lineNumber) {
     const line = lines[lineNumber - 1];
     return line.includes("旧版 `ready`") && line.includes("references/dao/dao-shu-fa-playbook.md");
   }
-  if (relativePath !== "references/dao/dao-shu-fa-playbook.md") return false;
+  if (relativePath !== "references/dao/verification-contract.md") return false;
 
-  const ownerHeading = lines.findIndex((line) => line === "### 旧版 `ready` 迁移（owner）");
+  const ownerHeading = lines.findIndex((line) => line === "## 承接与旧状态迁移");
   if (ownerHeading < 0 || lineNumber < ownerHeading + 1) return false;
   const nextHeading = lines.findIndex((line, index) => index > ownerHeading && /^#{1,3}\s/.test(line));
   return nextHeading < 0 || lineNumber <= nextHeading;

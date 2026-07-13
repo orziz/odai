@@ -21,16 +21,42 @@ It helps an agent:
 - avoid claiming that something was tested, delegated, reviewed, or verified when it was not
 - load specialist guidance only when the task needs it, instead of stuffing every rule into every turn
 
+## Governance Constitution
+
+These traditions are operational lenses in one flow, not separate roles, agents, or sources of authority:
+
+| Lens | Operational meaning |
+|---|---|
+| Dao | Intervene as little as the task allows; do not act while the governing decision is unstable |
+| Confucian | Keep names and reality aligned: a candidate is not authorization, implementation is not verification |
+| Heart-mind | Once the governing decisions are stable, act and let real results test the judgment |
+| Military | Read the evidence, environment, advantage, and stopping point before moving |
+| Legalist | Keep definitions in their owner and obey host, permission, and tool boundaries |
+
+The model remains a strategist: it should surface relevant adjacent value, second-order effects, risks, and fallback routes, but those suggestions never silently expand authorization or replace the user's decision. Guiguzi and Han Fei inform situational communication and name-reality / hard-gate methods inside this flow; they do not add roles or grant the skill power.
+
 ## Validated Operating Envelope
 
-As of 2026-07-12, the frozen skill version has the following 40-case behavioral Canary results:
+As of 2026-07-13, the ratified constitution has the following behavioral Canary evidence:
 
 | Runner | Judge | Result | Interpretation |
 |---|---|---:|---|
-| GPT-5.5 / medium | GPT-5.6 Sol / high | 40/40, 0 unresolved | Validated configuration, including four English-only governance-transfer cases |
-| GPT-5.4 Mini / low | GPT-5.5 / high | 25/40, 0 unresolved | Handles lightweight and explicit tasks, but is not a full-governance guarantee tier |
+| GPT-5.5 / medium | GPT-5.6 Sol / high | 44/45 in one full run; the sole miss passed 2/2 same-version reruns | All cases have passing evidence, with one observed reporting variance; this is not presented as a single-run 45/45 |
+| GPT-5.4 Mini / low | GPT-5.6 Sol / high | 10/19 on the immediately preceding frozen version | Useful lower-bound behavior, not a full-governance guarantee tier |
 
-These are observed configurations, not model-brand rankings or guarantees for untested hosts. Weaker models can still miss stop gates, evidence rescans, acceptance fields, or agent-handoff constraints. Use a model and reasoning tier comparable to the validated configuration when full governance reliability matters.
+These are observed configurations, not model-brand rankings or guarantees for untested hosts. Weaker models can still miss stop gates, evidence rescans, acceptance fields, truth boundaries, or local overlays. Use a model and reasoning tier comparable to the validated configuration when full governance reliability matters.
+
+### Directional with / without A/B
+
+An earlier skill fingerprint was also tested with the same runner on both arms and a neutral GPT-5.6 Sol / high judge:
+
+| Runner | With odai | Without odai |
+|---|---:|---:|
+| GPT-5.4 Mini / low | 4/8 | 1/8 |
+| GPT-5.5 / medium | 7/8 | 2/8 |
+| GPT-5.6 Sol / high | 7/8 | 2/8 |
+
+This was an eight-run extended smoke sample on an earlier fingerprint, with one run per observation. It is directional evidence that the governance layer adds value, not a causal estimate, a current-version benchmark, or proof that odai can turn a weak model into a strong one. Full history and fingerprints are recorded in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
 
 ## 30-Second Start
 

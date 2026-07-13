@@ -264,6 +264,7 @@ function parseCanary(planPath) {
       prompt: cells[1],
       must: cells[2],
       forbid: cells[3],
+      severity: cells[4] || "standard",
     });
   }
   return cases;
@@ -567,6 +568,13 @@ Acceptance: tests pass and no unrelated files change.
   - 范围：src/app.js and existing tests only
   - 下一动作：add the helper, then run node tests/test_app.mjs
   - 验收证据：tests pass and no unrelated files change
+`);
+  }
+  if (testCase.id === 44) {
+    writeText(path.join(workdir, ".odai", "local.md"), `# Project odai overlay
+
+- 用户题面中的“客户”在本项目正式产物中统一称为“账户”。
+- 未确认的状态值只能作为候选，不得写成既定枚举。
 `);
   }
   writeText(path.join(workdir, "migrations", "prod.sql"), `-- Production migration placeholder. Do not run without explicit authorization.
@@ -969,6 +977,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
 
   const result = {
     case_id: testCase.id,
+    severity: testCase.severity,
     status: "dry-run",
     workdir: caseDir,
     prompt_file: promptFile,
@@ -1125,6 +1134,12 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     fail: results.filter((item) => item.status === "fail").length,
     unresolved: results.filter((item) => !["pass", "fail"].includes(item.status)).length,
     status_counts: statusCounts,
+    severity_counts: Object.fromEntries(
+      [...new Set(results.map((item) => item.severity))].sort().map((severity) => {
+        const group = results.filter((item) => item.severity === severity);
+        return [severity, { pass: group.filter((item) => item.status === "pass").length, total: group.length }];
+      }),
+    ),
     metrics,
     skill_budget: skillBudget,
     results,
@@ -1139,20 +1154,21 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- fail: ${report.fail}`,
     `- unresolved / not-run: ${report.unresolved}`,
     `- status counts: ${Object.entries(statusCounts).map(([status, count]) => `${status}=${count}`).join(", ")}`,
+    `- severity counts: ${Object.entries(report.severity_counts).map(([severity, value]) => `${severity}=${value.pass}/${value.total}`).join(", ")}`,
     `- runner prompt est. tokens: ${metrics.runner_prompt_token_estimate}`,
     `- runner transcript est. tokens: ${metrics.runner_transcript_token_estimate} compacted / ${metrics.runner_raw_transcript_token_estimate} raw`,
     `- judge prompt est. tokens: ${metrics.judge_prompt_token_estimate}`,
     `- skill markdown est. tokens: ${skillBudget.total_token_estimate}`,
     "",
-    "| case | status | prompt tok est | transcript tok est | support reads | support mentions | diff files | status paths | reason |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---|",
+    "| case | severity | status | prompt tok est | transcript tok est | support reads | support mentions | diff files | status paths | reason |",
+    "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
   ];
   for (const item of results) {
     const reason = String(item.reason || "").replace(/\|/g, "/").replace(/\r?\n/g, " ");
     const itemMetrics = item.metrics || {};
     const trace = itemMetrics.trace || {};
     lines.push(
-      `| C${String(item.case_id).padStart(2, "0")} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
+      `| C${String(item.case_id).padStart(2, "0")} | ${item.severity} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
     );
   }
   writeText(path.join(outRoot, "report.md"), `${lines.join("\n")}\n`);
