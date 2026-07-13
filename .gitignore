@@ -16,3 +16,5 @@ cli/.odai/
 cli/skills/
 
 plans/odai-*-runs
+
+.tmp/

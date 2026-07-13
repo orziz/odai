@@ -104,12 +104,59 @@ function fingerprintText(value) {
   return createHash("sha256").update(String(value)).digest("hex");
 }
 
+function collectScalarStrings(value, output = []) {
+  if (typeof value === "string") {
+    output.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectScalarStrings(item, output);
+  } else if (value && typeof value === "object") {
+    for (const item of Object.values(value)) collectScalarStrings(item, output);
+  }
+  return output;
+}
+
+function collectStructuredToolCalls(value, output = []) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectStructuredToolCalls(item, output);
+    return output;
+  }
+  if (!value || typeof value !== "object") return output;
+
+  const type = String(value.type || "").toLowerCase();
+  if (type === "tool_use" || type === "function_call") {
+    const name = value.name || value.tool_name || value.function?.name || "";
+    const input = value.input ?? value.arguments ?? value.function?.arguments ?? {};
+    output.push({ name: String(name), text: collectScalarStrings(input).join("\n") });
+    return output;
+  }
+
+  for (const item of Object.values(value)) collectStructuredToolCalls(item, output);
+  return output;
+}
+
 function detectTrace(text, skillFiles = []) {
   const value = String(text || "");
   const supportFileMentions = collectSupportPaths(value, skillFiles);
   const supportFiles = new Set();
   const contentReadCommand = /\b(?:Get-Content|Select-String|read_file|open_file|cat|type|more|less|head|tail|sed|awk|rg|grep)\b/i;
+  const directReadTool = /^(?:Read|read_file|open_file|Get-Content)$/i;
   for (const line of value.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    let structured = null;
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try { structured = JSON.parse(trimmed); } catch { /* plain log line */ }
+    }
+
+    if (structured) {
+      for (const call of collectStructuredToolCalls(structured)) {
+        const isDirectRead = directReadTool.test(call.name);
+        const isReadCommand = contentReadCommand.test(call.text) && !/\brg\s+--files\b/i.test(call.text);
+        if (!isDirectRead && !isReadCommand) continue;
+        for (const file of collectSupportPaths(call.text, skillFiles)) supportFiles.add(file);
+      }
+      continue;
+    }
+
     if (!contentReadCommand.test(line) || /\brg\s+--files\b/i.test(line)) continue;
     for (const file of collectSupportPaths(line, skillFiles)) supportFiles.add(file);
   }
@@ -140,6 +187,32 @@ function assertTraceDetection() {
   );
   if (reading.support_files.length !== 2) {
     throw new Error("trace self-test failed: explicit content commands must count as reads");
+  }
+  const structuredRootRead = detectTrace(
+    [
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", name: "Read", input: { file_path: "skills/odai/SKILL.md" } }] },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: { content: [{ type: "tool_result", content: files.join("\n") }] },
+      }),
+    ].join("\n"),
+    files,
+  );
+  if (structuredRootRead.support_files.length !== 0 || structuredRootRead.support_file_mentions.length !== 2) {
+    throw new Error("trace self-test failed: JSON tool results must be mentions, not reads");
+  }
+  const structuredSupportRead = detectTrace(
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "Read", input: { file_path: files[0] } }] },
+    }),
+    files,
+  );
+  if (structuredSupportRead.support_files.length !== 1) {
+    throw new Error("trace self-test failed: JSON Read tool inputs must count as reads");
   }
 }
 
