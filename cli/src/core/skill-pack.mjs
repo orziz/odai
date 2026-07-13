@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,10 @@ async function resolveSkillRoot({ repoRoot = process.cwd() } = {}) {
   if (await hasSkillEntry(packagedRoot)) {
     return packagedRoot;
   }
+  const developmentRoot = path.join(packageRoot(), "..", "skills", "odai");
+  if (await isRepositoryCheckout() && await hasSkillEntry(developmentRoot)) {
+    return developmentRoot;
+  }
   throw new Error(`odai skill pack not found. Expected ${workspaceRoot} or bundled package skills/odai.`);
 }
 
@@ -95,6 +99,15 @@ async function hasSkillEntry(skillRoot) {
 
 function packageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+async function isRepositoryCheckout() {
+  try {
+    await stat(path.join(packageRoot(), "..", ".git"));
+    return path.basename(packageRoot()) === "cli";
+  } catch {
+    return false;
+  }
 }
 
 export async function renderPromptPack({ skillRoot, entryText, references = [] }) {

@@ -13,5 +13,6 @@ skills-lock.json
 .odai/runs
 .odai/sessions
 cli/.odai/
+cli/skills/
 
 plans/odai-*-runs

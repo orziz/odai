@@ -95,7 +95,7 @@ export function skillDiscoveryRoots({
   }
 
   if (includePackagedOdai) {
-    add(path.join(packageRoot(), "skills"), "package", "skills");
+    add(packageSkillsRoot(), "package", "skills");
   }
 
   return roots;
@@ -167,7 +167,7 @@ export function discoverSkillsSync({
 
   // Ensure system odai always appears in listings even if discovery missed it.
   if (!byName.has("odai")) {
-    const packaged = path.join(packageRoot(), "skills", "odai");
+    const packaged = path.join(packageSkillsRoot(), "odai");
     if (existsSync(path.join(packaged, "SKILL.md"))) {
       const entryText = readFileSync(path.join(packaged, "SKILL.md"), "utf8");
       const record = {
@@ -177,7 +177,7 @@ export function discoverSkillsSync({
         entry: path.join(packaged, "SKILL.md"),
         scope: "package",
         sourceKind: "skills",
-        sourceRoot: path.join(packageRoot(), "skills"),
+        sourceRoot: packageSkillsRoot(),
         reservedClash: false,
         system: true,
         entrySha256: sha256(entryText),
@@ -335,6 +335,19 @@ function safeIsDirectory(filePath) {
 
 function packageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+function packageSkillsRoot() {
+  const bundled = path.join(packageRoot(), "skills");
+  const development = path.join(packageRoot(), "..", "skills");
+  if (
+    path.basename(packageRoot()) === "cli" &&
+    existsSync(path.join(packageRoot(), "..", ".git")) &&
+    existsSync(path.join(development, "odai", "SKILL.md"))
+  ) {
+    return development;
+  }
+  return bundled;
 }
 
 function escapeRegExp(value) {

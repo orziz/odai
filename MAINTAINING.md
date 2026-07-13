@@ -20,7 +20,7 @@ scripts/                 仓库维护与评测 harness
 assets/                  README 配图
 ```
 
-分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。`cli/skills/odai/` 是 npm 包的 bundled fallback snapshot，不是第二 source；只能由 `node cli/scripts/sync-skill-snapshot.mjs` 从 canonical source 生成，并用 `--check` 防止漂移。
+分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。npm 打包时，`prepack` 会把 canonical `skills/odai/` 临时注入 `cli/skills/odai/`，`postpack` 随即清理；该目录不提交、不维护，也不是第二 source。
 
 ## 命名约定
 
@@ -57,10 +57,10 @@ assets/                  README 配图
 改入口、路由门、交互契约、实施准入、验收口径、agent 治理或 canary 用例后：
 
 1. 跑 `node scripts/validate-odai-skill.mjs` 检查 frontmatter、UI 元数据、资源引用和长规则预警。
-2. 跑 `node cli/scripts/sync-skill-snapshot.mjs`，再跑 `node cli/scripts/sync-skill-snapshot.mjs --check` 确认 bundled snapshot 无漂移。
+2. 跑 `npm --prefix cli run pack:dry-run`，确认 npm 产物包含 bundled `skills/odai`，且结束后没有遗留 `cli/skills/`。
 3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary.md`。
 
-`cli` 的 `pretest`、`presmoke`、`prepack` 与 `prepublishOnly` 只执行 snapshot `--check`，不得自动覆盖漂移；显式维护动作才运行 `sync:skill`。CI 也必须在任何同步动作之前先执行 source 校验与 snapshot `--check`。
+`cli` 源码测试直接读取仓库根目录的 canonical skill，不依赖临时 bundle。`prepack` 只为 npm 产物注入 bundle；维护脚本和 CI 必须在打包结束后确认临时目录已被清理。
 
 标准安装入口：
 

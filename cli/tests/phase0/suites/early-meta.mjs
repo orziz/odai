@@ -139,7 +139,7 @@ assert.ok(!secondPromptPack.includes("first skill marker"));
 assert.notEqual(secondSkillPack.entrySha256, firstSkillPack.entrySha256);
 const packageFallbackRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-skill-package-fallback-"));
 const packageFallbackSkillPack = await loadSkillPack({ repoRoot: packageFallbackRoot });
-assert.ok(packageFallbackSkillPack.root.endsWith(path.join("cli", "skills", "odai")));
+assert.equal(packageFallbackSkillPack.root, path.join(repoRoot, "skills", "odai"));
 assert.equal(packageFallbackSkillPack.entrySha256, skillPack.entrySha256);
 assert.deepEqual(packageFallbackSkillPack.supportFiles, skillPack.supportFiles);
 const packageFallbackPromptPack = await packageFallbackSkillPack.render({

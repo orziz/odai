@@ -21,10 +21,12 @@ jobs:
         run: |
           node --check scripts/validate-odai-skill.mjs
           node --check scripts/odai-canary-harness.mjs
-          node --check cli/scripts/sync-skill-snapshot.mjs
-      - name: Check CLI snapshot drift
-        run: node cli/scripts/sync-skill-snapshot.mjs --check
+          node --check cli/scripts/package-skill-bundle.mjs
       - name: Build canary fixtures
         run: node scripts/odai-canary-harness.mjs --smoke
       - name: Test CLI
         run: npm --prefix cli test
+      - name: Verify packaged skill bundle
+        run: |
+          npm --prefix cli run pack:dry-run
+          test ! -e cli/skills

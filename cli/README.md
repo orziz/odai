@@ -78,7 +78,7 @@ const result = await runTask({
 
 The API keeps odai runtime, provider routing, policy gates, transcripts, and run records in the package; editor integrations should call this API instead of parsing CLI stdout.
 
-When a workspace contains `skills/odai`, odai uses that workspace skill. Otherwise the npm package falls back to its bundled compact `skills/odai` snapshot.
+When a workspace contains `skills/odai`, odai uses that workspace skill. Otherwise the npm package falls back to `skills/odai`, injected into the package from the canonical repository skill during `npm pack` / `npm publish`.
 
 ### External skills
 
@@ -90,7 +90,7 @@ When a workspace contains `skills/odai`, odai uses that workspace skill. Otherwi
   - monorepo parent `skills/` and `.agents/skills/` (walk up, stop before `$HOME`)
   - `~/.agents/skills/*/SKILL.md` (user scope)
   - optional `ODAI_SKILLS_PATH` (path-separator joined extra roots)
-  - packaged `skills/odai` snapshot fallback
+  - packaged `skills/odai` fallback
 - **List all installs**: interactive `/skills`, or non-interactive `odai skills` / `odai skills --json`
   - Full inventory: every install path is shown (primary + shadow), not name-deduped
   - Tab after `/` shows `/skill-name` enable completions
