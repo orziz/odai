@@ -48,15 +48,15 @@
 
 ### with / without 方向性 A/B
 
-较早的 skill 指纹曾用同一 runner 跑加载 / 不加载 odai 两臂，并统一交给 GPT-5.6 Sol / high 中立裁判：
+当前追认版本用同一 runner 跑加载 / 不加载 odai 两臂，并统一交给 GPT-5.6 Sol / high 中立裁判：
 
 | Runner | 加载 odai | 不加载 odai |
 |---|---:|---:|
-| GPT-5.4 Mini / low | 4/8 | 1/8 |
-| GPT-5.5 / medium | 7/8 | 2/8 |
-| GPT-5.6 Sol / high | 7/8 | 2/8 |
+| GPT-5.4 Mini / low | 5/9 | 4/9 |
+| GPT-5.5 / medium | 9/9 | 3/9 |
+| GPT-5.6 Sol / high | 9/9 | 3/9 |
 
-这是较早指纹上的 8 次扩展冒烟观察，每个观察只跑一次。它只能作为“治理层有净收益”的方向性证据，不是因果效应估计、当前版本基准，也不证明 odai 能把弱模型变成强模型。完整历史与指纹见 [`plans/odai-canary-results.md`](plans/odai-canary-results.md)。
+这组结果覆盖 9 条代表性中立场景，每个模型、arm 和场景只观察一次。两档强配置加载 odai 后均多通过 6 条；Mini 只多通过 1 条，且同时出现正负翻转，不能视为稳定提升。它是当前版本的方向性证据，不是因果效应估计或稳定性保证，也不证明 odai 能把弱模型变成强模型。完整历史、指纹和一次裁判超时的处理见 [`plans/odai-canary-results.md`](plans/odai-canary-results.md)。
 
 ## 30 秒上手
 

@@ -6,8 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cliRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const args = ["pack", ...process.argv.slice(2)];
+const npmExecPath = process.env.npm_execpath;
+const npmCommand = npmExecPath ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+const args = [...(npmExecPath ? [npmExecPath] : []), "pack", ...process.argv.slice(2)];
 
 try {
   const code = await run(npmCommand, args);

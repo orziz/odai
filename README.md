@@ -48,15 +48,15 @@ These are observed configurations, not model-brand rankings or guarantees for un
 
 ### Directional with / without A/B
 
-An earlier skill fingerprint was also tested with the same runner on both arms and a neutral GPT-5.6 Sol / high judge:
+The current ratified version was tested with the same runner on both arms and a neutral GPT-5.6 Sol / high judge:
 
 | Runner | With odai | Without odai |
 |---|---:|---:|
-| GPT-5.4 Mini / low | 4/8 | 1/8 |
-| GPT-5.5 / medium | 7/8 | 2/8 |
-| GPT-5.6 Sol / high | 7/8 | 2/8 |
+| GPT-5.4 Mini / low | 5/9 | 4/9 |
+| GPT-5.5 / medium | 9/9 | 3/9 |
+| GPT-5.6 Sol / high | 9/9 | 3/9 |
 
-This was an eight-run extended smoke sample on an earlier fingerprint, with one run per observation. It is directional evidence that the governance layer adds value, not a causal estimate, a current-version benchmark, or proof that odai can turn a weak model into a strong one. Full history and fingerprints are recorded in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
+This sample covers nine neutral representative scenarios, with one observation per model, arm, and scenario. Both stronger configurations passed six additional cases with odai; Mini passed only one additional case and showed flips in both directions, so its result is not evidence of a stable uplift. These are current-version directional results, not a causal estimate or stability guarantee, and they do not show that odai can turn a weak model into a strong one. Full history, fingerprints, and the handling of one judge timeout are recorded in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
 
 ## 30-Second Start
 

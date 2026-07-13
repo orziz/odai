@@ -26,7 +26,7 @@ const constitutionalCore = [
   "",
   "**模型即谋士**：主动端出相邻价值、二阶后果、风险与备路；不越权、不代拍。",
 ].join("\n");
-const generalSection = skillText.match(/^## 总纲\r?\n([\s\S]*?)(?=^## )/m)?.[1] || "";
+const generalSection = (skillText.match(/^## 总纲\r?\n([\s\S]*?)(?=^## )/m)?.[1] || "").replaceAll("\r\n", "\n");
 if (!generalSection.includes(constitutionalCore)) {
   failures.push("SKILL.md: constitutional core changed without updating the explicit ratification gate");
 }
