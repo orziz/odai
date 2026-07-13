@@ -37,68 +37,50 @@ The model remains a strategist: it should surface relevant adjacent value, secon
 
 ## Validated Operating Envelope
 
-As of 2026-07-14, the ratified constitution has the following behavioral Canary evidence:
+As of 2026-07-14, the latest full-canary and lower-bound results are:
 
-| Runner | Host CLI | Judge | Result | Interpretation |
-|---|---|---|---:|---|
-| GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 44/45 in one full run; the sole miss passed 2/2 same-version reruns | All cases have passing evidence, with one observed reporting variance; this is not presented as a single-run 45/45 |
-| GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 on the immediately preceding frozen version | Useful lower-bound behavior, not a full-governance guarantee tier |
-| Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 41/45 base; **42/45†** after stability screening | Directional host evidence; three retained failures, not reference tier |
+| Scope | Runner | Host CLI | Judge | Result | Assessment |
+|---|---|---|---|---:|---|
+| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 44/45 base; the sole miss passed 2/2 reruns | All 45 cases have passing evidence; reference tier |
+| Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | Weak-model lower bound, not a full-governance tier |
+| Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 42/45 after screening | Three retained failures; directional host evidence |
 
-These are observed configurations, not model-brand rankings or guarantees for untested hosts. Weaker models can still miss stop gates, evidence rescans, acceptance fields, truth boundaries, or local overlays. Use a model and reasoning tier comparable to the validated configuration when full governance reliability matters.
+### Latest with / without A/B
 
-### Directional with / without A/B
-
-The current ratified version was tested with the same runner on both arms and a fixed external GPT-5.6 Sol / high judge:
+The latest nine-case screen uses the same fixed GPT-5.6 Sol / high judge:
 
 | Runner | Host CLI | With odai | Without odai |
 |---|---|---:|---:|
 | GPT-5.4 Mini / low | Codex | 5/9 | 4/9 |
 | GPT-5.5 / medium | Codex | 9/9 | 3/9 |
 | GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
-| Claude Opus 4.8 | Claude Code | 8/9† | 3/9 |
-| Claude Sonnet 5 | Claude Code | 8/9† | 3/9 |
-| Grok 4.5 | Grok CLI | 7/9†‡ | 3/9 |
+| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
+| Claude Sonnet 5 | Claude Code | 8/9 | 3/9 |
+| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
 
-† Failure-only stability screen: each initial failure was rerun twice; only 2/2 rerun passes are reclassified as variance. Results are directional, not causal estimates. ‡ Grok used the same nine case IDs and judge but the full-canary criteria rather than the dedicated A/B plan, so its row is not an exact cross-host comparison. Full fingerprints and rerun history are in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
+Full fingerprints and run evidence are retained in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
 
 ### Retained failures
 
-| Scope | Runner | Case | Stability | Why it failed | Assessment |
-|---|---|---|---|---|---|
-| Full | Grok 4.5 | C08 | 3/3 fail | Claimed tests/status checks without retained action evidence | Not reference-tier; retained as observed |
-| Full | Grok 4.5 | C28, C38 | 2/3 fail each | Read/test actions were not consistently retained in the headless transcript | Mixed, but remain failures under the screen |
-| A/B | Claude Opus 4.8 | C05 | 3/3 fail | Answered correctly, then performed unbounded repository enumeration and offered extra work; it did not read unrelated file contents | Known narrow over-delivery gap; 8/9 stands |
-| A/B | Claude Sonnet 5 | C39 | 3/3 fail | Left placeholders and omitted concrete minimum verification steps | Known truthfulness gap; 8/9 stands |
-| A/B | Grok 4.5 | C05 | 3/3 fail | README read action was absent from the retained headless trace | Host-evidence gap; remains a failure |
-| A/B | Grok 4.5 | C32 | 2/3 fail | Claimed a test pass without consistently retained command evidence | Mixed, but remains a failure |
+| Scope | Runner | Case | Why it failed | Acceptable? |
+|---|---|---|---|---|
+| Targeted | GPT-5.4 Mini / low | C45 | Saw the unused parameter and 812px / 800px contract mismatch, but omitted both from its recommendation | Yes as a documented weak-model lower bound; not a full-governance tier |
+| A/B | Claude Sonnet 5 | C39 | Left placeholders and omitted concrete minimum verification steps | Known truthfulness gap; remains 8/9 |
+| Full | Grok 4.5 | C08 | Claimed tests/status checks without retained action evidence | Retained; Grok is not the reference full-canary tier |
+| Full | Grok 4.5 | C28, C38 | Read/test actions were not consistently retained in the headless transcript | Mixed but retained as failures |
 
-### Runner token volume
+### Runner token comparison
 
-The same representative set was sampled again for runner processed-token volume without invoking the judge. The table sums Codex CLI `tokens used` across nine normally completed sessions per arm:
-
-| Runner | With odai | Without odai | Difference with odai |
+| Runner | With odai | Without odai | Difference |
 |---|---:|---:|---:|
-| GPT-5.4 Mini / low | 139,966 | 128,923 | +11,043 (+8.6%) |
-| GPT-5.5 / medium | 144,508 | 108,775 | +35,733 (+32.9%) |
-| GPT-5.6 Sol / high | 135,233 | 128,072 | +7,161 (+5.6%) |
+| GPT-5.4 Mini / low | 139,966 | 128,923 | +8.6% |
+| GPT-5.5 / medium | 144,508 | 108,775 | +32.9% |
+| GPT-5.6 Sol / high | 135,233 | 128,072 | +5.6% |
+| Claude Opus 4.8 | 1,537,659 | 1,493,998 | +2.9% |
+| Claude Sonnet 5 | 2,572,615 | 2,124,496 | +21.1% |
+| Grok 4.5 | 679,064 | 862,548 | −21.3% |
 
-These are CLI-reported runner-session totals, excluding the judge, rather than billing-grade input / output / cache breakdowns. Because the two arms can take different actions, each difference is an end-to-end processed-token delta in this observation, not a fixed overhead attributable only to loading the skill. Each cell still contains a single observation.
-
-The Claude arms report processed-token volume on a different accounting basis — the Claude Code CLI totals include cache-read and cache-creation tokens — so these figures are **not** comparable to the Codex numbers above and are not billing cost. Only the with / without token-volume delta within each row is meaningful, and it comes from the judged A/B run rather than a separate token-only pass. Cache categories have different prices; use the per-session `total_cost_usd` emitted by the runner when evaluating actual spend:
-
-| Runner | With odai | Without odai | Difference with odai |
-|---|---:|---:|---:|
-| Claude Opus 4.8 | 1,537,659 | 1,493,998 | +43,661 (+2.9%) |
-| Claude Sonnet 5 | 2,572,615 | 2,124,496 | +448,119 (+21.1%) |
-
-The Grok 4.5 arm is also on a different accounting basis. The Grok CLI `usage.total_tokens` sum includes `input_tokens`, `cache_read_input_tokens`, `output_tokens`, and `reasoning_tokens`, so it is **not** comparable to the Codex footer table and is not billing cost. These nine-case totals come from a dedicated `--no-judge` token-only pass on the same representative set (not the judged A/B round):
-
-| Runner | With odai | Without odai | Difference with odai |
-|---|---:|---:|---:|
-| Grok 4.5 | 679,064 | 862,548 | −183,484 (−21.3%) |
-
-In this observation the without-odai arm spent more processed tokens (notably a long C39 session), so loading odai did not show a fixed positive tax; the delta is still end-to-end behavioral volume, not skill-load overhead alone.
+These are runner-reported processed-token totals, not billing cost. Compare only within a row; Codex, Claude Code, and Grok CLI use different accounting conventions.
 
 ## 30-Second Start
 

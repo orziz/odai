@@ -7,9 +7,11 @@
 #   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel opus -SkillMode on
 #   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel sonnet -SkillMode off
 #   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel sonnet -Cases 31 -OutDir .tmp/sonnet-c31-rerun-a
+#   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel opus -Plan plans/odai-canary.md -Cases 45
 #   pwsh -File scripts/run-claude-canary.ps1 -PrepareOnly -Cases 1
 
 param(
+  [string]$Plan = "plans/odai-ab-smoke.md",
   [string]$Cases = "1,5,11,13,20,31,32,39,43",
   [ValidateSet("on", "off")]
   [string]$SkillMode = "on",
@@ -60,14 +62,18 @@ if (Test-Path -LiteralPath $fullOut) {
 $runnerScript = Join-Path $Root "scripts\claude-canary-runner.mjs"
 $judgeScript = Join-Path $Root "scripts\codex-canary-judge.mjs"
 $harnessScript = Join-Path $Root "scripts\odai-canary-harness.mjs"
-$plan = Join-Path $Root "plans\odai-ab-smoke.md"
+$planPath = if ([System.IO.Path]::IsPathRooted($Plan)) {
+  [System.IO.Path]::GetFullPath($Plan)
+} else {
+  [System.IO.Path]::GetFullPath((Join-Path $Root $Plan))
+}
 
 $runner = "node `"$runnerScript`" --prompt-file {prompt_file} --cwd {workdir} --last-message {last_message} --model `"$RunnerModel`""
 $judge = "node `"$judgeScript`" --cwd {workdir} --schema {schema} --output {judge_output} --model `"$JudgeModel`" --reasoning-effort `"$JudgeEffort`""
 
 $harnessArgs = @(
   $harnessScript,
-  "--plan", $plan,
+  "--plan", $planPath,
   "--skill-mode", $SkillMode,
   "--runner-cmd", $runner,
   "--judge-cmd", $judge,

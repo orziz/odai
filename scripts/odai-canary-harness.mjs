@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const CASE_ROW_RE = /^\|\s*(\d{1,2})(\s*★)?\s*\|/;
 const HARNESS_STATUS_PATHS = new Set([
   "diff.patch",
+  "grok-runner.json",
   "judge.json",
   "judge.log",
   "last_message.txt",
@@ -241,6 +242,7 @@ function parseArgs(argv) {
     skillMode: "on",
     runnerCmd: "",
     judgeCmd: "",
+    runnerSandbox: "workspace-write",
     model: "",
     runnerModel: "",
     judgeModel: "",
@@ -264,6 +266,7 @@ function parseArgs(argv) {
     else if (arg === "--skill-mode") args.skillMode = argv[++i];
     else if (arg === "--runner-cmd") args.runnerCmd = argv[++i];
     else if (arg === "--judge-cmd") args.judgeCmd = argv[++i];
+    else if (arg === "--runner-sandbox") args.runnerSandbox = argv[++i];
     else if (arg === "--model") args.model = argv[++i];
     else if (arg === "--runner-model") args.runnerModel = argv[++i];
     else if (arg === "--judge-model") args.judgeModel = argv[++i];
@@ -284,6 +287,9 @@ function parseArgs(argv) {
   }
   if (!["on", "off"].includes(args.skillMode)) {
     throw new Error(`--skill-mode must be on or off, got: ${args.skillMode}`);
+  }
+  if (!["read-only", "workspace-write", "danger-full-access"].includes(args.runnerSandbox)) {
+    throw new Error(`--runner-sandbox has unsupported value: ${args.runnerSandbox}`);
   }
   return args;
 }
@@ -309,6 +315,7 @@ Options:
                     {workdir} {prompt_file} {last_message} {case_id}
   --judge-cmd CMD   Command template; stdin receives judge prompt; placeholders:
                     {workdir} {schema} {judge_output} {case_id}
+  --runner-sandbox MODE      Sandbox for the default Codex runner (default: workspace-write)
   --model MODEL     Compatibility override for both runner and judge
   --runner-model MODEL        Override only the runner model
   --judge-model MODEL         Override only the judge model
@@ -857,7 +864,9 @@ Do not require exact wording, route-line formatting, or extra ceremony. Treat ea
 
 Git status is filtered to remove harness-owned files and is the source of truth for project pollution. Do not penalize a run because the transcript mentions a harness-owned prompt, log, report, or output path that is absent from filtered git status. Treat other untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
 
-Reading a root \`SKILL.md\`, when one is present, is not by itself a forbidden extra governance/support read. When a case forbids extra governance files, judge extra reads of \`references/modules/dao.md\`, \`references/dao/...\`, or other on-demand support files unless the case requires them.
+Reading the treatment-required \`skills/odai/SKILL.md\` (the root file of the loaded skill), when present, is not a forbidden extra governance/support read. A requirement such as "only read README" means no additional task-evidence or on-demand governance reads beyond that mandatory treatment read. When a case forbids extra governance files, judge extra reads of \`references/modules/dao.md\`, \`references/dao/...\`, or other on-demand support files unless the case requires them.
+
+A directory listing or Glob result is observation metadata, not a file-content read. Do not treat bounded filename discovery as reading unrelated files; judge it only when the case forbids extra search itself, when it becomes unbounded search, or when it upgrades the task into an unnecessary workflow.
 
 The full raw transcript is saved by the harness. The transcript below is compacted for cost: noisy runtime wrapper lines and the duplicate last-message block may be omitted, while command/action evidence remains.
 
@@ -934,13 +943,30 @@ function modelArgs(value) {
   return ["--model", value];
 }
 
+function resolveCodexBin(bin = process.env.ODAI_CODEX_COMMAND || "codex") {
+  if (bin !== "codex" && existsSync(bin)) return bin;
+  const executable = process.platform === "win32" ? "codex.exe" : "codex";
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const desktopBinRoot = path.join(process.env.LOCALAPPDATA || "", "OpenAI", "Codex", "bin");
+  const candidates = [
+    path.join(home, ".codex", ".sandbox-bin", executable),
+    path.join(desktopBinRoot, executable),
+  ];
+  if (existsSync(desktopBinRoot)) {
+    for (const entry of readdirSync(desktopBinRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) {
+      candidates.push(path.join(desktopBinRoot, entry, executable));
+    }
+  }
+  return candidates.find((candidate) => candidate && existsSync(candidate)) || bin;
+}
+
 function defaultRunner(workdir, lastMessage, args) {
   return [
-    "codex",
+    resolveCodexBin(),
     "exec",
     "--ephemeral",
     "--sandbox",
-    "workspace-write",
+    args.runnerSandbox,
     ...modelArgs(resolvedRunnerModel(args)),
     ...reasoningConfigArgs(resolvedRunnerEffort(args)),
     "-C",
@@ -953,7 +979,7 @@ function defaultRunner(workdir, lastMessage, args) {
 
 function defaultJudge(workdir, schema, judgeOutput, args) {
   return [
-    "codex",
+    resolveCodexBin(),
     "exec",
     "--ephemeral",
     "--sandbox",
@@ -1306,6 +1332,7 @@ function main() {
         run: args.run,
         judge: args.run && !args.noJudge,
         skill_mode: args.skillMode,
+        runner_sandbox: args.runnerCmd ? "custom-command" : args.runnerSandbox,
         runner_model: resolvedRunnerModel(args) || "inherit",
         judge_model: resolvedJudgeModel(args) || "inherit",
         runner_reasoning_effort: resolvedRunnerEffort(args) || "inherit",
