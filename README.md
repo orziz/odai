@@ -58,6 +58,16 @@ The current ratified version was tested with the same runner on both arms and a 
 
 This sample covers nine neutral representative scenarios, with one observation per model, arm, and scenario. Both stronger configurations passed six additional cases with odai; Mini passed only one additional case and showed flips in both directions, so its result is not evidence of a stable uplift. These are current-version directional results, not a causal estimate or stability guarantee, and they do not show that odai can turn a weak model into a strong one. Full history, fingerprints, and the handling of one judge timeout are recorded in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
 
+The same representative set was sampled again for runner cost without invoking the judge. The table sums Codex CLI `tokens used` across nine normally completed sessions per arm:
+
+| Runner | With odai | Without odai | Difference with odai |
+|---|---:|---:|---:|
+| GPT-5.4 Mini / low | 139,966 | 128,923 | +11,043 (+8.6%) |
+| GPT-5.5 / medium | 144,508 | 108,775 | +35,733 (+32.9%) |
+| GPT-5.6 Sol / high | 135,233 | 128,072 | +7,161 (+5.6%) |
+
+These are CLI-reported runner-session totals, excluding the judge, rather than billing-grade input / output / cache breakdowns. Because the two arms can take different actions, each difference is an end-to-end behavioral cost in this observation, not a fixed cost attributable only to loading the skill. Each cell still contains a single cost observation.
+
 ## 30-Second Start
 
 Install the unified entry point:

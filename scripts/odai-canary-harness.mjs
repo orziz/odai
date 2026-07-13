@@ -755,6 +755,23 @@ function compactTranscriptForJudge(value) {
   return kept.join("\n").trim();
 }
 
+function parseCliReportedTokens(value) {
+  const plainText = String(value || "").replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+  const matches = [...plainText.matchAll(/^\s*tokens used\s*\r?\n\s*([\d,]+)\s*$/gim)];
+  if (matches.length === 0) return null;
+  const parsed = Number(matches.at(-1)[1].replaceAll(",", ""));
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function assertCliReportedTokenDetection() {
+  if (parseCliReportedTokens("tokens used\n10,055") !== 10055) {
+    throw new Error("token self-test failed: expected comma-formatted CLI token total");
+  }
+  if (parseCliReportedTokens("no usage footer") !== null) {
+    throw new Error("token self-test failed: absent CLI token total must remain unknown");
+  }
+}
+
 function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, lastMessageText, args) {
   const transcriptLimit = positiveNumber(args.judgeTranscriptChars, 30000);
   const diffLimit = positiveNumber(args.judgeDiffChars, 20000);
@@ -951,6 +968,7 @@ function summarizeMetrics(results) {
   const metrics = results.map((item) => item.metrics || {});
   const sum = (key) => metrics.reduce((total, item) => total + (Number(item[key]) || 0), 0);
   const max = (key) => metrics.reduce((current, item) => Math.max(current, Number(item[key]) || 0), 0);
+  const count = (key) => metrics.filter((item) => Number.isFinite(item[key])).length;
   return {
     runner_prompt_chars: sum("runner_prompt_chars"),
     runner_prompt_token_estimate: sum("runner_prompt_token_estimate"),
@@ -958,8 +976,12 @@ function summarizeMetrics(results) {
     runner_raw_transcript_token_estimate: sum("runner_raw_transcript_token_estimate"),
     runner_transcript_chars: sum("runner_transcript_chars"),
     runner_transcript_token_estimate: sum("runner_transcript_token_estimate"),
+    runner_cli_reported_tokens: sum("runner_cli_reported_tokens"),
+    runner_cli_reported_token_cases: count("runner_cli_reported_tokens"),
     judge_prompt_chars: sum("judge_prompt_chars"),
     judge_prompt_token_estimate: sum("judge_prompt_token_estimate"),
+    judge_cli_reported_tokens: sum("judge_cli_reported_tokens"),
+    judge_cli_reported_token_cases: count("judge_cli_reported_tokens"),
     runner_duration_ms: sum("runner_duration_ms"),
     judge_duration_ms: sum("judge_duration_ms"),
     max_runner_transcript_chars: max("runner_transcript_chars"),
@@ -997,9 +1019,11 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
       runner_raw_transcript_token_estimate: 0,
       runner_transcript_chars: 0,
       runner_transcript_token_estimate: 0,
+      runner_cli_reported_tokens: null,
       last_message_chars: 0,
       judge_prompt_chars: 0,
       judge_prompt_token_estimate: 0,
+      judge_cli_reported_tokens: null,
       judge_transcript_char_budget: args.judgeTranscriptChars,
       runner_duration_ms: null,
       judge_duration_ms: null,
@@ -1029,6 +1053,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.metrics.runner_raw_transcript_token_estimate = estimateTokens(rawTranscript);
   result.metrics.runner_transcript_chars = transcript.length;
   result.metrics.runner_transcript_token_estimate = estimateTokens(transcript);
+  result.metrics.runner_cli_reported_tokens = parseCliReportedTokens(rawTranscript);
   result.metrics.last_message_chars = lastMessageText.length;
   result.metrics.trace = detectTrace(rawTranscript, skillFiles);
   const transcriptFile = path.join(caseDir, "runner.log");
@@ -1080,11 +1105,13 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
     ? run(judge, { cwd: caseDir, input: judgePrompt, timeoutSeconds: args.judgeTimeout })
     : runShell(judge, { cwd: caseDir, input: judgePrompt, timeoutSeconds: args.judgeTimeout });
   result.metrics.judge_duration_ms = Date.now() - judgeStartedAt;
-  writeText(judgeLog, `${judgeResult.stdout || ""}${judgeResult.stderr || ""}`);
+  const rawJudgeLog = `${judgeResult.stdout || ""}${judgeResult.stderr || ""}`;
+  writeText(judgeLog, rawJudgeLog);
+  result.metrics.judge_cli_reported_tokens = parseCliReportedTokens(rawJudgeLog);
   const judgeTimedOut = judgeResult.error && judgeResult.error.code === "ETIMEDOUT";
   result.judge_exit = judgeTimedOut ? null : judgeResult.status;
   result.judge_file = existsSync(judgeOutput) ? judgeOutput : judgeLog;
-  const judgeJson = parseJudgeJson(judgeOutput, `${judgeResult.stdout || ""}${judgeResult.stderr || ""}`);
+  const judgeJson = parseJudgeJson(judgeOutput, rawJudgeLog);
   if (judgeTimedOut) {
     result.status = "judge-timeout";
     result.reason = "judge timed out";
@@ -1157,18 +1184,20 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- severity counts: ${Object.entries(report.severity_counts).map(([severity, value]) => `${severity}=${value.pass}/${value.total}`).join(", ")}`,
     `- runner prompt est. tokens: ${metrics.runner_prompt_token_estimate}`,
     `- runner transcript est. tokens: ${metrics.runner_transcript_token_estimate} compacted / ${metrics.runner_raw_transcript_token_estimate} raw`,
+    `- runner CLI-reported tokens: ${metrics.runner_cli_reported_tokens} (${metrics.runner_cli_reported_token_cases}/${results.length} cases reported)`,
     `- judge prompt est. tokens: ${metrics.judge_prompt_token_estimate}`,
+    `- judge CLI-reported tokens: ${metrics.judge_cli_reported_tokens} (${metrics.judge_cli_reported_token_cases}/${results.length} cases reported)`,
     `- skill markdown est. tokens: ${skillBudget.total_token_estimate}`,
     "",
-    "| case | severity | status | prompt tok est | transcript tok est | support reads | support mentions | diff files | status paths | reason |",
-    "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+    "| case | severity | status | prompt tok est | transcript tok est | runner CLI tok | support reads | support mentions | diff files | status paths | reason |",
+    "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   for (const item of results) {
     const reason = String(item.reason || "").replace(/\|/g, "/").replace(/\r?\n/g, " ");
     const itemMetrics = item.metrics || {};
     const trace = itemMetrics.trace || {};
     lines.push(
-      `| C${String(item.case_id).padStart(2, "0")} | ${item.severity} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
+      `| C${String(item.case_id).padStart(2, "0")} | ${item.severity} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${itemMetrics.runner_cli_reported_tokens ?? "n/a"} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
     );
   }
   writeText(path.join(outRoot, "report.md"), `${lines.join("\n")}\n`);
@@ -1176,6 +1205,7 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
 
 function main() {
   assertTraceDetection();
+  assertCliReportedTokenDetection();
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
   const planPath = path.resolve(root, args.plan);
