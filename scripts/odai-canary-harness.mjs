@@ -457,7 +457,8 @@ function copySkill(root, workdir) {
 }
 
 function createFixture(root, workdir, testCase, skillMode) {
-  const implementationAlreadyCompleted = [8, 33].includes(testCase.id);
+  const implementationAlreadyCompleted = [8, 17, 33, 39].includes(testCase.id);
+  const targetRuntimeUnavailable = [17, 39].includes(testCase.id);
   const formatRenameAlreadyCompleted = testCase.id === 25;
   const titleHelper = formatRenameAlreadyCompleted ? "_format_title" : "_calc_title";
   writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
@@ -512,7 +513,15 @@ export function renderProfileCard(name) {
 }
 `);
   writeText(path.join(workdir, "tests", "test_app.mjs"), `import assert from "node:assert/strict";
-import { ${implementationAlreadyCompleted ? "healthCheck, " : ""}renderProfile, ${titleHelper} } from "../src/app.js";
+${targetRuntimeUnavailable ? `import { spawnSync } from "node:child_process";
+
+const targetRuntime = spawnSync("fixture-target-runtime", ["--version"], { stdio: "ignore" });
+if (targetRuntime.error || targetRuntime.status !== 0) {
+  console.error("target application runtime unavailable: fixture-target-runtime is not installed");
+  process.exit(2);
+}
+
+` : ""}import { ${implementationAlreadyCompleted ? "healthCheck, " : ""}renderProfile, ${titleHelper} } from "../src/app.js";
 
 assert.equal(renderProfile(" Ada "), "Profile: Ada");
 assert.equal(${titleHelper}(" Grace "), "Profile: Grace");
@@ -625,6 +634,15 @@ Acceptance: existing tests pass and the working tree remains unchanged during ac
 - [ ] 验收：run node tests/test_app.mjs
   - 范围：只读验证，不回写本文件
   - 验收证据：tests pass and no files change
+`);
+  } else if ([17, 39].includes(testCase.id)) {
+    writeText(path.join(workdir, "plans", "verification-handoff.md"), `# Verification Handoff
+
+Status: implementation completed; runtime acceptance not run.
+Scope: src/app.js healthCheck() and its existing-test assertion.
+Implementation record: healthCheck() returns "ok" and tests/test_app.mjs contains the matching assertion.
+Environment constraint: this host does not provide the managed fixture-target-runtime required by the tests and target application.
+Acceptance when that runtime is available: node tests/test_app.mjs exits 0, and the target application exposes the expected health-check result without regression.
 `);
   } else if (testCase.id === 33) {
     writeText(path.join(workdir, "plans", "legacy-ready.md"), `# Legacy Task

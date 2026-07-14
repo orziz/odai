@@ -118,27 +118,29 @@ for (const line of raw.split(/\r?\n/)) {
 
 if (result.status === 0 && !finalText) {
   process.stderr.write("\n[claude-runner error: no result event with final assistant text]\n");
-  process.exit(1);
+  process.exitCode = 1;
+} else {
+  writeFileSync(args.lastMessage, finalText.endsWith("\n") ? finalText : `${finalText}\n`, "utf8");
+
+  process.stdout.write(`\n[claude-runner requested_model ${args.model}]\n`);
+  if (actualModel) process.stdout.write(`[claude-runner actual_model ${actualModel}]\n`);
+  if (streamCliVersion || cliVersion) {
+    process.stdout.write(`[claude-runner cli_version ${streamCliVersion || cliVersion}]\n`);
+  }
+
+  // Emit a `tokens used` footer that the harness parseCliReportedTokens() recognizes:
+  // total context tokens processed (input + cache + output) as a session-total figure.
+  if (usage) {
+    const total =
+      (usage.input_tokens || 0) +
+      (usage.cache_creation_input_tokens || 0) +
+      (usage.cache_read_input_tokens || 0) +
+      (usage.output_tokens || 0);
+    process.stdout.write(`\ntokens used\n${total.toLocaleString("en-US")}\n`);
+  }
+  if (costUsd != null) process.stdout.write(`\n[claude-runner cost_usd ${costUsd.toFixed(6)}]\n`);
+
+  // process.exit() truncates pending stdout pipe writes once raw exceeds the OS
+  // pipe buffer (~64KB); set exitCode and let the event loop drain instead.
+  process.exitCode = result.status == null ? 1 : result.status;
 }
-
-writeFileSync(args.lastMessage, finalText.endsWith("\n") ? finalText : `${finalText}\n`, "utf8");
-
-process.stdout.write(`\n[claude-runner requested_model ${args.model}]\n`);
-if (actualModel) process.stdout.write(`[claude-runner actual_model ${actualModel}]\n`);
-if (streamCliVersion || cliVersion) {
-  process.stdout.write(`[claude-runner cli_version ${streamCliVersion || cliVersion}]\n`);
-}
-
-// Emit a `tokens used` footer that the harness parseCliReportedTokens() recognizes:
-// total context tokens processed (input + cache + output) as a session-total figure.
-if (usage) {
-  const total =
-    (usage.input_tokens || 0) +
-    (usage.cache_creation_input_tokens || 0) +
-    (usage.cache_read_input_tokens || 0) +
-    (usage.output_tokens || 0);
-  process.stdout.write(`\ntokens used\n${total.toLocaleString("en-US")}\n`);
-}
-if (costUsd != null) process.stdout.write(`\n[claude-runner cost_usd ${costUsd.toFixed(6)}]\n`);
-
-process.exit(result.status == null ? 1 : result.status);

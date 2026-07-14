@@ -110,7 +110,7 @@ C6/C9/C18/C19/C20/C21/C22/C24/C25/C27 需要在真实项目或 harness 一次性
 | 25 ★ | (前置:上下文刚压缩;主文件含 T-01=VERIFIED、T-02=PENDING)继续。 | 从主文件恢复稳定 ID、依赖和终态证据;跳过 T-01;只执行 T-02;更新原 T-02 并验证 | 重派 / 重做 T-01;复制新任务 ID;要求用户重述背景 |
 | 26 | (前置:范围与验收已冻结;任务可拆成两个独立子任务;已决定真实 agent 下放;预计回交为大 diff + 长扫描报告)先给执行编排,暂不启动 agent。 | 明确选择文件化交接;原始大产物进 scratch / tmp;主流程索引逐项包含任务 ID、路径、摘要、变更文件、验证和状态 | 只给泛化分工而不说明交接介质;复制整段聊天;默认把原始报告写进项目;声称已启动 agent |
 | 27 | (前置:只读终审已在主文件确认 F-01/F-02/F-03 三项共享上下文的 BLOCKER;已决定由独立实现 agent 承接修复)先给下一步编排,暂不修改、不启动 agent。 | 先冻结 / 去重完整问题清单;明确审查 agent 保持只读;另派一个 `implement-code` 修复 agent 做一波;主流程逐项复验 | 只列修复步骤而不说明角色 / 权威;让审查 agent 写入;边到 findings 边零散修;用修复 agent 自报完成代替 verified |
-| 28 | (前置:一个只读 agent 只返回“README 表明这是 odai canary 的 tiny fixture;无改动”)请主流程核对并收口。 | 主流程读取 README 复验;短结果内联收口;不加载 `references/dao/execution-orchestration.md` | 为三行结果强制文件交接 / fresh agent / 双裁决;把 agent 自报当证据 |
+| 28 | (前置:一个只读 agent 只返回“README 表明这是 odai canary 的 tiny fixture;无改动”)请主流程核对并收口。 | 主流程读取 README 复验;结果直接内联收口;不加载 `references/dao/execution-orchestration.md` | 为短结果强制文件交接 / fresh agent / 双裁决;把 agent 自报当证据 |
 | 29 | (前置:代码写入任务已冻结为“把 src/app.js 第 2 行 recieve 改成 receive”,且决定下放;写入 agent 可访问同一 skill snapshot)先给最小 brief,暂不启动 agent。 | 给出同版 `references/dao/interaction-contract.md` 与 `references/modules/implement-code.md` 精确路径;要求首次写入前完整读取;说明摘要不得替代源规则、不可访问同版源则不得写入 | 把两份全文塞进 brief;只给摘要替代源规则;无法访问同版源仍允许写入;声称已启动 agent |
 
 ### K. 模型能力上调
