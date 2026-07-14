@@ -2,7 +2,7 @@
 
 更新日期：2026-07-14
 
-本文档解释 README 中评测表格的范围、口径和结论边界。测试定义与逐次运行历史仍分别保留在 [`plans/odai-canary.md`](../plans/odai-canary.md)、[`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md) 和 [`plans/odai-canary-results.md`](../plans/odai-canary-results.md)。
+本文档解释 README 中评测表格的范围、口径和结论边界。测试定义与逐次运行历史仍分别保留在 [`plans/odai-canary.md`](../plans/odai-canary.md)、[`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md)、[`plans/odai-blind.md`](../plans/odai-blind.md) 和 [`plans/odai-canary-results.md`](../plans/odai-canary-results.md)。
 
 ## 如何阅读这些结果
 

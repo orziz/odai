@@ -15,7 +15,8 @@ skills/odai/             统一入口 source skill
   references/*/          模块级规则、说明等 support files
   assets/*/              模块级模板等资源
 skills/skill-author/     仓库 source 作者维护 skill
-plans/                   金丝雀测试口径与独立结果记录
+docs/                    稳定的对外说明与评测口径解释
+plans/                   金丝雀 / 盲测用例定义与独立运行记录
 scripts/                 仓库维护与评测 harness
 assets/                  README 配图
 ```
