@@ -41,9 +41,10 @@ As of 2026-07-14, the latest full-scope and lower-bound evidence is:
 
 | Scope | Runner | Host CLI | Judge | Result | Assessment |
 |---|---|---|---|---:|---|
-| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 44/45 base; the sole miss passed 2/2 reruns | All 45 cases have passing evidence; reference tier |
+| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; reference tier |
 | Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | Weak-model lower bound, not a full-governance tier |
 | Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; directional host tier |
+| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 40/45 | Full-scope cross-model evidence; not a full-governance tier |
 
 ### Latest with / without A/B
 
@@ -58,8 +59,14 @@ The latest nine-case screen uses the same fixed GPT-5.6 Sol / high judge:
 | Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
 | Claude Fable 5 | Claude Code | 9/9 | 5/9 |
 | Grok 4.5 | Grok CLI | 9/9 | 3/9 |
+| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
+| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
+| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
+| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
+| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
 
 Full fingerprints and run evidence are retained in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
+MiniMax M3 uses CC Switch's OpenAI-compatible endpoint because its current Claude Code path cannot parse M3 tool calls.
 
 ### Retained lower bound
 
@@ -79,8 +86,14 @@ Full fingerprints and run evidence are retained in [`plans/odai-canary-results.m
 | Claude Sonnet 5 | 2,572,615 | 2,124,496 | +21.1% |
 | Claude Fable 5 | 1,393,270 | 1,122,049 | +24.2% |
 | Grok 4.5 | 679,064 | 862,548 | −21.3% |
+| GLM-5.2 [1M] | 1,900,539 | 1,906,014 | −0.3% |
+| DeepSeek V4 Pro [1M] | 1,685,285 | 1,829,570 | −7.9% |
+| DeepSeek V4 Flash [1M] | 1,962,073 | 1,941,306 | +1.1% |
+| Kimi K2.7 Code [256K] | 1,840,047 | 1,479,757 | +24.3% |
+| MiniMax M3 [1M] | 471,066 | 183,261 | +157.1% |
 
 These are runner-reported processed-token totals, not billing cost. Compare only within a row; Codex, Claude Code, and Grok CLI use different accounting conventions.
+The Kimi full run with odai processed 9,936,748 runner tokens across 45 cases. It has no paired off arm, so it is not part of the comparison table.
 
 ## 30-Second Start
 

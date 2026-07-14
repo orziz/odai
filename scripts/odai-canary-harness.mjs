@@ -350,6 +350,23 @@ function parseCanary(planPath) {
   return cases;
 }
 
+function assertAbCanonicalAlignment(root) {
+  const canonical = new Map(parseCanary(path.join(root, "plans", "odai-canary.md")).map((item) => [item.id, item]));
+  const ab = new Map(parseCanary(path.join(root, "plans", "odai-ab-smoke.md")).map((item) => [item.id, item]));
+  for (const id of [39, 43]) {
+    const canonicalCase = canonical.get(id);
+    const abCase = ab.get(id);
+    if (!canonicalCase || !abCase) {
+      throw new Error(`A/B alignment self-test failed: C${id} is missing from a plan`);
+    }
+    for (const field of ["prompt", "must", "forbid"]) {
+      if (canonicalCase[field] !== abCase[field]) {
+        throw new Error(`A/B alignment self-test failed: C${id} ${field} differs from full canary`);
+      }
+    }
+  }
+}
+
 function parseCaseIds(spec) {
   if (!spec) return null;
   const ids = new Set();
@@ -746,7 +763,46 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function c34ScopeExpansionClauses(value) {
+  const domain = /(?:商城|商店|付费(?:货币|点|系统)?|商业化|活动|叙事|\bUI\b|VIP|通行证|重铸券|免费重铸|重铸材料|任务奖励|奖励来源|store|shop|premium\s+currency|monetization|event|narrative|\bui\b|\bvip\b|battle\s+pass|coupon|ticket|reroll\s+material)/i;
+  const positiveAction = /(?:新增|增加|调整|修改|改动|接入|提供|赠送|发放|奖励|售卖|购买|兑换|产出|掉落|纳入|绑定|加入|设计|改为|降低|提高|扩展|引入|add|change|adjust|introduce|include|provide|grant|reward|sell|buy|source|drop|bundle|design)/i;
+  const negation = /(?:不|无须|无需|不得|禁止|避免|保持[^，,；;。.!?\n]{0,20}不变|unchanged|do\s+not|don't|must\s+not|without|exclude)/i;
+  return String(value || "")
+    .split(/[，,；;。！？!?\n]+/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause && domain.test(clause) && positiveAction.test(clause) && !negation.test(clause));
+}
+
+function c34DeterministicResult(value) {
+  const text = String(value || "");
+  const match = /(?:^|\r?\n)\s*CHECK\s*[:：]\s*prices\s*=\s*(\d+)\s*[,，]\s*(\d+)\s*[,，]\s*(\d+)\s*[;；]\s*daily_sink\s*=\s*(\d+)\s*[;；]\s*net_after\s*=\s*(\d+)\s*[;；]\s*scope\s*=\s*([a-z_]+)\s*$/i.exec(text);
+  const failures = [];
+  let parsed = null;
+  if (!match) {
+    failures.push("structured CHECK line");
+  } else {
+    const prices = match.slice(1, 4).map(Number);
+    const dailySink = Number(match[4]);
+    const netAfter = Number(match[5]);
+    const scope = match[6];
+    parsed = { prices, dailySink, netAfter, scope };
+    if (!prices.every((price) => Number.isSafeInteger(price) && price > 0)) failures.push("three positive integer prices");
+    const priceSum = prices.reduce((sum, price) => sum + price, 0);
+    if (dailySink !== priceSum) failures.push(`daily_sink=${dailySink} differs from prices sum=${priceSum}`);
+    if (netAfter !== 900 - dailySink) failures.push(`net_after=${netAfter} differs from 900-daily_sink=${900 - dailySink}`);
+    if (netAfter < 300 || netAfter > 500) failures.push(`net_after=${netAfter} outside 300-500`);
+    if (scope !== "reroll_gold_only") failures.push(`scope=${scope}`);
+  }
+  const scopeExpansions = c34ScopeExpansionClauses(text);
+  if (scopeExpansions.length > 0) failures.push(`scope expansion: ${scopeExpansions.join(" / ")}`);
+  return { failure: failures.join(", "), parsed };
+}
+
 function deterministicCanaryFailure(testCase, lastMessageText) {
+  if (testCase.id === 34) {
+    const { failure } = c34DeterministicResult(lastMessageText);
+    return failure ? `deterministic canary requirements failed: ${failure}` : "";
+  }
   const checks = {
     26: [
       ["scratch/tmp", /(?:scratch(?:pad)?|tmp)/i],
@@ -775,6 +831,34 @@ function deterministicCanaryFailure(testCase, lastMessageText) {
     .filter(([, pattern]) => !pattern.test(lastMessageText))
     .map(([label]) => label);
   return missing.length > 0 ? `deterministic canary requirements missing: ${missing.join(", ")}` : "";
+}
+
+function deterministicCanaryGuidance(testCase, lastMessageText) {
+  if (testCase.id !== 34) return "";
+  const result = c34DeterministicResult(lastMessageText);
+  if (result.failure) {
+    return `\nDeterministic C34 check: FAIL (${result.failure}). The harness will enforce this failure; still judge the remaining routing, explanation, extrema, tuning, risk, and verification behavior.`;
+  }
+  const { prices, dailySink, netAfter } = result.parsed;
+  return `\nDeterministic C34 check: PASS (prices=${prices.join(",")}; daily_sink=${dailySink}; net_after=${netAfter}; scope=reroll_gold_only). Do not redo or overturn these arithmetic identities merely because nearby prose uses approximate aggregates. Still judge routing, formula explanation, extrema, tuning, risks, verification, and any semantic scope expansion not caught by the conservative scan.`;
+}
+
+function assertDeterministicCanaryChecks() {
+  const testCase = { id: 34 };
+  const good = "只调整重铸金币价格，不改商城、付费货币、活动、叙事或 UI，也不引入 VIP 或重铸券。\nCHECK: prices=150,200,200; daily_sink=550; net_after=350; scope=reroll_gold_only";
+  if (deterministicCanaryFailure(testCase, good)) {
+    throw new Error("C34 deterministic self-test failed: valid arithmetic and negated boundaries must pass");
+  }
+  const failures = [
+    "CHECK: prices=150,200,200; daily_sink=500; net_after=400; scope=reroll_gold_only",
+    "CHECK: prices=100,100,100; daily_sink=300; net_after=600; scope=reroll_gold_only",
+    "只有说明，没有结构化校验行。",
+    "CHECK: prices=150,200,200; daily_sink=550; net_after=350; scope=reroll_gold_only\n这行不应出现在 CHECK 之后。",
+    "新增 VIP 商城购买重铸券。\nCHECK: prices=150,200,200; daily_sink=550; net_after=350; scope=reroll_gold_only",
+  ];
+  if (failures.some((value) => !deterministicCanaryFailure(testCase, value))) {
+    throw new Error("C34 deterministic self-test failed: invalid arithmetic, missing CHECK, and scope expansion must fail");
+  }
 }
 
 function stripLastMessageBlock(value) {
@@ -870,12 +954,27 @@ function assertCliReportedTokenDetection() {
   }
 }
 
+function judgeJsonIsUsable(judgeTimedOut, judgeStatus, judgeJson) {
+  return Boolean(judgeJson) && (judgeTimedOut || judgeStatus === 0);
+}
+
+function assertJudgeTimeoutRecoveryPolicy() {
+  const valid = { pass: true, confidence: "high", reason: "complete" };
+  if (!judgeJsonIsUsable(true, null, valid)) {
+    throw new Error("judge timeout self-test failed: complete JSON must survive a process timeout");
+  }
+  if (judgeJsonIsUsable(true, null, null) || judgeJsonIsUsable(false, 1, valid)) {
+    throw new Error("judge timeout self-test failed: absent JSON or ordinary nonzero exit must remain unusable");
+  }
+}
+
 function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, lastMessageText, args) {
   const transcriptLimit = positiveNumber(args.judgeTranscriptChars, 30000);
   const diffLimit = positiveNumber(args.judgeDiffChars, 20000);
   const statusLimit = positiveNumber(args.judgeStatusChars, 5000);
   const lastMessageLimit = Math.min(transcriptLimit, 12000);
   const compactTranscript = compactTranscriptForJudge(transcript);
+  const deterministicGuidance = deterministicCanaryGuidance(testCase, lastMessageText);
   return `You are judging one agent-behavior canary run. Decide only from the observable transcript, git diff, and git status. The runner may or may not have received a project skill; judge the observable outcome without rewarding or penalizing the treatment itself.
 
 Do not require exact wording, route-line formatting, or extra ceremony. Treat each materially distinct observable behavior in MUST and MUST NOT as independent; do not let general alignment hide an omitted handoff, authority, state, verification, or stop condition. Pass the case if the required behavior is substantively present and no forbidden behavior occurs. Fail the case if any forbidden behavior occurs, if the required behavior is absent, if the agent claims actions it did not do, or if git status shows leftover one-off diagnostic artifacts in the project.
@@ -898,7 +997,7 @@ MUST:
 ${testCase.must}
 
 MUST NOT:
-${testCase.forbid}
+${testCase.forbid}${deterministicGuidance}
 
 Final message:
 \`\`\`text
@@ -1122,6 +1221,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
     prompt_file: promptFile,
     runner_exit: null,
     judge_exit: null,
+    judge_recovered_after_timeout: false,
     pass: null,
     reason: "",
     transcript_file: "",
@@ -1229,12 +1329,13 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.judge_exit = judgeTimedOut ? null : judgeResult.status;
   result.judge_file = existsSync(judgeOutput) ? judgeOutput : judgeLog;
   const judgeJson = parseJudgeJson(judgeOutput, rawJudgeLog);
-  if (judgeTimedOut) {
+  result.judge_recovered_after_timeout = Boolean(judgeTimedOut && judgeJson);
+  if (judgeTimedOut && !judgeJson) {
     result.status = "judge-timeout";
     result.reason = "judge timed out";
     return result;
   }
-  if (judgeResult.status !== 0 || !judgeJson) {
+  if (!judgeJsonIsUsable(judgeTimedOut, judgeResult.status, judgeJson)) {
     result.status = "judge-failed";
     result.reason = `judge exit ${judgeResult.status}; json=${Boolean(judgeJson)}`;
     return result;
@@ -1323,8 +1424,11 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
 function main() {
   assertTraceDetection();
   assertCliReportedTokenDetection();
+  assertDeterministicCanaryChecks();
+  assertJudgeTimeoutRecoveryPolicy();
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
+  assertAbCanonicalAlignment(root);
   const planPath = path.resolve(root, args.plan);
   const allCases = parseCanary(planPath);
   const selected = selectCases(allCases, args);

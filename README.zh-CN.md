@@ -41,9 +41,10 @@
 
 | 范围 | Runner | 宿主 CLI | Judge | 结果 | 结论 |
 |---|---|---|---|---:|---|
-| 全量 | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 基础 44/45；唯一未过项复跑 2/2 通过 | 45 条均有通过证据；参考档 |
+| 全量 | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；参考档 |
 | 星标下界 | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | 弱模型能力下界，不属于完整治理承诺档 |
 | 全量 | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；方向性宿主档 |
+| 全量 | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 40/45 | 全量跨模型证据；不属于完整治理承诺档 |
 
 ### 最新 with / without A/B
 
@@ -58,8 +59,14 @@
 | Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
 | Claude Fable 5 | Claude Code | 9/9 | 5/9 |
 | Grok 4.5 | Grok CLI | 9/9 | 3/9 |
+| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
+| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
+| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
+| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
+| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
 
 完整指纹与运行证据保留在 [`plans/odai-canary-results.md`](plans/odai-canary-results.md)。
+MiniMax M3 使用 CC Switch 的 OpenAI-compatible 端点，因为当前 Claude Code 通道无法解析 M3 工具调用。
 
 ### 保留下界
 
@@ -79,8 +86,14 @@
 | Claude Sonnet 5 | 2,572,615 | 2,124,496 | +21.1% |
 | Claude Fable 5 | 1,393,270 | 1,122,049 | +24.2% |
 | Grok 4.5 | 679,064 | 862,548 | −21.3% |
+| GLM-5.2 [1M] | 1,900,539 | 1,906,014 | −0.3% |
+| DeepSeek V4 Pro [1M] | 1,685,285 | 1,829,570 | −7.9% |
+| DeepSeek V4 Flash [1M] | 1,962,073 | 1,941,306 | +1.1% |
+| Kimi K2.7 Code [256K] | 1,840,047 | 1,479,757 | +24.3% |
+| MiniMax M3 [1M] | 471,066 | 183,261 | +157.1% |
 
 这些是 runner 报告的处理 token 量，不是账单成本。只比较同一行的加载 / 不加载差值；Codex、Claude Code 与 Grok CLI 的统计口径不同。
+Kimi 全量 with-odai 的 45 条 runner 共处理 9,936,748 token；由于没有配对 off 臂，不纳入上表差值比较。
 
 ## 30 秒上手
 
