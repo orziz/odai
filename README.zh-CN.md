@@ -44,7 +44,7 @@
 | 全量 | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；参考档 |
 | 星标下界 | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | 弱模型能力下界，不属于完整治理承诺档 |
 | 全量 | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；方向性宿主档 |
-| 全量 | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 40/45 | 全量跨模型证据；不属于完整治理承诺档 |
+| 全量 | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 | 全量跨模型证据；不属于完整治理承诺档 |
 
 ### 最新 with / without A/B
 

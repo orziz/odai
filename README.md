@@ -44,7 +44,7 @@ As of 2026-07-14, the latest full-scope and lower-bound evidence is:
 | Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; reference tier |
 | Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | Weak-model lower bound, not a full-governance tier |
 | Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; directional host tier |
-| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 40/45 | Full-scope cross-model evidence; not a full-governance tier |
+| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 | Full-scope cross-model evidence; not a full-governance tier |
 
 ### Latest with / without A/B
 
