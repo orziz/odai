@@ -35,66 +35,6 @@ These traditions are operational lenses in one flow, not separate roles, agents,
 
 The model remains a strategist: it should surface relevant adjacent value, second-order effects, risks, and fallback routes, but those suggestions never silently expand authorization or replace the user's decision. Guiguzi and Han Fei inform situational communication and name-reality / hard-gate methods inside this flow; they do not add roles or grant the skill power.
 
-## Validated Operating Envelope
-
-As of 2026-07-14, the latest full-scope and lower-bound evidence is:
-
-| Scope | Runner | Host CLI | Judge | Result | Assessment |
-|---|---|---|---|---:|---|
-| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; reference tier |
-| Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | Weak-model lower bound, not a full-governance tier |
-| Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | All 45 cases have passing evidence; directional host tier |
-| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 | Full-scope cross-model evidence; not a full-governance tier |
-
-### Latest with / without A/B
-
-The latest nine-case screen uses the same fixed GPT-5.6 Sol / high judge:
-
-| Runner | Host CLI | With odai | Without odai |
-|---|---|---:|---:|
-| GPT-5.4 Mini / low | Codex | 5/9 | 2/9 |
-| GPT-5.5 / medium | Codex | 9/9 | 3/9 |
-| GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
-| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
-| Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
-| Claude Fable 5 | Claude Code | 9/9 | 5/9 |
-| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
-| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
-| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
-| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
-| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
-| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
-
-Full fingerprints and run evidence are retained in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
-MiniMax M3 uses CC Switch's OpenAI-compatible endpoint because its current Claude Code path cannot parse M3 tool calls.
-
-### Retained lower bound
-
-| Scope | Runner | Case | Why it failed | Acceptable? |
-|---|---|---|---|---|
-| A/B with odai | GPT-5.4 Mini / low | C01, C20, C39, C43 | Missed hard-stop compliance or a complete verification handoff | Yes as a documented weak-model lower bound; not a full-governance tier |
-| Targeted | GPT-5.4 Mini / low | C45 | Saw the unused parameter and 812px / 800px contract mismatch, but omitted both from its recommendation | Yes as a documented weak-model lower bound; not a full-governance tier |
-
-### Runner token comparison
-
-| Runner | With odai | Without odai | Difference |
-|---|---:|---:|---:|
-| GPT-5.4 Mini / low | 140,737 | 99,181 | +41.9% |
-| GPT-5.5 / medium | 144,508 | 108,775 | +32.9% |
-| GPT-5.6 Sol / high | 135,233 | 128,072 | +5.6% |
-| Claude Opus 4.8 | 1,537,659 | 1,493,998 | +2.9% |
-| Claude Sonnet 5 | 2,572,615 | 2,124,496 | +21.1% |
-| Claude Fable 5 | 1,393,270 | 1,122,049 | +24.2% |
-| Grok 4.5 | 679,064 | 862,548 | −21.3% |
-| GLM-5.2 [1M] | 1,900,539 | 1,906,014 | −0.3% |
-| DeepSeek V4 Pro [1M] | 1,685,285 | 1,829,570 | −7.9% |
-| DeepSeek V4 Flash [1M] | 1,962,073 | 1,941,306 | +1.1% |
-| Kimi K2.7 Code [256K] | 1,840,047 | 1,479,757 | +24.3% |
-| MiniMax M3 [1M] | 471,066 | 183,261 | +157.1% |
-
-These are runner-reported processed-token totals, not billing cost. Compare only within a row; Codex, Claude Code, and Grok CLI use different accounting conventions.
-The Kimi full run with odai processed 9,936,748 runner tokens across 45 cases. It has no paired off arm, so it is not part of the comparison table.
-
 ## 30-Second Start
 
 Install the unified entry point:
@@ -227,11 +167,46 @@ Use `old` only if you still depend on the previous standalone skill layout or ar
 
 Canonical source lives in `skills/`. Distribution is handled through the [skills.sh](https://skills.sh) install flow; this repository no longer keeps per-platform mirror outputs. Maintainer notes live in [MAINTAINING.md](MAINTAINING.md).
 
-## Credits
+## Current Evaluation Results
 
-Some naming, structure, and workflow ideas were inspired by:
+As of 2026-07-14.
 
-- [cft0808/edict](https://github.com/cft0808/edict)
-- [wanikua/danghuangshang](https://github.com/wanikua/danghuangshang)
+### Full Scope and Lower Bound
+
+| Scope | Runner | Host CLI | Judge | Result |
+|---|---|---|---|---:|
+| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 |
+| Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 |
+| Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 |
+| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 |
+
+### With / Without A/B
+
+| Runner | Host CLI | With odai | Without odai |
+|---|---|---:|---:|
+| GPT-5.4 Mini / low | Codex | 5/9 | 2/9 |
+| GPT-5.5 / medium | Codex | 9/9 | 3/9 |
+| GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
+| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
+| Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
+| Claude Fable 5 | Claude Code | 9/9 | 5/9 |
+| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
+| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
+| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
+| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
+| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
+| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
+
+### Anonymous Skill Comparison
+
+| Group | Score | Passes |
+|---|---:|---:|
+| odai | **15/20** | **3/5** |
+| Superpowers | 11/20 | 2/5 |
+| Bare | 10/20 | 1/5 |
+| mattpocock/skills | 10/20 | 1/5 |
+| Compound Engineering | 10/20 | 1/5 |
+
+The anonymous comparison supports a lead for odai on the tested project-governance, production-gate, and verification-honesty slice. It is not evidence of universal supremacy. See [`docs/evaluation.md`](docs/evaluation.md) for methodology, token counts, and per-case notes; per-run evidence remains in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
 
 Stars and PRs are welcome.

@@ -35,66 +35,6 @@
 
 模型仍是谋士：应主动提示相关的相邻价值、二阶后果、风险与备路，但建议不能静默扩大授权，也不能替用户拍板。鬼谷与韩非的价值被吸收到因势沟通、名实核验和硬门方法中；它们不增加角色，更不赋予 skill 权力。
 
-## 已验证适用范围
-
-截至 2026-07-14，最新全范围与弱模型下界证据如下：
-
-| 范围 | Runner | 宿主 CLI | Judge | 结果 | 结论 |
-|---|---|---|---|---:|---|
-| 全量 | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；参考档 |
-| 星标下界 | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 | 弱模型能力下界，不属于完整治理承诺档 |
-| 全量 | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 | 45 条均有通过证据；方向性宿主档 |
-| 全量 | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 | 全量跨模型证据；不属于完整治理承诺档 |
-
-### 最新 with / without A/B
-
-最新 9 条筛查继续统一使用固定的 GPT-5.6 Sol / high 裁判：
-
-| Runner | 宿主 CLI | 加载 odai | 不加载 odai |
-|---|---|---:|---:|
-| GPT-5.4 Mini / low | Codex | 5/9 | 2/9 |
-| GPT-5.5 / medium | Codex | 9/9 | 3/9 |
-| GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
-| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
-| Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
-| Claude Fable 5 | Claude Code | 9/9 | 5/9 |
-| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
-| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
-| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
-| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
-| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
-| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
-
-完整指纹与运行证据保留在 [`plans/odai-canary-results.md`](plans/odai-canary-results.md)。
-MiniMax M3 使用 CC Switch 的 OpenAI-compatible 端点，因为当前 Claude Code 通道无法解析 M3 工具调用。
-
-### 保留下界
-
-| 范围 | Runner | Case | 失败原因 | 是否可接受 |
-|---|---|---|---|---|
-| A/B 加载 odai | GPT-5.4 Mini / low | C01、C20、C39、C43 | 漏执行硬停手，或未给完整复验交接 | 可作为弱模型能力下界；不属于完整治理承诺档 |
-| 定向 | GPT-5.4 Mini / low | C45 | 已看到参数未被消费和 812px / 800px 契约差异，但结论漏报两项风险 | 可作为弱模型能力下界；不属于完整治理承诺档 |
-
-### Runner token 对比
-
-| Runner | 加载 odai | 不加载 odai | 差值 |
-|---|---:|---:|---:|
-| GPT-5.4 Mini / low | 140,737 | 99,181 | +41.9% |
-| GPT-5.5 / medium | 144,508 | 108,775 | +32.9% |
-| GPT-5.6 Sol / high | 135,233 | 128,072 | +5.6% |
-| Claude Opus 4.8 | 1,537,659 | 1,493,998 | +2.9% |
-| Claude Sonnet 5 | 2,572,615 | 2,124,496 | +21.1% |
-| Claude Fable 5 | 1,393,270 | 1,122,049 | +24.2% |
-| Grok 4.5 | 679,064 | 862,548 | −21.3% |
-| GLM-5.2 [1M] | 1,900,539 | 1,906,014 | −0.3% |
-| DeepSeek V4 Pro [1M] | 1,685,285 | 1,829,570 | −7.9% |
-| DeepSeek V4 Flash [1M] | 1,962,073 | 1,941,306 | +1.1% |
-| Kimi K2.7 Code [256K] | 1,840,047 | 1,479,757 | +24.3% |
-| MiniMax M3 [1M] | 471,066 | 183,261 | +157.1% |
-
-这些是 runner 报告的处理 token 量，不是账单成本。只比较同一行的加载 / 不加载差值；Codex、Claude Code 与 Grok CLI 的统计口径不同。
-Kimi 全量 with-odai 的 45 条 runner 共处理 9,936,748 token；由于没有配对 off 臂，不纳入上表差值比较。
-
 ## 30 秒上手
 
 安装统一入口：
@@ -226,11 +166,46 @@ npx skills add https://github.com/orziz/odai#old
 
 canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh) 安装流程；本仓库不再维护各平台镜像产物。维护者说明在 [MAINTAINING.md](MAINTAINING.md)。
 
-## 参考与致谢
+## 当前评测结果
 
-部分命名、结构和 workflow 思路参考过：
+截至 2026-07-14。
 
-- [cft0808/edict](https://github.com/cft0808/edict)
-- [wanikua/danghuangshang](https://github.com/wanikua/danghuangshang)
+### 全量与下界
+
+| 范围 | Runner | 宿主 CLI | Judge | 结果 |
+|---|---|---|---|---:|
+| 全量 | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 |
+| 星标下界 | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 |
+| 全量 | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 |
+| 全量 | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 |
+
+### with / without A/B
+
+| Runner | 宿主 CLI | 加载 odai | 不加载 odai |
+|---|---|---:|---:|
+| GPT-5.4 Mini / low | Codex | 5/9 | 2/9 |
+| GPT-5.5 / medium | Codex | 9/9 | 3/9 |
+| GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
+| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
+| Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
+| Claude Fable 5 | Claude Code | 9/9 | 5/9 |
+| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
+| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
+| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
+| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
+| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
+| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
+
+### 同类技能匿名横评
+
+| 组别 | 分数 | 通过 |
+|---|---:|---:|
+| odai | **15/20** | **3/5** |
+| Superpowers | 11/20 | 2/5 |
+| 无框架 | 10/20 | 1/5 |
+| mattpocock/skills | 10/20 | 1/5 |
+| Compound Engineering | 10/20 | 1/5 |
+
+匿名横评支持 odai 在本次项目治理、生产门和验证诚实性切片领先，不构成“通用绝对最强”的证明。详细口径、token 和逐题说明见 [`docs/evaluation.md`](docs/evaluation.md)；逐次运行证据见 [`plans/odai-canary-results.md`](plans/odai-canary-results.md)。
 
 欢迎 star，也欢迎 PR。
