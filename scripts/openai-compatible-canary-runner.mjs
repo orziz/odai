@@ -160,6 +160,19 @@ function replaceText(root, filePath, oldText, newText) {
   return `updated ${relativeName(root, file)}`;
 }
 
+function writeNewFile(root, filePath, content) {
+  const file = resolveInside(root, filePath, { mustExist: false });
+  if (existsSync(file)) throw new Error("write_file refuses to overwrite an existing path");
+  const parent = path.dirname(file);
+  if (!existsSync(parent) || !lstatSync(parent).isDirectory()) {
+    throw new Error("write_file parent directory must already exist");
+  }
+  const value = String(content ?? "");
+  if (value.length > 300_000) throw new Error("write_file content exceeds 300000 characters");
+  writeFileSync(file, value, "utf8");
+  return `created ${relativeName(root, file)}`;
+}
+
 function runBoundedCommand(root, command) {
   const value = String(command || "").trim();
   let executable;
@@ -212,6 +225,10 @@ const tools = [
     old_text: { type: "string" },
     new_text: { type: "string" },
   }, ["path", "old_text", "new_text"]),
+  functionTool("write_file", "Create one new UTF-8 file inside an existing fixture directory. Existing paths cannot be overwritten.", {
+    path: { type: "string" },
+    content: { type: "string" },
+  }, ["path", "content"]),
   functionTool("run_command", "Run an allowlisted fixture test or read-only git command.", {
     command: { type: "string" },
   }, ["command"]),
@@ -237,6 +254,7 @@ function executeTool(root, name, input) {
   if (name === "list_directory") return listFiles(root, input.path, Boolean(input.recursive));
   if (name === "search_text") return searchText(root, input.query, input.path);
   if (name === "replace_text") return replaceText(root, input.path, input.old_text, input.new_text);
+  if (name === "write_file") return writeNewFile(root, input.path, input.content ?? input.invokeContent);
   if (name === "run_command") return runBoundedCommand(root, input.command);
   throw new Error(`unknown tool: ${name}`);
 }
@@ -259,6 +277,7 @@ function emitToolUse(call, input) {
     list_directory: "Glob",
     search_text: "Grep",
     replace_text: "Edit",
+    write_file: "Write",
     run_command: "Bash",
   };
   const traceInput = call.function.name === "read_file"

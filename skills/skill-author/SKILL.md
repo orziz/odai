@@ -1,92 +1,71 @@
 ---
 name: skill-author
-description: 维护本仓库 skill source，把能力整理成可分发的标准 skill 或模块资源
+description: 维护本仓库的 skill source、渐进资源结构和相关仓库说明。在新增、修改、重构、迁移或退役 `skills/` 下的 skill，odai 内核 / reference / asset，以及同步 README、维护口径、验证和冻结日志时使用。
 ---
 
-你是本仓库的 skill 作者助手，负责把用户已经想好的能力整理成可维护的 source-of-truth。
+维护本仓库 skill 的 canonical source，不参与 odai 运行时调度。仓库结构、冻结契约、验证命令和日志口径以根目录 `MAINTAINING.md` 为准。
 
-你是独立的维护 skill，不属于 `odai` 的运行时模块；职责是维护 `skills/` 下的标准 source skill，尤其是 `skills/odai/` 的内部模块与 support files。
+## 先定对象
 
-用户不一定会一次把名字、类型、目录和 support files 说标准；你要先整理新增 / 修改判断、待确认名称、待确认类型、待确认落盘路径和待确认范围，再让用户确认，而不是把这一步退回给用户。
+写入前先锁定唯一 owner：
 
-定位：本 skill 只负责 source-of-truth。它会创建或更新 `skills/<skill-name>/SKILL.md`、`skills/odai/references/modules/<module-name>.md` 与必要的 namespaced support files，但不负责分发或 README 维护。canonical source 就在 `skills/` 下，分发统一走 skills.sh 标准（`npx skills add`）。
+| 对象 | 位置 |
+|---|---|
+| 独立公开 skill | `skills/<skill-name>/SKILL.md` |
+| odai 总纲、主流程、核心门、加载地图 | `skills/odai/SKILL.md` |
+| 授权、验证、连续性、协作、外部能力 / 项目叠加 | `skills/odai/references/dao/` |
+| 规划、设计、诊断、代码实施、代码审查 | `skills/odai/references/capabilities/` |
+| UI 与实时交互领域工艺 | `skills/odai/references/domains/` |
+| 项目指南、日报、commit / PR 等点名产物 | `skills/odai/references/recipes/` |
+| 条件触发的重型方法 | `skills/odai/references/techniques/` |
+| agent 产物模板 | `skills/odai/assets/` |
+| 宿主 UI 元数据 | `skills/<skill-name>/agents/openai.yaml` |
+| 使用、维护、冻结变更 | `README*`、`MAINTAINING.md`、`CHANGELOG.md` |
 
-## 最小工作骨架
+`references/modules/`、`references/game-plan/`、`references/game-design/` 和旧模块专属目录已退役，不得作为新落点或兼容别名恢复。游戏需求进入通用 capability 和 `domains/interactive-systems.md`，不再新建独立游戏路由。
 
-```text
-目标对象：skill | odai 内部模块 | support file | 模板 | 脚本说明
-当前判断：新增 | 修改 | 重命名 | 补骨架
-待确认名称：
-类型判断：public skill | odai module | review module | workflow module | script-wrapper
-源文件：
-support files：
-当前理解：
-边界与禁区：
-待确认项：
-下一步：
-```
+## 判断新增、修改或退役
 
-## 判断新增还是修改
+1. 用户已点名对象或路径时，先检查现有 source；高相似能力默认并入现有 owner，不新开平行版。
+2. 新增公开触发能力、独立工具集或需自主安装的能力，才倾向新 skill。
+3. 只是 odai 在某类任务中需要的工艺，放入现有责任目录，不把目录变成用户必选模块。
+4. 只有重复使用且需确定性执行的逻辑才新增 script；只有会被 agent 直接复用于交付的内容才新增 asset。
+5. 只在规则有可观察负担、重复或误导，且行为可由更上位原则稳定覆盖时退役；修改冻结行为契约须经用户明确决定。
 
-1. 用户已明确说“新增”或“修改”时，默认先采信；只有当该判断与仓库现状冲突时，才回头确认。
-2. 若仓库里已存在同名或高相似目标，默认优先扩写或改写现有 source，不为“看起来像新能力”而硬拆第二个入口。
-3. 若用户给的是现成文件、已有模块名、现有草稿或明确路径，优先按现有对象继续，而不是重新命名重起一份。
-4. 只要对目标对象、名称、类型、路径、support files 范围、覆盖影响或用户真实意图仍有任何不确定，就做低成本确认；不要等到“真正阻塞”才问。
-5. 删除、覆盖、重命名大量既有内容属于高风险动作，必须先和用户对齐。
+## 编写原则
 
-## 命名与类型整理
-
-1. 新建 public skill 或 odai 内部模块默认使用小写 kebab-case 命名；优先沿用现有命名轴：`dao`、`feature-*`、`design-*`、`implement-*`、`project-*`、`review-*`、`skill-*`。
-2. 默认总控模块的概念文案可写作 `道`，但模块 id、frontmatter `name` 与文件名保持 `dao`，避免跨工具和跨平台兼容问题。
-3. 名称优先短、稳、可复用、能看出职责；不要为了酷炫而起空泛名字。
-4. public skill frontmatter 只包含 `name`、`description`；odai 内部模块作为 reference 若保留 frontmatter，也只包含 `name`、`description`。触发条件写入 public skill 的 `description`、入口路由或模块正文，不得增加宿主不读取的 `scenario` 等自定义触发字段。
-5. 稳定元数据一律写在 source frontmatter 里，作为唯一真相。
-6. 默认先判断类型，再决定写法：public skill 重独立入口能力，普通模块重单阶段能力，review 模块重范围解析与审查输出，workflow 模块重阶段推进，script-wrapper 模块重脚本才是最终执行依据。
-7. 能用轻量结构解决就不要写成重型模板；support files 只在正文真的要引用时再加。
-
-## 编写与落盘规则
-
-1. public skill 的 source-of-truth 路径是 `skills/<skill-name>/SKILL.md`；odai 内部模块的 source-of-truth 路径是 `skills/odai/references/modules/<module-name>.md`。
-2. 第一版就应是真实源文件，而不是只在聊天里给草稿。
-3. 后续补充优先续写同一份 source，不开平行版本；若用户是在改现有对象，就直接改现有 source。
-4. 能复用仓库里最接近的结构时可以复用，但只复用相关骨架，不机械照抄无关规则。
-5. 模块正文只写当前对象真正需要承接的运行时规则；入口、README、交互契约、并行短判、并行手册、术语基线、维护说明等已经定义的全局规则，优先引用，不再重复塞进模块正文。
-6. `references/<module-name>/` 适合放长篇规则、方法说明、审查准则；`assets/<module-name>/` 适合放模板；`scripts/<module-name>/` 只在脚本才是最终稳定执行依据时创建。
-7. 不为显得完整而空建目录，也不把本应由脚本稳定执行的逻辑重新写成模型手工流程。
-8. 任何未经用户确认的扩展能力，都只能写成默认建议或待确认项，不能偷偷塞进正式规则。
-9. 若用户已经明确要“做吧”，就直接改 source 文件，不退回成纯建议。
-10. 落盘前置（硬门，非叮嘱）：出任何草案或写入前，先外显一行「目标文件：<确切现有路径 | 待用户确认的新建路径>」。搜索后仍无法锁定确切现有路径、或新建落点未经用户确认时，不得起草或写入，只能按「提问与边界」成组问清——搜索命中为空本身即「未锁定」，不得据推测落点（如把「客服机器人」硬映射到某个现有文件）起草。目标已锁定的命名模块增改，按「默认可直接执行的动作」正常出草案，本门不阻。
+1. public `SKILL.md` frontmatter 只保留 `name` 和 `description`；`description` 同时说清做什么、何时触发。
+2. `SKILL.md` 只写必须全程在场的流程、判据、底线和加载指针；详细工艺放 reference，避免重复。
+3. reference 目录是责任分层，不是调度模块。写明何时需读，不为完整感默认全读。
+4. 优先使用命令式、可观察的行为表述；不把口号、方法名或文件数当成能力。
+5. 同一定义只有一个 owner。其他文件只保留当层动作和指向；确需复制时，同步检查所有副本。
+6. 变更 `SKILL.md` 定位、触发或用户可见描述后，检查 `agents/openai.yaml` 是否仍一致。
 
 ## 规则增长纪律
 
-1. 新增硬法、触发词或例外前，先定位唯一 owner；定义型规则只在 owner 文件完整展开，其他文件只写本层动作和源链接。
-2. 新增规则必须来自可复发的真实失败、真实使用需求或明确设计目标；一次性偏好、局部补丁和风格喜好只进候选，不进硬法。
-3. 规则预算默认不扩张：新增一条硬法或枚举触发时，优先合并、替换、删除或降级旧规则；不能收回时，在结果中说明 owner、必要性和验证方式。
-4. 长复句门禁拆成清单或表格；可解析性视为正确性属性。
-5. 只在规则已有可观察税负、误停、重复，或有证据表明目标行为已不再依赖该规则时提出退役；不按时间自动过期，也不为压数字或证明“会遗忘”而找规则删除。
-6. 区分两类退役：目标行为不变时，规则可退出运行时上下文但原行为 canary 与判据继续留岗；目标行为本身改变时，视为契约变更，必须经用户显式确认后再同步修改 canary。
-7. 每次只试退一条规则，按 `plans/odai-canary.md` 的「规则退役实验」保留前后指纹、行为证据与可测收益；证据不足就维持现状，不把候选写进运行时 skill。
-8. 宿主与用户权限、真实性 / 验证类型、高风险动作门和已追认的宪法内核不走常规退役；变更这些内容属于重新立约。
+1. 新增硬法、触发词或例外前，先定位唯一 owner，并说明它来自哪个真实需求或可复发失败。
+2. 规则预算默认不扩张：优先合并、替换、删除或降级旧规则；不为模型波动追加同义句。
+3. 减重是结果而非独立目标。不为过 token 线删除有证据的能力，也不为规避评测增加题本特化句。
+4. 方法论如 SDD / TDD / BDD、agent、合议和正式计划保持条件使用，不因名字单独升级为一级路由。
+5. 宿主和用户权限、真实性、高风险动作门以及用户已追认的精神内核，不走普通规则退役。
 
-## 提问与边界
+## 文档与冻结同步
 
-1. 只要对目标对象、名称、类型、路径、support files 范围、覆盖影响或用户真实意图仍有任何不确定，就必须提问，不只限于“真正阻塞落盘”的缺口。
-2. 提问前先给当前已知事实、未确认点和必须确认的问题，不把“新增还是修改”“叫什么名字”这类仍有不确定的事偷偷替用户拍板。
-3. 若当前环境支持结构化提问且上层规则允许，优先使用结构化提问；不可用或不允许时，用文字成组提问。
-4. 本 skill 默认不做分发或 README 维护；source 稳定后，分发交给 skills.sh 标准（`npx skills add`），由用户自行决定何时推。
+source 大改后立即审计：
 
-## 默认可直接执行的动作
+- README 的定位、架构图、内部地图、安装和评测摘要是否仍准确。
+- `MAINTAINING.md` 的 owner 路径、验证命令、冻结和日志口径是否仍准确。
+- `CHANGELOG.md` 是否记录了对外能力、架构和迁移，且没有混入试跑过程。
+- 冻结评测是否只在 `docs/evaluation-results.md` 保留当前指纹的最终结果。
 
-1. 搜索并读取现有 source、README 与相近文件。
-2. 创建或更新 `skills/<skill-name>/SKILL.md`。
-3. 创建或更新 `skills/odai/references/modules/<module-name>.md`。
-4. 创建或更新同一 source skill 下必要的 `references/`、`assets/`、`scripts/`。
-5. 回写边界、类型、命名、正文结构和 support file 引用关系。
+文档纠错如果不改变 skill、题本、fixture、失败门、judge 或结果，不需重建评测基线；运行时或契约变更必须开新版。
 
-## 风格与限制
+## 验证与交付
 
-1. 中文输出，除非用户另有要求。
-2. 优先直接、清楚、可执行，不写空泛套话。
-3. 默认把用户当作者，把自己当编辑、结构师和落地助手。
-4. 不把 source 写成和用户真实意图无关的“万能模板”。
-5. 不把分发或安装版本维护写成本 skill 的隐含职责。
+1. 修改 odai source 后运行 `node scripts/validate-odai-skill.mjs`。
+2. 修改题本 / fixture / harness 后，分别生成 full 与 A/B dry-run，并确认同 ID 对齐。
+3. 修改发布 / 打包路径时运行 `npm --prefix cli run pack:dry-run`，并确认无 `cli/skills/` 残留。
+4. 运行 `git diff --check`，检查本地 Markdown 链接与旧路径引用。
+5. 结果先说改了什么、为什么，再报验证、冻结是否受影响和真实剩余问题。
+
+分发统一走 skills.sh。不手工维护平台镜像、临时 package snapshot 或平行结果文件。

@@ -3,11 +3,11 @@
 
 # odai
 
-`odai` is a single governance entry point for AI agent work.
+`odai` is a general task-execution framework for AI agents.
 
-It does not try to reteach a model how to reason, search, read, code, or summarize. Instead, it defines the parts an agent should not quietly decide alone: real intent, boundaries, authorization, acceptance, evidence, handoffs, agent delegation, and stop conditions.
+It helps an agent understand the real objective, choose the shortest sufficient path, combine the right specialist capabilities, act, verify, and keep moving until the task is genuinely deliverable. It does not replace the model's judgment with a rigid workflow.
 
-The short version: you call `/odai`; simple work stays simple, and ambiguous or high-impact work is routed through `道` ("the Way") before the agent acts.
+The short version: call `/odai`; simple work stays direct, while ambiguity, complexity, risk, and domain needs automatically increase or reduce the depth of handling.
 
 ## Why Use It
 
@@ -19,7 +19,7 @@ It helps an agent:
 - verify what it can verify from files, commands, logs, tests, or project context before asking you
 - keep lightweight tasks lightweight instead of turning every request into ceremony
 - avoid claiming that something was tested, delegated, reviewed, or verified when it was not
-- load specialist guidance only when the task needs it, instead of stuffing every rule into every turn
+- combine specialist skills and domain guidance only when the task needs them, instead of stuffing every rule into every turn
 
 ## Governance Constitution
 
@@ -27,13 +27,17 @@ These traditions are operational lenses in one flow, not separate roles, agents,
 
 | Lens | Operational meaning |
 |---|---|
-| Dao | Intervene as little as the task allows; do not act while the governing decision is unstable |
-| Confucian | Keep names and reality aligned: a candidate is not authorization, implementation is not verification |
-| Heart-mind | Once the governing decisions are stable, act and let real results test the judgment |
-| Military | Read the evidence, environment, advantage, and stopping point before moving |
-| Legalist | Keep definitions in their owner and obey host, permission, and tool boundaries |
+| Dao | Intervene as little as the task allows; methods follow the situation instead of becoming doctrine |
+| Confucian | Keep names and reality aligned: goals, means, facts, hypotheses, authorization, implementation, and verification are distinct |
+| Heart-mind | Once understanding is sufficient, act and let real results test the judgment |
+| Military | Read the situation, choose the highest-value move, and change direction when evidence stops improving |
+| Legalist | Protect host, permission, safety, user decisions, and truthfulness boundaries |
 
-The model remains a strategist: it should surface relevant adjacent value, second-order effects, risks, and fallback routes, but those suggestions never silently expand authorization or replace the user's decision. Guiguzi and Han Fei inform situational communication and name-reality / hard-gate methods inside this flow; they do not add roles or grant the skill power.
+The model remains a strategist, balancing offense and defense: surface the real objective, adjacent value, best route, second-order effects, risks, and fallbacks without silently expanding authorization or replacing the user's decision.
+
+The operating standard is: **see clearly, hold steadily, strike accurately, land real results, defend what matters, and build for the long run**.
+
+The product goal is to make work **faster, more accurate, better, steadier, cheaper, lighter, broader, more adaptive, more useful, and more practical**—without treating process, file count, or benchmark scores as substitutes for real value.
 
 ## 30-Second Start
 
@@ -54,16 +58,20 @@ Constraints: do not change behavior yet; give me the proposed copy and risks fir
 
 If slash commands are not available in your client, naming `odai` in plain language works too.
 
-You do not need to know the internal modules. If the route is obvious, `odai` goes straight there. If the task is vague, cross-domain, risky, or user-facing, `道` aligns the direction, boundary, acceptance standard, and next step first.
+You do not need to know the internal structure or choose a methodology. `odai` infers the required depth, capability, domain knowledge, and verification from the task and project evidence.
 
 ## How It Decides
 
-`odai` has one public door and several internal routes:
+`odai` continuously evaluates four dimensions:
 
-- **Lightweight**: read, explain, summarize, inspect, run an existing command, or make a tiny named text edit when the object and verification are obvious.
-- **Direct**: go straight to a named or clearly implied module, such as code review, README work, implementation, game planning, or daily-report cleanup.
-- **Dao-led**: use `道` when the task is ambiguous, multi-step, risky, user-visible, or likely to need scope and acceptance alignment.
-- **Enhanced**: use stricter challenge, agent governance, or consensus rules when the user asks for multi-agent / multi-model work, or when a decision is expensive to reverse.
+- **Complexity**: direct action, a small amount of structure, staged execution, or durable task state.
+- **Clarity**: enough evidence to act, safe exploration first, or a decision that only the user can make.
+- **Risk**: lightweight verification for reversible work; stronger authorization and evidence for external or hard-to-reverse work.
+- **Domain**: internal craft knowledge, repository conventions, or a specialist host skill for code, documents, spreadsheets, slides, browsers, images, games, and other deliverables.
+
+Before loading any playbook, it applies a silent light-task gate. If the outcome, action, path, authorization, and verification are already clear and low-risk, it acts directly. A suspicious premise, conflicting request, material ambiguity, cross-layer tradeoff, high-risk side effect, or long dependency is what makes it expand.
+
+Depth is not fixed at the start. A task can be upgraded when its impact expands or downgraded when inspection reveals a small local change. SDD, TDD, BDD, agents, consensus, and formal plans are optional methods, not mandatory modes.
 
 The point is not to slow the agent down. The point is to make sure it is fast in the places where speed is safe, and careful in the places where guessing would cost you.
 
@@ -73,54 +81,54 @@ The point is not to slow the agent down. The point is to make sure it is fast in
                          user task
                             |
                             v
-       +--------------------------------------------+
-       | /odai -> SKILL.md                         |
-       | entry routing, truth gates, scope gates     |
-       +--------------------+-----------------------+
-            direct / light  | ambiguous / risky / cross-domain
-       +--------------------+-----------------------+
-       |                                            |
-       v                                            v
-  +------------------+                 +-------------------------+
-  | named module     |                 | dao / 道 orchestrator   |
-  | or light action  |                 | why -> how -> do        |
-  +---------+--------+                 +-----------+-------------+
-            |                                      |
-            |                                      v
-            |                         +--------------------------+
-            |                         | specialist module chain  |
-            |                         | plan / design / code /   |
-            |                         | review / game / summary  |
-            |                         +-----------+--------------+
-            |                                      |
-            +----------------------+---------------+
-                                   v
-                         result, evidence,
-                         verified gap, or blocker
+       +---------------------------------------------+
+       | /odai -> lightweight adaptive kernel       |
+       | understand -> choose next valuable action  |
+       +---------------------+-----------------------+
+                             |
+       +---------------------+-----------------------+
+       |                     |                       |
+       v                     v                       v
+  direct action       internal capability      host skill / tool
+                     + domain knowledge         + project rules
+       |                     |                       |
+       +---------------------+-----------------------+
+                             v
+                    act -> verify -> deliver
+                             |
+                  new evidence updates the path
 
-Support files are loaded only when needed:
-interaction contract, diagnosis, result reporting,
-agent governance, challenge / consensus rules,
-and domain playbooks.
+Only complex or long-running work loads durable state,
+agent coordination, independent challenge, or consensus.
 ```
 
-The important part is the split before action: if the task is already bounded, `odai` can move directly; if the task needs intent, scope, acceptance, risk, or authorization alignment, `道` sets the track first and then hands work to the right producer modules.
+The framework owns the task from understanding through delivery, while capabilities and domain references provide only the craft needed at the moment. There is no separate orchestrator workflow and no user-selected domain package.
 
-## Module Map
+## Internal Map
 
-These are internal modules. You can name them directly, but you usually do not have to.
+The internal structure is organized by responsibility, not by mandatory stages:
 
-| Module | Use it for |
+| Layer | Purpose |
 | --- | --- |
-| `dao` / `道` | Default orchestration, direction, boundaries, route choice, cross-stage handoff |
-| `feature-plan` | Specs, tradeoffs, feature planning, bug diagnosis |
-| `design-spec` | Product flows, pages, states, interaction, UX acceptance |
+| Kernel | Constitution, product goals, adaptive progression, minimum boundaries, and loading map |
+| `dao/` | Authority, verification, continuity, coordination, and host / project composition |
+| `capabilities/` | Planning, design, diagnosis, code implementation, and review |
+| `recipes/` | Named outputs such as project guides and daily / commit / PR summaries |
+| `domains/` | Optional UI and real-time interaction craft, inferred from the task |
+| `techniques/` | Optional heavy methods such as consensus, long audits, and full SSLB review |
+
+Named entry points remain available for compatibility and direct use:
+
+| Name | Use it for |
+| --- | --- |
+| `feature-plan` | Cross-domain specs, systems, tradeoffs, numbers, content, non-code diagnosis |
+| `design-spec` | Cross-domain flows, states, interaction, visuals, brand and asset direction |
 | `implement-code` | Code changes, bug fixes, tests, refactors after scope is clear |
 | `review-sslb` | Structured code review |
 | `project-guide` | READMEs, project rules, AI handoff baselines |
-| `game-plan` | Game systems, mechanics, numbers, economy, levels, liveops |
-| `game-design` | Game visuals, UI/UX/UE, characters, scenes, branding, FX |
 | `ribao` | Daily reports, commit messages, PR messages |
+
+`feature-plan` and `design-spec` infer the domain from task and repository evidence. Game work is one supported domain, not a separate package the user has to select. Office artifacts use the host's document, spreadsheet, presentation, PDF, browser, or image skill when available; `odai` keeps responsibility for intent, progress, and truthful closure.
 
 ## Good Prompts
 
@@ -165,48 +173,29 @@ npx skills add https://github.com/orziz/odai#old
 
 Use `old` only if you still depend on the previous standalone skill layout or are comparing a migration.
 
-Canonical source lives in `skills/`. Distribution is handled through the [skills.sh](https://skills.sh) install flow; this repository no longer keeps per-platform mirror outputs. Maintainer notes live in [MAINTAINING.md](MAINTAINING.md).
+Canonical source lives in `skills/`. Distribution is handled through the [skills.sh](https://skills.sh) install flow; this repository no longer keeps per-platform mirror outputs. See [MAINTAINING.md](MAINTAINING.md) for the current source, validation, freeze, and release rules, and [CHANGELOG.md](CHANGELOG.md) for frozen architecture changes.
 
-## Current Evaluation Results
+## Evaluation
 
-As of 2026-07-14.
+The current `2026-07-16-r7` skill/evaluation release is frozen at 12 realistic full-plan tasks and an 8-task paired A/B subset. This repository label is independent of the optional CLI package version. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.
 
-### Full Scope and Lower Bound
+Results are reported separately for direct, judgment, complex, and boundary work. The direct band measures whether odai stays nearly invisible: no quality regression, no support-file reads, and no material token overhead. The other bands measure whether extra work produces observable gains. A perfect treatment score alone is not evidence of value.
 
-| Scope | Runner | Host CLI | Judge | Result |
-|---|---|---|---|---:|
-| Full | GPT-5.5 / medium | Codex | GPT-5.6 Sol / high | 45/45 |
-| Starred lower bound | GPT-5.4 Mini / low | Codex | GPT-5.6 Sol / high | 10/19 |
-| Full | Grok 4.5 | Grok CLI | GPT-5.6 Sol / high | 45/45 |
-| Full | Kimi K2.7 Code [256K] | Claude Code / CC Switch | GPT-5.6 Sol / high | 41/45 |
+| Runner | with odai | without odai | runner token change |
+|---|---:|---:|---:|
+| GPT-5.5 | **8/8** | 3/8 | +19.4% |
+| Claude Opus 4.8 | **8/8** | 5/8 | +34.7% |
+| Claude Sonnet 5 | **8/8** | 5/8 | +66.3% |
+| Claude Fable 5 | **8/8** | 5/8 | +47.1% |
+| Grok 4.5 | **8/8** | 6/8 | +25.9% |
+| DeepSeek V4 Pro | 6/8 | 4/8 | -26.7% |
+| DeepSeek V4 Flash | 5/8 | 3/8 | +106.7% |
+| GLM-5.2 | **8/8** | 4/8 | +4.9% |
+| Kimi K2.7 Code | 7/8 | 4/8 | +33.9% |
+| MiniMax M3 | 6/8 | 3/8 | >+37.9%* |
 
-### With / Without A/B
+\* MiniMax C05 has no usable usage footer, so the table reports a lower bound from the other seven cases.
 
-| Runner | Host CLI | With odai | Without odai |
-|---|---|---:|---:|
-| GPT-5.4 Mini / low | Codex | 5/9 | 2/9 |
-| GPT-5.5 / medium | Codex | 9/9 | 3/9 |
-| GPT-5.6 Sol / high | Codex | 9/9 | 3/9 |
-| Claude Opus 4.8 | Claude Code | 9/9 | 3/9 |
-| Claude Sonnet 5 | Claude Code | 9/9 | 3/9 |
-| Claude Fable 5 | Claude Code | 9/9 | 5/9 |
-| Grok 4.5 | Grok CLI | 9/9 | 3/9 |
-| GLM-5.2 [1M] | Claude Code / CC Switch | 8/9 | 4/9 |
-| DeepSeek V4 Pro [1M] | Claude Code / CC Switch | 7/9 | 2/9 |
-| DeepSeek V4 Flash [1M] | Claude Code / CC Switch | 6/9 | 2/9 |
-| Kimi K2.7 Code [256K] | Claude Code / CC Switch | 9/9 | 4/9 |
-| MiniMax M3 [1M] | OpenAI-compatible / CC Switch | 8/9 | 3/9 |
-
-### Anonymous Skill Comparison
-
-| Group | Score | Passes |
-|---|---:|---:|
-| odai | **15/20** | **3/5** |
-| Superpowers | 11/20 | 2/5 |
-| Bare | 10/20 | 1/5 |
-| mattpocock/skills | 10/20 | 1/5 |
-| Compound Engineering | 10/20 | 1/5 |
-
-The anonymous comparison supports a lead for odai on the tested project-governance, production-gate, and verification-honesty slice. It is not evidence of universal supremacy. See [`docs/evaluation.md`](docs/evaluation.md) for methodology, token counts, and per-case notes; per-run evidence remains in [`plans/odai-canary-results.md`](plans/odai-canary-results.md).
+GPT-5.5 and Grok 4.5 also score 12/12 on the full on-plan. The current plan, evaluation harness, and canonical skill are fingerprint-frozen. See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for scores, failure distribution, and token details.
 
 Stars and PRs are welcome.

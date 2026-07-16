@@ -22,8 +22,10 @@ jobs:
           node --check scripts/validate-odai-skill.mjs
           node --check scripts/odai-canary-harness.mjs
           node --check cli/scripts/package-skill-bundle.mjs
-      - name: Build canary fixtures
-        run: node scripts/odai-canary-harness.mjs --smoke
+      - name: Build frozen full and A/B fixtures
+        run: |
+          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --out /tmp/odai-full-dry-run
+          node scripts/odai-canary-harness.mjs --plan plans/odai-ab-smoke.md --out /tmp/odai-ab-dry-run
       - name: Test CLI
         run: npm --prefix cli test
       - name: Verify packaged skill bundle

@@ -3,7 +3,7 @@
 # fixtures. Output defaults to a unique directory and is never overwritten.
 #
 # Examples:
-#   pwsh -File scripts/run-grok-canary.ps1 -Cases "1-15"
+#   pwsh -File scripts/run-grok-canary.ps1 -Cases "1-12"
 #   pwsh -File scripts/run-grok-canary.ps1 -Plan plans/odai-ab-smoke.md -SkillMode off
 #   pwsh -File scripts/run-grok-canary.ps1 -PrepareOnly -Plan plans/odai-ab-smoke.md
 

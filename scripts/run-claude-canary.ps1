@@ -6,13 +6,13 @@
 # Examples:
 #   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel opus -SkillMode on
 #   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel sonnet -SkillMode off
-#   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel sonnet -Cases 31 -OutDir .tmp/sonnet-c31-rerun-a
-#   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel opus -Plan plans/odai-canary.md -Cases 45
+#   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel sonnet -Cases 4
+#   pwsh -File scripts/run-claude-canary.ps1 -RunnerModel opus -Plan plans/odai-canary.md -Cases 1-12
 #   pwsh -File scripts/run-claude-canary.ps1 -PrepareOnly -Cases 1
 
 param(
   [string]$Plan = "plans/odai-ab-smoke.md",
-  [string]$Cases = "1,5,11,13,20,31,32,39,43",
+  [string]$Cases = "1,2,3,4,5,8,11,12",
   [ValidateSet("on", "off")]
   [string]$SkillMode = "on",
   [string]$OutDir = "",

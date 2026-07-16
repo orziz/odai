@@ -1,6 +1,6 @@
 # odai 匿名横评计划
 
-本计划定义同类 skill 匿名横评的运行方式。默认五题 fixture 和确定性门禁在 [`odai-blind-cases.json`](odai-blind-cases.json)，执行器是 [`scripts/odai-blind-harness.mjs`](../scripts/odai-blind-harness.mjs)。稳定结果与结论边界见 [`docs/evaluation.md`](../docs/evaluation.md)。
+本计划定义同类 skill 匿名横评的运行方式。默认五题 fixture 和确定性门禁在 [`odai-blind-cases.json`](odai-blind-cases.json)，执行器是 [`scripts/odai-blind-harness.mjs`](../scripts/odai-blind-harness.mjs)。评测口径见 [`docs/evaluation.md`](../docs/evaluation.md)，当前结果见 [`docs/evaluation-results.md`](../docs/evaluation-results.md)。
 
 ## 运行纪律
 

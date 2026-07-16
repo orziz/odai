@@ -1,4 +1,4 @@
 interface:
   display_name: "odai"
-  short_description: "以道为总控的项目任务治理、路由、实施接力与验收统一入口"
-  default_prompt: "使用 $odai 接管这个项目任务，先判断路径、边界与验收，再推进到当前范围内可交付结果。"
+  short_description: "看得清、拿得稳、打得准、落得实、守得住、走得远的通用执行框架"
+  default_prompt: "使用 $odai 接住这个任务：明确低风险内容直接完成，遇到歧义、错误前提、复杂度或风险再按需展开，并验证到可交付结果。"

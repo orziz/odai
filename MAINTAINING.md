@@ -1,99 +1,115 @@
 # 维护说明（Maintaining odai）
 
-> 这份文档面向**维护这个仓库的人**。只是想用 `odai` 的话，看 [README.md](README.md) / [README.zh-CN.md](README.zh-CN.md) 就够了。
+> 本文面向仓库维护者。普通使用请看 [README.md](README.md) / [README.zh-CN.md](README.zh-CN.md)。
 
-## 唯一真相在哪
+## 当前冻结版
 
-可编辑的 source-of-truth 全部在 `skills/` 下；除 npm 包所需的生成型 fallback snapshot 外，不维护多端安装镜像：
+- 架构 / 评测标签：`2026-07-16-r7`。
+- 运行时 skill、全量题本、A/B 题本与 evaluation harness 按 [`docs/evaluation-results.md`](docs/evaluation-results.md) 中的指纹冻结。
+- `r7` 是仓库的 skill / 评测冻结标签，不是 `cli/package.json` 的 npm 版本。
+- 本轮之后不用新模型结果回改 r7 的 skill、题面、fixture、验收、失败门或裁判口径。实质变更须开新标签、重建基线，不得跨指纹混算。
+
+## 单一事实源
 
 ```text
-AGENTS.md               仓库级 agent 维护约束
-skills/odai/             统一入口 source skill
-  SKILL.md               入口正文
-  agents/openai.yaml     宿主 UI 元数据
-  references/modules/    内部模块正文（dao、game-*、feature-plan 等）
-  references/*/          模块级规则、说明等 support files
-  assets/*/              模块级模板等资源
-skills/skill-author/     仓库 source 作者维护 skill
-docs/                    稳定的对外说明与评测口径解释
-plans/                   金丝雀 / 盲测用例定义与独立运行记录
-scripts/                 仓库维护与评测 harness
-assets/                  README 配图
+AGENTS.md                         仓库级维护约束
+skills/odai/                      odai canonical source
+  SKILL.md                        自适应内核、底线与加载地图
+  agents/openai.yaml              宿主 UI 元数据
+  references/dao/                 授权、验证、连续性、协作、组合
+  references/capabilities/        规划、设计、诊断、实施、审查
+  references/domains/             UI 与实时交互领域工艺
+  references/recipes/             项目指南、日报 / commit / PR 等点名产物
+  references/techniques/          合议、长审计、完整审查等可选重工艺
+  assets/                         跨会话状态与任务账本模板
+skills/skill-author/              本仓库的 source 维护 skill
+docs/evaluation.md                稳定评测契约
+docs/evaluation-results.md        当前冻结结果的唯一公开记录
+plans/odai-canary.md              12 题全量题本
+plans/odai-ab-smoke.md            8 题配对 A/B 题本
+plans/odai-blind*                 可复用匿名横评定义
+scripts/                          校验、runner、judge 与 harness
+CHANGELOG.md                      冻结版的架构 / 维护变更日志
 ```
 
-分发统一走 [skills.sh](https://skills.sh) 标准（`npx skills add …`），canonical source 直接读 `skills/`，不生成 / 维护 `.claude/`、`.github/`、`.trae/` 等各端安装产物。npm 打包时，`prepack` 会把 canonical `skills/odai/` 临时注入 `cli/skills/odai/`，`postpack` 随即清理；该目录不提交、不维护，也不是第二 source。
+`skills/odai/` 是 odai 唯一可编辑源。`cli/skills/odai/` 只能由 npm `prepack` 临时生成，`postpack` 后必须清理；它不提交、不手改、不是第二份 source。仓库也不维护 `.claude/`、`.github/`、`.trae/` 等平台镜像产物；分发统一走 [skills.sh](https://skills.sh)。
 
-## 命名约定
+## 当前架构口径
 
-内部模块按「对象 / 层级 + 工作类型」命名：
+odai 只有一条自适应主流程：**判断 → 行动 → 验证 → 收口**。目录是渐进加载的责任分层，不是互相调度的子工作流。
 
-- `dao`：默认调度路线
-- `game-*`：游戏策划与游戏视觉设计
-- `feature-*`：需求规划、方案规划、问题诊断
-- `design-*`：设计说明、交互、页面、流程、状态
-- `implement-*`：代码实现、补测试、落地总结
-- `project-*`：项目级说明、规则、基线、README 整理
-- `review-*`：代码审查
-- `skill-*`：仓库维护工具，作为独立 skill 放在 `skills/<skill-name>/SKILL.md`
+| 需求 | 唯一 owner |
+|---|---|
+| 总纲、主流程、直达 / 纠偏 / 深度切换、最小底线、加载地图 | `skills/odai/SKILL.md` |
+| 授权、验证、长任务、agent 协作、外部能力与项目叠加 | `references/dao/` |
+| 规划、设计、诊断、代码实施、代码审查 | `references/capabilities/` |
+| UI 或游戏 / 仿真 / HUD / 实时输入反馈 | `references/domains/` |
+| README、项目指南、日报、commit / PR 文案 | `references/recipes/` |
+| 不默认启用的重型方法 | `references/techniques/` |
+| 跨会话可恢复状态 | `assets/` |
 
-补充：
+已退役的 `references/modules/`、`references/game-plan/`、`references/game-design/` 以及各旧模块专属目录不得恢复。游戏是通用规划、设计和交互系统能力覆盖的任务领域，不是用户需选的独立包。
 
-- 模块 id 默认用小写 kebab-case 英文，方便跨工具、跨平台和路径复用。
-- 默认调度模块在文案里统一写 `道`；模块 id、frontmatter `name` 和文件名都保持 `dao`；提示词里写 `道` 或 `dao` 都算命中同一个模块。
-- 给人看的说明、分类和文案，优先用中文写清楚职责和场景。
-- 新增「用户任务」能力，默认收进 `odai` 的内部模块；新增「仓库维护」能力，默认做成独立的 `skill-*` 工具。
+`feature-plan`、`design-spec`、`implement-code`、`review-sslb`、`project-guide`、`ribao` 是 `/odai` 内的兼容性点名能力，不是必经路由，也不是独立安装包。
 
-## 维护流程
+## 修改纪律
 
-内部模块正文只写自己这一域的职责、交付骨架、边界和 support file 的触发条件。入口、README、交互契约、术语基线这些全局规则已经定过的，模块正文优先引用，不要再拷一遍。全局判据默认采用指针式挂法：完整规则只铸在 canonical 文件，卫星模块只写触发场景和指向；确需重复判据时，改动必须 `rg` 全部副本并同步。
+1. 先锁定唯一 owner，再改文字。同一判据不在多文件并行完整展开。
+2. 新规则必须来自可复发的真实需求或失败证据；优先合并、替换或降级旧规则，不用同义句堆适配。
+3. `SKILL.md` 只保留内核、必须高注意的门和资源导航；细节放到按需 reference。
+4. 修改 `SKILL.md` 的触发语义、产品定位或宿主展示文案时，同步检查 `agents/openai.yaml`。
+5. 不为缩 token 而删能力，也不为完整感增文件；只看净价值、可发现性和行为证据。
+6. 冻结版发现实质问题时，记为下一版候选；不直接编辑 r7 来追当前分数。
 
-规则增长纪律的 owner 是 `skills/skill-author/SKILL.md` 的「规则增长纪律」；维护本仓库 source 时按该节执行，本文不另写扩展条件。
+## 验证与评测
 
-推荐顺序：
+普通 source / 文档修改至少运行：
 
-1. 用 `skill-author` 新增或改写 `skills/<skill-name>/SKILL.md`，或 `skills/odai/references/modules/<module-name>.md`。
-2. 需要时补 `skills/odai/references/<module-name>/`、`skills/odai/assets/<module-name>/`、`skills/odai/scripts/<module-name>/`。
-3. source 稳定后，分发交给 skills.sh（`npx skills add`）；canonical source 就是 `skills/` 本身，无需再生成任何安装产物。
+```bash
+node scripts/validate-odai-skill.mjs
+git diff --check
+```
 
-改入口、路由门、交互契约、实施准入、验收口径、agent 治理或 canary 用例后：
+改 harness 或 runner 时补充：
 
-1. 跑 `node scripts/validate-odai-skill.mjs` 检查 frontmatter、UI 元数据、资源引用和长规则预警。
-2. 跑 `npm --prefix cli run pack:dry-run`，确认 npm 产物包含 bundled `skills/odai`，且结束后没有遗留 `cli/skills/`。
-3. 至少跑 `node scripts/odai-canary-harness.mjs --smoke` 检查 fixture / prompt 生成。规则小改且环境可用时跑 `--smoke --run`，大改跑全量；用户默认模型与本机 CLI 不兼容时，用 `--model <本机缓存中的兼容模型>` 同时覆盖 runner / judge。把日期、commit / 工作区状态、fail 条目和一句现象回写 `plans/odai-canary-results.md`；测试定义与历史结果不得重新混写。
+```bash
+node --check scripts/odai-canary-harness.mjs
+node --check scripts/openai-compatible-canary-runner.mjs
+```
 
-`cli` 源码测试直接读取仓库根目录的 canonical skill，不依赖临时 bundle。`prepack` 只为 npm 产物注入 bundle；维护脚本和 CI 必须在打包结束后确认临时目录已被清理。
+改 skill、fixture、题本或确定性门时，先分别生成全量与 A/B fixture / prompt：
 
-标准安装入口：
+```bash
+node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --out /tmp/odai-full-dry-run
+node scripts/odai-canary-harness.mjs --plan plans/odai-ab-smoke.md --out /tmp/odai-ab-dry-run
+```
 
-- `skills/odai/SKILL.md`
-- `skills/skill-author/SKILL.md`
+只有运行时语义或评测契约发生实质变化，才建立新版并重跑所需模型。相同模型的 on / off 必须使用同一题面、fixture、推理档和独立 judge。CLI footer token 只能在同一 runner 的 on / off 内比较。
 
-## Skills 一览
+原始 transcript、diff、status、manifest 和单次 report 留在 `.tmp/` 或临时目录，不进仓库。仓库只在 [`docs/evaluation-results.md`](docs/evaluation-results.md) 保留当前指纹的最终结果，不记轮次过程，不恢复 `plans/odai-canary-results.md`。
 
-### 面向大多数使用者
+发布 / 打包相关修改还必须运行：
 
-| Skill | 简介 | 适用场景 | 对应文件 |
-| --- | --- | --- | --- |
-| `odai` | 以道为总控，提供意图对齐、边界授权、验收真实性、跨阶段接力、agent 治理和领域 playbook 的统一入口 | 复杂任务接单、方向裁决、规格规划、游戏策划、游戏视觉设计、设计说明、代码实现、代码审查、agent 下放与成果整理 | `skills/odai/SKILL.md` |
+```bash
+npm --prefix cli run pack:dry-run
+test ! -e cli/skills
+```
 
-### 仓库维护工具
+这一步确认 npm 产物包含临时 bundled `skills/odai`，且 `postpack` 没有留下第二 source。
 
-| Skill | 简介 | 适用场景 | 对应文件 |
-| --- | --- | --- | --- |
-| `skill-author` | 维护本仓库 skill source，把能力整理成可分发的标准 skill 或模块资源 | 新增 skill、改写 skill、沉淀 prompt 或 workflow、维护 odai 内部模块与 support files | `skills/skill-author/SKILL.md` |
+## 日志与提交
 
-### `odai` 内部模块
+- [`CHANGELOG.md`](CHANGELOG.md) 只记冻结版的对外能力、架构、迁移与评测口径；不记试跑、复跑、临时模型故障或中间分。
+- [`docs/evaluation-results.md`](docs/evaluation-results.md) 只记当前冻结指纹下的最终横向结果。
+- commit 标题说最终结果；大版本正文至少说明架构、迁移、题本 / harness、验证和冻结指纹。
+- 实验性过程证据由 `.tmp/` 与 Git 历史承担，不在 README、plan 或 skill 中复制一份时间线。
 
-这些名字可以在提示词里直接点名。若已明确点名模块又给了任务对象（比如「按 `review-sslb` 审这个 diff」），`odai` 会直接落到对应模块；其他情况优先让 `道` 按语义挑模块、定产物。
+## 安装与分发
 
-| 模块 | 作用 | 对应文件 |
-| --- | --- | --- |
-| `dao`（文案里写作 `道`） | 默认调度 workflow（通用总控，不分领域），负责方向、边界、主路、第一步与复核 | `skills/odai/references/modules/dao.md` |
-| `game-plan` | 全域游戏策划主模块：系统、玩法、数值、经济、商业、关卡与内容规划 | `skills/odai/references/modules/game-plan.md` |
-| `game-design` | 完整游戏视觉设计主模块：UI/UX/UE、角色场景、宣传品牌与特效演出 | `skills/odai/references/modules/game-design.md` |
-| `feature-plan` | 规格规划、方案取舍、bug 诊断 | `skills/odai/references/modules/feature-plan.md` |
-| `design-spec` | 页面、交互、状态、视觉与体验说明 | `skills/odai/references/modules/design-spec.md` |
-| `implement-code` | 代码实现、修 bug、补测试、重构落地 | `skills/odai/references/modules/implement-code.md` |
-| `project-guide` | README、规则、AI 接手基线与项目级说明 | `skills/odai/references/modules/project-guide.md` |
-| `review-sslb` | 三省六部式代码审查 | `skills/odai/references/modules/review-sslb.md` |
-| `ribao` | 日报、commit message、PR message 整理 | `skills/odai/references/modules/ribao.md` |
+对外标准入口是：
+
+```bash
+npx skills add https://github.com/orziz/odai --skill odai
+```
+
+canonical source 保持在 `skills/`；使用者 README 说“怎么用”，本文说“怎么维护”，skill 本体只放 agent 完成任务必需的运行时内容。
