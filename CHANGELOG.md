@@ -17,6 +17,7 @@
 - 冻结 12 题全量现实委托与 8 题配对 A/B，覆盖 direct、judgment、complex 和 boundary 四层。
 - 题面不针对 odai 模块出题；关键事实放在代码、日志、brief、diff、任务状态和 runbook 中。
 - harness 补齐独立 fixture、确定性副作用门、多模型 runner、deferred judge、指纹和 token 统计。
+- C04 在不改用户题面、fixture、确定性只读门或 skill 的前提下澄清裁判边界：明确标为待验证假设 / 实验候选且不实施的数值可通过；无证据生产值或直接落地仍失败。
 - GPT-5.5 和 Grok 4.5 的全量 on 为 12/12；GPT-5.5、Claude Opus 4.8、Claude Sonnet 5、Claude Fable 5、Grok 4.5 与 GLM-5.2 的 A/B on 为 8/8。完整横向结果见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 
 ### 维护与迁移

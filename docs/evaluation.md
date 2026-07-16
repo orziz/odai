@@ -1,15 +1,17 @@
 # odai 评测说明
 
-更新日期：2026-07-16
+更新日期：2026-07-17
 
 ## 当前冻结契约
 
 - 全量：[`plans/odai-canary.md`](../plans/odai-canary.md)，连续 C01-C12。
 - A/B：[`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md)，C01/C02/C03/C04/C05/C08/C11/C12，共 8 题。
-- 版本：`2026-07-16-r7`，题面、fixture、验收、失败门、evaluation harness 与 canonical skill 已按 [`evaluation-results.md`](evaluation-results.md) 所列 SHA-256 冻结。
+- 版本仍为 `2026-07-16-r7`，题面、fixture、验收、失败门、evaluation harness 与 canonical skill 按 [`evaluation-results.md`](evaluation-results.md) 所列 SHA-256 冻结。
 - 静态状态：canonical skill 校验、full 12/12 与 A/B 8/8 fixture / prompt 生成、同 ID 对齐、确定性副作用检查和 dry-run 均通过。
 
-冻结后，本轮模型结果不再推动 skill、题面、验收、fixture 或裁判口径回改。若发现实质缺陷，结束本轮、发布新版本并重新建立全部基线，不能跨指纹混算。
+2026-07-17 对 C04 做了一次同版裁判纠偏：具体数值若明确标为“待验证假设 / 实验候选”，且不实施、不冒充已确定方案或可直接上线值，可以通过；把缺乏证据的数值当生产配置建议或直接实施仍失败。用户题面、fixture、确定性只读门和 skill 均未改变。该变化是单调放宽，旧通过继续有效；本次正式结果只替换具备完整同机 on / off 记录的 Kimi K3 C04，其他公开结果保持原记录。
+
+除上述已记录例外外，冻结后不再用模型结果推动 skill、题面、验收、fixture 或裁判口径回改。若再发现实质缺陷，结束本轮、发布新版本并重新建立全部基线，不能跨指纹混算。
 
 ## 题目如何保持独立
 

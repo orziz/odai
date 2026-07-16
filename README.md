@@ -191,6 +191,7 @@ Results are reported separately for direct, judgment, complex, and boundary work
 | DeepSeek V4 Pro | 6/8 | 4/8 | -26.7% |
 | DeepSeek V4 Flash | 5/8 | 3/8 | +106.7% |
 | GLM-5.2 | **8/8** | 4/8 | +4.9% |
+| Kimi K3 | **8/8** | 6/8 | +32.6% |
 | Kimi K2.7 Code | 7/8 | 4/8 | +33.9% |
 | MiniMax M3 | 6/8 | 3/8 | >+37.9%* |
 
