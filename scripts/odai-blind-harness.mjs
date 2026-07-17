@@ -121,6 +121,7 @@ function parseArgs(argv) {
     runPrepared: false,
     noJudge: false,
     judgeOnly: false,
+    reportOnly: false,
     concurrency: 3,
     codexCommand: process.env.ODAI_CODEX_COMMAND || "codex",
     runnerModel: "gpt-5.5",
@@ -142,6 +143,7 @@ function parseArgs(argv) {
     else if (arg === "--run-prepared") args.runPrepared = true;
     else if (arg === "--no-judge") args.noJudge = true;
     else if (arg === "--judge-only") args.judgeOnly = true;
+    else if (arg === "--report-only") args.reportOnly = true;
     else if (arg === "--concurrency") args.concurrency = Number(argv[++i]);
     else if (arg === "--codex-command") args.codexCommand = argv[++i];
     else if (arg === "--runner-model") args.runnerModel = argv[++i];
@@ -159,12 +161,16 @@ function parseArgs(argv) {
     }
   }
   if (args.judgeOnly && !args.out) throw new Error("--judge-only requires --out DIR");
+  if (args.reportOnly && !args.out) throw new Error("--report-only requires --out DIR");
   if (args.runPrepared && !args.out) throw new Error("--run-prepared requires --out DIR");
   if (args.judgeOnly && (args.run || args.noJudge || args.armSpecs.length)) {
     throw new Error("--judge-only cannot be combined with --run, --no-judge, or --arm");
   }
   if (args.runPrepared && (args.run || args.judgeOnly || args.armSpecs.length || args.caseIds)) {
     throw new Error("--run-prepared cannot be combined with --run, --judge-only, --arm, or --cases");
+  }
+  if (args.reportOnly && (args.run || args.runPrepared || args.judgeOnly || args.noJudge || args.armSpecs.length || args.caseIds)) {
+    throw new Error("--report-only cannot be combined with run, judge, arm, or case options");
   }
   if (!Number.isInteger(args.concurrency) || args.concurrency < 1 || args.concurrency > 16) {
     throw new Error("--concurrency must be an integer from 1 to 16");
@@ -186,6 +192,7 @@ freezes the anonymous mapping, and writes prompts. Add --run to invoke runner an
 
 Candidate syntax:
   --arm bare                     Add a no-skill baseline
+  --arm NAME=bare                Add a named no-skill candidate
   --arm odai=skills/odai         Add one skill directory
   --arm other=/path/to/repo      Recursively discover SKILL.md files under a repo
 
@@ -199,6 +206,7 @@ Options:
   --run-prepared          Run fixtures from an existing dry-run in --out
   --no-judge              With --run/--run-prepared, freeze outputs without judging
   --judge-only            Rejudge frozen records in --out; does not rerun candidates
+  --report-only           Rebuild summary/report from frozen records and existing verdicts
   --concurrency N         Concurrent runner cells (default: 3)
   --runner-model MODEL    Default: gpt-5.5
   --runner-effort VALUE   Default: medium
@@ -227,6 +235,7 @@ function parseArmSpecs(specs, root) {
     }
     const id = spec.slice(0, separator);
     validateArmId(id);
+    if (spec.slice(separator + 1) === "bare") return { id, kind: "bare", source: "", skills: [] };
     const source = path.resolve(spec.slice(separator + 1));
     if (!existsSync(source) || !statSync(source).isDirectory()) throw new Error(`Arm source is not a directory: ${source}`);
     return { id, kind: "skills", source, skills: [] };
@@ -622,7 +631,8 @@ function loadRecords(protocol) {
 
 function runnerTokens(record) {
   const usage = record.evidence.usage || {};
-  return (usage.input_tokens || 0) + (usage.cached_input_tokens || 0) + (usage.output_tokens || 0);
+  // Codex reports cached input as a subset of input_tokens, not an additional amount.
+  return (usage.input_tokens || 0) + (usage.output_tokens || 0);
 }
 
 function buildSummary(protocol, records, verdicts) {
@@ -811,9 +821,28 @@ async function judgeOnly(args) {
   return 0;
 }
 
+async function reportOnly(args) {
+  const outRoot = path.resolve(args.out);
+  const protocolFile = path.join(outRoot, "protocol.json");
+  const summaryFile = path.join(outRoot, "summary.json");
+  if (!existsSync(protocolFile)) throw new Error(`Protocol not found: ${protocolFile}`);
+  if (!existsSync(summaryFile)) throw new Error(`Summary not found: ${summaryFile}`);
+  const protocol = readJson(protocolFile);
+  protocol.outRoot = outRoot;
+  const records = loadRecords(protocol);
+  const previousSummary = readJson(summaryFile);
+  if (!Array.isArray(previousSummary.verdicts)) throw new Error(`Frozen verdicts not found: ${summaryFile}`);
+  const summary = buildSummary(protocol, records, previousSummary.verdicts);
+  writeJson(summaryFile, summary);
+  writeFinalReport(summary);
+  console.log(`Report rebuilt. Report: ${path.join(outRoot, "report.md")}`);
+  return 0;
+}
+
 try {
   const args = parseArgs(process.argv.slice(2));
-  if (args.judgeOnly) process.exitCode = await judgeOnly(args);
+  if (args.reportOnly) process.exitCode = await reportOnly(args);
+  else if (args.judgeOnly) process.exitCode = await judgeOnly(args);
   else if (args.runPrepared) process.exitCode = await runPrepared(args);
   else process.exitCode = await prepareAndMaybeRun(args);
 } catch (error) {

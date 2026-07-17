@@ -6,6 +6,7 @@
 
 ### 架构
 
+- 定位为治理内核驱动的通用任务执行框架：治理融入每次判断、行动、验证与收口，不在执行之前制造额外仪式。
 - 将多模块路由收敛为单一自适应主流程：判断、行动、验证、收口；按任务明确度、风险和证据动态收放。
 - 保留“道可道”、谋定而后动、模型即谋士、六字诀与道儒心兵法五家合一，但不把它们拆成角色或工作流。
 - 支撑资料重组为 `dao/`、`capabilities/`、`domains/`、`recipes/`、`techniques/` 和 `assets/`，实现渐进加载。
@@ -18,7 +19,7 @@
 - 题面不针对 odai 模块出题；关键事实放在代码、日志、brief、diff、任务状态和 runbook 中。
 - harness 补齐独立 fixture、确定性副作用门、多模型 runner、deferred judge、指纹和 token 统计。
 - C04 在不改用户题面、fixture、确定性只读门或 skill 的前提下澄清裁判边界：明确标为待验证假设 / 实验候选且不实施的数值可通过；无证据生产值或直接落地仍失败。
-- GPT-5.5 和 Grok 4.5 的全量 on 为 12/12；GPT-5.5、Claude Opus 4.8、Claude Sonnet 5、Claude Fable 5、Grok 4.5 与 GLM-5.2 的 A/B on 为 8/8。完整横向结果见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
+- GPT-5.5、Grok 4.5 和 Kimi K3 的全量 on 均为 12/12；GPT-5.5、Claude Opus 4.8、Claude Sonnet 5、Claude Fable 5、Grok 4.5 与 GLM-5.2 的 A/B on 为 8/8。完整横向结果见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 
 ### 维护与迁移
 

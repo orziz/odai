@@ -3,11 +3,11 @@
 
 # odai
 
-`odai` 是面向 AI agent 的通用任务执行框架。
+`odai` 是面向 AI agent 的治理内核驱动的通用任务执行框架。
 
-它帮助 agent 理解真实目标、选择最短充分路径、组合合适的专项能力、行动、验证，并持续推进到真正可交付的结果；不会用僵硬流程替代模型判断。
+它把治理融入执行：对齐真实目标、事实、假设、授权、风险与验收，再选择最短充分路径、组合合适能力、行动、验证，并持续推进到真正可交付的结果；不会用僵硬流程替代模型判断。
 
-一句话：你用 `/odai` 交任务；简单任务直接完成，任务的模糊度、复杂度、风险和领域需求会自动提升或降低处理深度。
+一句话：你用 `/odai` 交任务；简单任务中治理近乎隐身，遇到模糊、复杂、风险或领域需求时再自动提升处理深度。
 
 ## 为什么用它
 
@@ -188,15 +188,15 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 | Claude Sonnet 5 | **8/8** | 5/8 | +66.3% |
 | Claude Fable 5 | **8/8** | 5/8 | +47.1% |
 | Grok 4.5 | **8/8** | 6/8 | +25.9% |
-| DeepSeek V4 Pro | 6/8 | 4/8 | -26.7% |
-| DeepSeek V4 Flash | 5/8 | 3/8 | +106.7% |
-| GLM-5.2 | **8/8** | 4/8 | +4.9% |
+| DeepSeek V4 Pro | 6/8 | 4/8 | -32.9% |
+| DeepSeek V4 Flash | 5/8 | 3/8 | +88.5% |
+| GLM-5.2 | **8/8** | 4/8 | +27.8% |
 | Kimi K3 | **8/8** | 6/8 | +32.6% |
-| Kimi K2.7 Code | 7/8 | 4/8 | +33.9% |
-| MiniMax M3 | 6/8 | 3/8 | >+37.9%* |
+| Kimi K2.7 Code | 7/8 | 4/8 | +49.7% |
+| MiniMax M3 | 6/8 | 3/8 | >+39.6%* |
 
 \* MiniMax C05 没有可用 usage，故这里只能给其余 7 案 token 得出的下界。
 
-GPT-5.5 与 Grok 4.5 的全量 on 也均为 12/12。当前题本、evaluation harness 与 canonical skill 已按指纹冻结。评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，分数、失败分布和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
+GPT-5.5、Grok 4.5 与 Kimi K3 的全量 on 均为 12/12。当前题本、evaluation harness 与 canonical skill 已按指纹冻结。评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，分数、失败分布和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 
 欢迎 star，也欢迎 PR。

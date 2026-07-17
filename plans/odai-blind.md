@@ -22,6 +22,28 @@ node scripts/odai-blind-harness.mjs \
 
 `--arm bare` 表示无 skill 基线；`--arm NAME=PATH` 可指向单个含 `SKILL.md` 的目录，也可指向包含多个 skill 的仓库，脚本会递归发现技能目录。
 
+`--arm NAME=bare` 用于保留某个匿名候选席位，但明确记录该体系对当前 case 没有对应 skill。比较非统一技能集时，应按 case 只提供候选自己声明适用的最小 skill 或组合；不得把整个工具箱塞给 runner 碰运气。
+
+## 当前同类横评候选
+
+- odai r7：canonical `skills/odai`。
+- obra/superpowers：`d884ae04edebef577e82ff7c4e143debd0bbec99`。
+- mattpocock/skills：`9603c1cc8118d08bc1b3bf34cf714f62178dea3b`。
+- NeoLabHQ/context-engineering-kit：`a0bfff1938624ee71b9eeba641d77729ab4f84f6`。
+- bare：不提供候选 skill，只保留相同宿主与模型能力。
+
+非统一技能集按 case 匹配如下；空缺表示该体系没有直接对应 skill，以具名 bare 席位参赛：
+
+| Case | odai | Superpowers | mattpocock/skills | Context Kit |
+|---|---|---|---|---|
+| C1 精确局部修改 | `odai` | `verification-before-completion` | `code-review`、`implement`、`tdd` | `implement-task`、`test-driven-development` |
+| C2 主观反馈无基线 | `odai` | `brainstorming` | `grill-me`、`grilling` | `brainstorm` |
+| C3 用户给错根因与修法 | `odai` | `systematic-debugging`、`test-driven-development`、`verification-before-completion` | `diagnosing-bugs`、`tdd` | `root-cause-tracing`、`test-driven-development` |
+| C4 生产授权边界 | `odai` | — | — | — |
+| C5 验收真实性 | `odai` | `verification-before-completion` | — | — |
+
+映射只依据各候选 skill 的公开描述冻结，不得根据运行结果增删技能。
+
 检查以下 dry-run 产物：
 
 - `protocol.json`：候选、模型、用例、skill 指纹和运行参数。
@@ -51,6 +73,16 @@ node scripts/odai-blind-harness.mjs \
 
 `--judge-only` 读取现有 `record.json`，不会重新执行候选。
 
+只需根据冻结 runner 与既有裁决重建统计和报告时：
+
+```bash
+node scripts/odai-blind-harness.mjs \
+  --report-only \
+  --out /private/tmp/odai-blind-next
+```
+
+`--report-only` 不调用 runner 或 judge。runner token 按 CLI 的 `input_tokens + output_tokens` 统计；`cached_input_tokens` 是 input 的子集，不重复相加。
+
 ## 常用参数
 
 - `--cases C1,C4`：只选择部分 case。
@@ -58,6 +90,7 @@ node scripts/odai-blind-harness.mjs \
 - `--concurrency N`：runner 并发数。
 - `--runner-model` / `--runner-effort`：runner 模型与 reasoning effort。
 - `--judge-model` / `--judge-effort`：judge 模型与 reasoning effort。
+- `--report-only`：用既有 runner 与裁决重建统计，不调用模型。
 - `--timeout` / `--judge-timeout`：单格超时秒数。
 - `--runner-sandbox`：runner sandbox。
 - `--codex-command`：指定 Codex 可执行文件。

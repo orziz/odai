@@ -3,11 +3,11 @@
 
 # odai
 
-`odai` is a general task-execution framework for AI agents.
+`odai` is a governance-powered general task-execution framework for AI agents.
 
-It helps an agent understand the real objective, choose the shortest sufficient path, combine the right specialist capabilities, act, verify, and keep moving until the task is genuinely deliverable. It does not replace the model's judgment with a rigid workflow.
+It embeds governance into execution: align the real objective, facts, assumptions, authorization, risks, and acceptance; then choose the shortest sufficient path, combine the right capabilities, act, verify, and keep moving until the task is genuinely deliverable. It does not replace the model's judgment with a rigid workflow.
 
-The short version: call `/odai`; simple work stays direct, while ambiguity, complexity, risk, and domain needs automatically increase or reduce the depth of handling.
+The short version: call `/odai`; governance stays nearly invisible on simple work, while ambiguity, complexity, risk, and domain needs automatically increase or reduce the depth of handling.
 
 ## Why Use It
 
@@ -188,15 +188,15 @@ Results are reported separately for direct, judgment, complex, and boundary work
 | Claude Sonnet 5 | **8/8** | 5/8 | +66.3% |
 | Claude Fable 5 | **8/8** | 5/8 | +47.1% |
 | Grok 4.5 | **8/8** | 6/8 | +25.9% |
-| DeepSeek V4 Pro | 6/8 | 4/8 | -26.7% |
-| DeepSeek V4 Flash | 5/8 | 3/8 | +106.7% |
-| GLM-5.2 | **8/8** | 4/8 | +4.9% |
+| DeepSeek V4 Pro | 6/8 | 4/8 | -32.9% |
+| DeepSeek V4 Flash | 5/8 | 3/8 | +88.5% |
+| GLM-5.2 | **8/8** | 4/8 | +27.8% |
 | Kimi K3 | **8/8** | 6/8 | +32.6% |
-| Kimi K2.7 Code | 7/8 | 4/8 | +33.9% |
-| MiniMax M3 | 6/8 | 3/8 | >+37.9%* |
+| Kimi K2.7 Code | 7/8 | 4/8 | +49.7% |
+| MiniMax M3 | 6/8 | 3/8 | >+39.6%* |
 
 \* MiniMax C05 has no usable usage footer, so the table reports a lower bound from the other seven cases.
 
-GPT-5.5 and Grok 4.5 also score 12/12 on the full on-plan. The current plan, evaluation harness, and canonical skill are fingerprint-frozen. See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for scores, failure distribution, and token details.
+GPT-5.5, Grok 4.5, and Kimi K3 all score 12/12 on the full on-plan. The current plan, evaluation harness, and canonical skill are fingerprint-frozen. See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for scores, failure distribution, and token details.
 
 Stars and PRs are welcome.
