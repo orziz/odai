@@ -110,21 +110,21 @@ assert.equal(skillPack.name, "odai");
 assert.ok(skillPack.entryText.includes("name: odai"));
 assert.ok(skillPack.entryText.includes("description:"));
 assert.equal(skillPack.entrySha256, sha256(skillPack.entryText));
-assert.ok(skillPack.supportFiles.includes("references/modules/dao.md"));
+assert.ok(skillPack.supportFiles.includes("references/dao/authority.md"));
 const skillFreshnessRoot = await mkdtemp(path.join(tmpdir(), "odai-cli-skill-freshness-"));
-await mkdir(path.join(skillFreshnessRoot, "skills", "odai", "references", "modules"), { recursive: true });
+await mkdir(path.join(skillFreshnessRoot, "skills", "odai", "references", "dao"), { recursive: true });
 await writeFile(
   path.join(skillFreshnessRoot, "skills", "odai", "SKILL.md"),
   "---\nname: odai\n---\n\nfirst skill marker\n",
   "utf8",
 );
 await writeFile(
-  path.join(skillFreshnessRoot, "skills", "odai", "references", "modules", "dao.md"),
-  "# dao\nfirst reference marker\n",
+  path.join(skillFreshnessRoot, "skills", "odai", "references", "dao", "authority.md"),
+  "# authority\nfirst reference marker\n",
   "utf8",
 );
 const firstSkillPack = await loadSkillPack({ repoRoot: skillFreshnessRoot });
-const firstPromptPack = await firstSkillPack.render({ references: ["references/modules/dao.md"] });
+const firstPromptPack = await firstSkillPack.render({ references: ["references/dao/authority.md"] });
 assert.ok(firstPromptPack.includes("first skill marker"));
 assert.ok(firstPromptPack.includes("first reference marker"));
 await writeFile(
@@ -133,7 +133,7 @@ await writeFile(
   "utf8",
 );
 const secondSkillPack = await loadSkillPack({ repoRoot: skillFreshnessRoot });
-const secondPromptPack = await secondSkillPack.render({ references: ["references/modules/dao.md"] });
+const secondPromptPack = await secondSkillPack.render({ references: ["references/dao/authority.md"] });
 assert.ok(secondPromptPack.includes("second skill marker"));
 assert.ok(!secondPromptPack.includes("first skill marker"));
 assert.notEqual(secondSkillPack.entrySha256, firstSkillPack.entrySha256);
@@ -143,13 +143,13 @@ assert.equal(packageFallbackSkillPack.root, path.join(repoRoot, "skills", "odai"
 assert.equal(packageFallbackSkillPack.entrySha256, skillPack.entrySha256);
 assert.deepEqual(packageFallbackSkillPack.supportFiles, skillPack.supportFiles);
 const packageFallbackPromptPack = await packageFallbackSkillPack.render({
-  references: ["references/modules/dao.md", "references/dao/interaction-contract.md"],
+  references: ["references/dao/authority.md", "references/dao/verification.md"],
 });
-const rootInteractionContract = await readFile(
-  path.join(repoRoot, "skills", "odai", "references", "dao", "interaction-contract.md"),
+const rootVerification = await readFile(
+  path.join(repoRoot, "skills", "odai", "references", "dao", "verification.md"),
   "utf8",
 );
-assert.ok(packageFallbackPromptPack.includes(rootInteractionContract.trimEnd()));
+assert.ok(packageFallbackPromptPack.includes(rootVerification.trimEnd()));
 
 const packageManifest = JSON.parse(await readFile(path.join(repoRoot, "cli", "package.json"), "utf8"));
 assert.equal(packageManifest.name, "odai-cli");

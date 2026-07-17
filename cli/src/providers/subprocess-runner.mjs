@@ -64,6 +64,16 @@ export function runCommandAsync(command, args = [], options = {}) {
       });
     });
 
+    child.stdin?.on("error", (error) => {
+      // A short-lived command may exit before Node finishes writing stdin.
+      // Its close event still carries the authoritative command result.
+      if (error?.code === "EPIPE" || error?.code === "ERR_STREAM_DESTROYED") return;
+      finish({
+        status: 1,
+        stderr: error?.message || String(error),
+      });
+    });
+
     if (options.input !== undefined) {
       child.stdin?.end(options.input);
     } else {

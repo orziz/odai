@@ -15,11 +15,13 @@ import { compressConversationContext, runMockTask } from "../../src/core/run-tas
 import { buildTranscriptCompactContext } from "../../src/core/transcript-store.mjs";
 import { validateProvider, assertProvider } from "../../src/orchestrator/provider-contract.mjs";
 import { createMockProvider } from "../../src/providers/mock-provider.mjs";
+import { runCommandAsync } from "../../src/providers/subprocess-runner.mjs";
 import { EvidenceLedger } from "../../src/runtime/evidence-ledger.mjs";
 import { ToolDispatcher } from "../../src/runtime/tool-dispatcher.mjs";
 import { SessionState } from "../../src/core/session-state.mjs";
 import { prepareProviderInput } from "../../src/runtime/provider-session.mjs";
 import { buildNextTaskContext } from "../../src/core/interactive/session-task.mjs";
+import { describeRuntimeGovernance } from "../../src/core/governance-registry.mjs";
 import { prepareModelIntents, DEFAULT_MAX_MODEL_TOOL_INTENTS } from "../../src/runtime/model-tool-intents.mjs";
 import { parseResumeArgs } from "../../src/core/continue-run.mjs";
 import {
@@ -30,10 +32,17 @@ import {
   RESERVED_SLASH_COMMANDS,
 } from "../../src/core/skill-discovery.mjs";
 import { composeTaskPromptPack, loadSkillPack } from "../../src/core/skill-pack.mjs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 process.env.ODAI_LANG = "en";
+
+// Node 20 can emit EPIPE when a short-lived child exits before stdin is flushed.
+const shortLivedCommand = await runCommandAsync(process.execPath, ["--version"], {
+  input: "x".repeat(1024 * 1024),
+});
+assert.equal(shortLivedCommand.status, 0);
+assert.match(shortLivedCommand.stdout, /^v\d+/);
 
 // --- agent-control helpers ---
 assert.deepEqual(
@@ -70,19 +79,45 @@ assert.equal(envelope.toolIntents?.[0]?.profile, "challenger");
 
 // --- skill references on demand (tight signals only) ---
 const baseline = selectSkillReferences({ task: "ping" });
-assert.ok(baseline.includes("references/modules/dao.md"));
-assert.ok(baseline.includes("references/dao/interaction-contract.md"));
-assert.equal(baseline.includes("references/modules/implement-code.md"), false);
+assert.ok(baseline.includes("references/dao/authority.md"));
+assert.ok(baseline.includes("references/dao/verification.md"));
+assert.equal(baseline.includes("references/capabilities/implement-code.md"), false);
 
 // broad nouns alone must NOT bloat skill pack
-assert.equal(selectSkillReferences({ task: "看看代码和测试" }).includes("references/modules/implement-code.md"), false);
-assert.equal(selectSkillReferences({ task: "plan next steps" }).includes("references/modules/feature-plan.md"), false);
+assert.equal(selectSkillReferences({ task: "看看代码和测试" }).includes("references/capabilities/implement-code.md"), false);
+assert.equal(selectSkillReferences({ task: "plan next steps" }).includes("references/capabilities/feature-plan.md"), false);
 
 const implementRefs = selectSkillReferences({ task: "按 implement-code 落地实现这个修复" });
-assert.ok(implementRefs.includes("references/modules/implement-code.md"));
+assert.ok(implementRefs.includes("references/capabilities/implement-code.md"));
 
 const reviewRefs = selectSkillReferences({ task: "请 code review 这个 diff" });
-assert.ok(reviewRefs.includes("references/modules/review-sslb.md"));
+assert.ok(reviewRefs.includes("references/capabilities/review-sslb.md"));
+
+const routingPack = await loadSkillPack({ repoRoot });
+const referenceRouteCases = [
+  ["写 feature-plan 规格规划", "agent_loop", "references/capabilities/feature-plan.md"],
+  ["整理 design-spec 设计说明", "agent_loop", "references/capabilities/design-spec.md"],
+  ["做游戏策划和关卡设计", "agent_loop", "references/domains/interactive-systems.md"],
+  ["整理 project-guide 项目说明", "agent_loop", "references/recipes/project-guide.md"],
+  ["写日报和 commit message", "agent_loop", "references/recipes/ribao.md"],
+  ["下放 agent 做独立挑战", "agent_loop", "references/dao/coordination.md"],
+  ["启动多模型合议模式", "agent_loop", "references/techniques/consensus.md"],
+  ["处理冻结范围", "subagent", "references/dao/coordination.md"],
+];
+for (const [task, mode, expectedReference] of referenceRouteCases) {
+  const references = selectSkillReferences({ task, mode });
+  assert.ok(references.includes(expectedReference), `${task} should select ${expectedReference}`);
+  assert.ok(routingPack.supportFiles.includes(expectedReference), `${expectedReference} must exist in canonical skill`);
+  await routingPack.render({ references });
+}
+
+const governanceSourceRoot = path.resolve(routingPack.root, "..", "..");
+for (const entry of describeRuntimeGovernance().entries) {
+  for (const sourceRef of entry.sourceRefs) {
+    const [sourcePath] = sourceRef.split(":");
+    await access(path.join(governanceSourceRoot, sourcePath));
+  }
+}
 
 // --- provider contract ---
 const mock = createMockProvider("mock-main", ["reasoning", "code"]);
@@ -254,7 +289,7 @@ const completeTask = await runMockTask({
 assert.equal(completeTask.status, "ready");
 assert.equal(completeTask.agentLoop?.stopReason, "provider_complete");
 assert.ok(Array.isArray(completeTask.skill?.references));
-assert.ok(completeTask.skill.references.includes("references/modules/dao.md"));
+assert.ok(completeTask.skill.references.includes("references/dao/authority.md"));
 
 const highReasoning = await runMockTask({
   repoRoot,
@@ -493,7 +528,7 @@ const external = await (await import("../../src/core/skill-discovery.mjs")).load
 });
 const composed = await composeTaskPromptPack({
   odaiPack,
-  odaiReferences: ["references/modules/dao.md"],
+  odaiReferences: ["references/dao/authority.md"],
   externalSkills: [external],
 });
 assert.ok(composed.promptPack.includes("odai skill entry"));
