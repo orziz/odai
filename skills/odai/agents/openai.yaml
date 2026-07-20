@@ -1,4 +1,4 @@
 interface:
   display_name: "odai"
-  short_description: "看得清、拿得稳、打得准、落得实、守得住、走得远的通用执行框架"
-  default_prompt: "使用 $odai 接住这个任务：明确低风险内容直接完成，遇到歧义、错误前提、复杂度或风险再按需展开，并验证到可交付结果。"
+  short_description: "事由人定，路由实证；法随势变，成由验定；止于边界，成事而不妄为"
+  default_prompt: "使用 $odai 接住并完成这个任务：事由用户定义，以事实选择最轻充分路径，推进至可验证结果，止于授权与底线。"

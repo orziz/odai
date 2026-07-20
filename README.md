@@ -21,23 +21,26 @@ It helps an agent:
 - avoid claiming that something was tested, delegated, reviewed, or verified when it was not
 - combine specialist skills and domain guidance only when the task needs them, instead of stuffing every rule into every turn
 
-## Governance Constitution
+## The Dao of odai
 
-These traditions are operational lenses in one flow, not separate roles, agents, or sources of authority:
+**The user defines the task; evidence determines the route; methods adapt to circumstances; verification determines completion; boundaries determine where to stop—get the task done, without acting presumptuously.**
 
-| Lens | Operational meaning |
-|---|---|
-| Dao | Intervene as little as the task allows; methods follow the situation instead of becoming doctrine |
-| Confucian | Keep names and reality aligned: goals, means, facts, hypotheses, authorization, implementation, and verification are distinct |
-| Heart-mind | Once understanding is sufficient, act and let real results test the judgment |
-| Military | Read the situation, choose the highest-value move, and change direction when evidence stops improving |
-| Legalist | Protect host, permission, safety, user decisions, and truthfulness boundaries |
+This is not a collage of philosophical schools. It is one decision rule:
 
-The model remains a strategist, balancing offense and defense: surface the real objective, adjacent value, best route, second-order effects, risks, and fallbacks without silently expanding authorization or replacing the user's decision.
+- **Get the task done**: advance the user's task to a verified, deliverable result, while surfacing counterexamples, risks, and a better route when they would change the outcome.
+- **Do not act presumptuously**: do not bend facts, user decisions, or hard boundaries; do not conclude without evidence, exceed authorization, invent work, or treat a discovery as permission to implement it.
 
-The operating standard is: **see clearly, hold steadily, strike accurately, land real results, defend what matters, and build for the long run**.
+The model remains a strategist rather than a passive executor, but initiative is judged by net value. Speed, quality, stability, cost, breadth, and practicality are outcomes to balance against the user's goal and the evidence—not a flat list of slogans, and never substitutes for a real result.
 
-The product goal is to make work **faster, more accurate, better, steadier, cheaper, lighter, broader, more adaptive, more useful, and more practical**—without treating process, file count, or benchmark scores as substitutes for real value.
+### Operating Standard
+
+**See clearly, hold steadily, strike accurately, land real results, defend what matters, and build for the long run.**
+
+Understand the real objective, facts, and gaps; hold authorization, boundaries, and risk steady; choose the narrowest sufficient path; produce a verifiable deliverable; protect user decisions, system safety, and truth; and leave a result that survives use, maintenance, and change.
+
+### Product Goal
+
+Make agents **faster, more accurate, better, steadier, cheaper, lighter, broader, more adaptive, more useful, and more practical**. These are not independent process targets. They are product outcomes balanced around the task's net value; process, file count, tokens, and benchmark scores never substitute for getting the real task done.
 
 ## 30-Second Start
 
@@ -110,25 +113,24 @@ The internal structure is organized by responsibility, not by mandatory stages:
 
 | Layer | Purpose |
 | --- | --- |
-| Kernel | Constitution, product goals, adaptive progression, minimum boundaries, and loading map |
-| `dao/` | Authority, verification, continuity, coordination, and host / project composition |
-| `capabilities/` | Planning, design, diagnosis, code implementation, and review |
-| `recipes/` | Named outputs such as project guides and daily / commit / PR summaries |
+| Kernel | Core principle, adaptive progression, minimum boundaries, and loading map |
+| `dao/` | Authority, verification, continuity, and truthful use of host skills, project rules, and agents |
+| `capabilities/` | Planning, design, evidence-led diagnosis and implementation, and review |
 | `domains/` | Optional UI and real-time interaction craft, inferred from the task |
-| `techniques/` | Optional heavy methods such as consensus, long audits, and full SSLB review |
+| `techniques/` | Optional heavy methods for consensus and formal or convergent review |
 
-Named entry points remain available for compatibility and direct use:
+The internal capabilities are deliberately plain and task-oriented:
 
 | Name | Use it for |
 | --- | --- |
-| `feature-plan` | Cross-domain specs, systems, tradeoffs, numbers, content, non-code diagnosis |
-| `design-spec` | Cross-domain flows, states, interaction, visuals, brand and asset direction |
-| `implement-code` | Code changes, bug fixes, tests, refactors after scope is clear |
-| `review-sslb` | Structured code review |
-| `project-guide` | READMEs, project rules, AI handoff baselines |
-| `ribao` | Daily reports, commit messages, PR messages |
+| `planning` | Cross-domain specs, systems, tradeoffs, numbers, and content |
+| `design` | Cross-domain flows, states, interaction, visuals, brand and asset direction |
+| `delivery` | Evidence-led diagnosis, code changes, tests, and implementation |
+| `review` | Findings-first review of code, diffs, repositories, UI, or design |
 
-`feature-plan` and `design-spec` infer the domain from task and repository evidence. Game work is one supported domain, not a separate package the user has to select. Office artifacts use the host's document, spreadsheet, presentation, PDF, browser, or image skill when available; `odai` keeps responsibility for intent, progress, and truthful closure.
+Planning and design infer the domain from task and repository evidence. Game work is one supported domain, not a separate package the user has to select. Office artifacts use the host's document, spreadsheet, presentation, PDF, browser, or image skill when available; `odai` keeps responsibility for intent, progress, and truthful closure.
+
+README updates, reports, commit messages, and similar outputs follow the task and repository conventions directly. They do not need a dedicated odai module.
 
 ## Good Prompts
 
@@ -139,15 +141,15 @@ Use the level of detail you actually have:
 ```
 
 ```text
-/odai review-sslb review the current diff.
+/odai review the current diff. Report findings first and do not modify files.
 ```
 
 ```text
-/odai project-guide refresh this repository README. Remove outdated screenshots and keep the install path clear.
+/odai refresh this repository README. Remove outdated screenshots and keep the install path clear.
 ```
 
 ```text
-/odai start with 道. The task is user-facing and I care about not changing behavior without approval.
+/odai this task is user-facing. Do not change behavior without approval; verify the proposed route first.
 ```
 
 ## Install Options
@@ -177,26 +179,21 @@ Canonical source lives in `skills/`. Distribution is handled through the [skills
 
 ## Evaluation
 
-The current `2026-07-16-r7` skill/evaluation release is frozen at 12 realistic full-plan tasks and an 8-task paired A/B subset. This repository label is independent of the optional CLI package version. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.
+The current verified baseline (2026-07-20) contains 12 realistic full-plan tasks and an 8-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.
 
-Results are reported separately for direct, judgment, complex, and boundary work. The direct band measures whether odai stays nearly invisible: no quality regression, no support-file reads, and no material token overhead. The other bands measure whether extra work produces observable gains. A perfect treatment score alone is not evidence of value.
+Each result first receives a 0-4 completion score, then the predefined case weight is applied. The full plan is worth 88 points and the A/B subset 56. Direct, judgment, complex, and boundary work are reported separately, while severe scope, production-risk, and false-verification violations have hard score caps. A perfect treatment score alone is not evidence of value; it must be read against the same model's control result and cost.
 
-| Runner | with odai | without odai | runner token change |
-|---|---:|---:|---:|
-| GPT-5.5 | **8/8** | 3/8 | +19.4% |
-| Claude Opus 4.8 | **8/8** | 5/8 | +34.7% |
-| Claude Sonnet 5 | **8/8** | 5/8 | +66.3% |
-| Claude Fable 5 | **8/8** | 5/8 | +47.1% |
-| Grok 4.5 | **8/8** | 6/8 | +25.9% |
-| DeepSeek V4 Pro | 6/8 | 4/8 | -32.9% |
-| DeepSeek V4 Flash | 5/8 | 3/8 | +88.5% |
-| GLM-5.2 | **8/8** | 4/8 | +27.8% |
-| Kimi K3 | **8/8** | 6/8 | +32.6% |
-| Kimi K2.7 Code | 7/8 | 4/8 | +49.7% |
-| MiniMax M3 | 6/8 | 3/8 | >+39.6%* |
+| Runner | full on | A/B on | A/B off | gain | A/B runner tokens on / off |
+|---|---:|---:|---:|---:|---:|
+| GPT-5.6-sol / high | **88/88** | **56/56** | 41/56 | **+15** | 184,940 / 164,275 (+12.6%) |
+| Claude Opus 4.8 | 83/88 | **53/56** | 42/56 | **+11** | 1,201,072 / 968,460 (+24.0%) |
+| Grok 4.5 | **88/88** | **56/56** | 37/56 | **+19** | 821,671 / 631,716 (+30.1%) |
+| Qwen 3.8 Max Preview | 85/88 | **55/56** | 46/56 | **+9** | 2,004,644 / 1,773,309 (+13.0%) |
+| Kimi K3 | 77/88 | 49/56 | **50/56** | -1 | 1,211,628 / 1,113,107 (+8.9%) |
+| MiMo 2.5 Pro | 68/88 | 42/56 | 33/56 | **+9** | 2,024,644 / 1,334,236 (+51.7%) |
 
-\* MiniMax C05 has no usable usage footer, so the table reports a lower bound from the other seven cases.
+Across six models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. MiMo rises from 33/56 to 42/56 but uses 51.7% more tokens; K3 improves the auxiliary pass count from 7/8 to 8/8 while losing one weighted point. The strongest repeated benefit is C04 production-risk judgment. GPT-5.6-sol / high and Grok score 88/88 on the full plan; all twelve tasks also pass for Opus, Qwen, and K3, while MiMo passes eight.
 
-GPT-5.5, Grok 4.5, and Kimi K3 all score 12/12 on the full on-plan. The current plan, evaluation harness, and canonical skill are fingerprint-frozen. See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for scores, failure distribution, and token details.
+See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the current fingerprint's case scores, gaps, support reads, and token details.
 
 Stars and PRs are welcome.

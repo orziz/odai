@@ -13,16 +13,15 @@ description: 维护本仓库的 skill source、渐进资源结构和相关仓库
 |---|---|
 | 独立公开 skill | `skills/<skill-name>/SKILL.md` |
 | odai 总纲、主流程、核心门、加载地图 | `skills/odai/SKILL.md` |
-| 授权、验证、连续性、协作、外部能力 / 项目叠加 | `skills/odai/references/dao/` |
-| 规划、设计、诊断、代码实施、代码审查 | `skills/odai/references/capabilities/` |
+| 授权、验证、连续性、借力与协作 | `skills/odai/references/dao/` |
+| 规划、设计、诊断与交付、代码审查 | `skills/odai/references/capabilities/` |
 | UI 与实时交互领域工艺 | `skills/odai/references/domains/` |
-| 项目指南、日报、commit / PR 等点名产物 | `skills/odai/references/recipes/` |
 | 条件触发的重型方法 | `skills/odai/references/techniques/` |
 | agent 产物模板 | `skills/odai/assets/` |
 | 宿主 UI 元数据 | `skills/<skill-name>/agents/openai.yaml` |
 | 使用、维护、冻结变更 | `README*`、`MAINTAINING.md`、`CHANGELOG.md` |
 
-`references/modules/`、`references/game-plan/`、`references/game-design/` 和旧模块专属目录已退役，不得作为新落点或兼容别名恢复。游戏需求进入通用 capability 和 `domains/interactive-systems.md`，不再新建独立游戏路由。
+`references/modules/`、`references/game-plan/`、`references/game-design/`、`references/recipes/` 和旧模块专属目录已退役，不得作为新落点或兼容别名恢复。能力文件统一为 `planning / design / delivery / review`；协作与能力组合归 `dao/leverage.md`，重型审查归 `techniques/review-modes.md`。游戏需求进入通用 capability 和 `domains/interactive-systems.md`，不再新建独立游戏路由。
 
 ## 判断新增、修改或退役
 
@@ -47,7 +46,7 @@ description: 维护本仓库的 skill source、渐进资源结构和相关仓库
 2. 规则预算默认不扩张：优先合并、替换、删除或降级旧规则；不为模型波动追加同义句。
 3. 减重是结果而非独立目标。不为过 token 线删除有证据的能力，也不为规避评测增加题本特化句。
 4. 方法论如 SDD / TDD / BDD、agent、合议和正式计划保持条件使用，不因名字单独升级为一级路由。
-5. 宿主和用户权限、真实性、高风险动作门以及用户已追认的精神内核，不走普通规则退役。
+5. 宿主和用户权限、真实性与高风险动作门不得被下位规则绕过；总纲也不无条件豁免，若失败证据显示其反复诱导错误行为，须在维护授权下重审。
 
 ## 文档与冻结同步
 

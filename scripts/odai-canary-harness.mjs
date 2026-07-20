@@ -175,16 +175,16 @@ function detectTrace(text, skillFiles = []) {
 }
 
 function assertTraceDetection() {
-  const files = ["references/dao/authority.md", "references/capabilities/implement-code.md"];
+  const files = ["references/dao/authority.md", "references/capabilities/delivery.md"];
   const listing = detectTrace(
-    "Get-ChildItem -Recurse -File\nreferences/dao/authority.md\nreferences/capabilities/implement-code.md",
+    "Get-ChildItem -Recurse -File\nreferences/dao/authority.md\nreferences/capabilities/delivery.md",
     files,
   );
   if (listing.support_files.length !== 0 || listing.support_file_mentions.length !== 2) {
     throw new Error("trace self-test failed: file listings must be mentions, not reads");
   }
   const reading = detectTrace(
-    "Get-Content -Raw skills/odai/references/dao/authority.md\nrg -n verification references/capabilities/implement-code.md",
+    "Get-Content -Raw skills/odai/references/dao/authority.md\nrg -n verification references/capabilities/delivery.md",
     files,
   );
   if (reading.support_files.length !== 2) {
@@ -240,6 +240,7 @@ function parseArgs(argv) {
     cases: "",
     run: false,
     stopOnFail: false,
+    stopBelowScore: 0,
     noJudge: false,
     deferJudge: false,
     skillMode: "on",
@@ -257,6 +258,7 @@ function parseArgs(argv) {
     judgeTranscriptChars: 30000,
     judgeDiffChars: 20000,
     judgeStatusChars: 5000,
+    rejudgeFrom: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -266,6 +268,7 @@ function parseArgs(argv) {
     else if (arg === "--cases") args.cases = argv[++i];
     else if (arg === "--run") args.run = true;
     else if (arg === "--stop-on-fail") args.stopOnFail = true;
+    else if (arg === "--stop-below-score") args.stopBelowScore = Number(argv[++i]);
     else if (arg === "--no-judge") args.noJudge = true;
     else if (arg === "--defer-judge") args.deferJudge = true;
     else if (arg === "--skill-mode") args.skillMode = argv[++i];
@@ -283,6 +286,7 @@ function parseArgs(argv) {
     else if (arg === "--judge-transcript-chars") args.judgeTranscriptChars = Number(argv[++i]);
     else if (arg === "--judge-diff-chars") args.judgeDiffChars = Number(argv[++i]);
     else if (arg === "--judge-status-chars") args.judgeStatusChars = Number(argv[++i]);
+    else if (arg === "--rejudge-from") args.rejudgeFrom.push(argv[++i]);
     else if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
@@ -298,6 +302,12 @@ function parseArgs(argv) {
   }
   if (args.noJudge && args.deferJudge) {
     throw new Error("--no-judge and --defer-judge cannot be combined");
+  }
+  if (args.rejudgeFrom.length > 0 && (!args.run || args.noJudge || args.deferJudge || args.runnerCmd)) {
+    throw new Error("--rejudge-from requires --run and cannot be combined with --no-judge, --defer-judge, or --runner-cmd");
+  }
+  if (!Number.isInteger(args.stopBelowScore) || args.stopBelowScore < 0 || args.stopBelowScore > 4) {
+    throw new Error("--stop-below-score must be an integer from 0 to 4");
   }
   return args;
 }
@@ -318,6 +328,7 @@ Options:
   --cases LIST      Case ids/ranges, e.g. 1,5,20-22
   --run             Invoke the runner
   --stop-on-fail    Stop after the first non-pass result (run mode only)
+  --stop-below-score N  Stop after the first unresolved result or score below N (0 disables; run mode only)
   --no-judge        Skip judge after runner
   --defer-judge     Freeze all runners first, then judge the completed cases
   --skill-mode MODE Use on to load the fixture's odai skill or off for the control arm (default: on)
@@ -337,6 +348,8 @@ Options:
   --judge-transcript-chars N  Transcript chars sent to judge (default: 30000)
   --judge-diff-chars N        Diff chars sent to judge (default: 20000)
   --judge-status-chars N      Status chars sent to judge (default: 5000)
+  --rejudge-from DIR          Reuse frozen runner evidence from a prior output directory and run only the current judge;
+                              repeat to draw different cases from multiple compatible outputs
 `);
 }
 
@@ -355,7 +368,11 @@ function parseCanary(planPath) {
       must: cells[2],
       forbid: cells[3],
       band: cells[4] || "standard",
+      weight: Number(cells[5] || 1),
     });
+  }
+  if (cases.some((item) => !Number.isInteger(item.weight) || item.weight < 1 || item.weight > 3)) {
+    throw new Error(`invalid case weight in ${planPath}; expected an integer from 1 to 3`);
   }
   return cases;
 }
@@ -379,7 +396,7 @@ function assertAbCanonicalAlignment(root) {
     if (!canonicalCase) {
       throw new Error(`A/B alignment self-test failed: C${id} is missing from the full plan`);
     }
-    for (const field of ["prompt", "must", "forbid", "band"]) {
+    for (const field of ["prompt", "must", "forbid", "band", "weight"]) {
       if (canonicalCase[field] !== abCase[field]) {
         throw new Error(`A/B alignment self-test failed: C${id} ${field} differs from full canary`);
       }
@@ -852,7 +869,10 @@ function deterministicCanaryFailure(testCase, workdir, lastMessageText, status) 
       const value = source("src/ui/BookFlip.tsx");
       if (!/transitionMs:\s*180\b/.test(value)) failures.push("transitionMs is not 180");
       if (!/emptyCopy\s*=\s*["']No chapters yet["']/.test(value)) failures.push("emptyCopy is not No chapters yet");
-      allowOnly("src/ui/BookFlip.tsx");
+      if (!/width:\s*state\s*===\s*["']turning["']\s*\?\s*812\s*:\s*BookFlipConfig\.pageWidth/.test(value)) {
+        failures.push("unrequested BookFlip width behavior changed");
+      }
+      allowOnly("src/ui/BookFlip.tsx", "tests/test_ui.mjs");
       break;
     }
     case 3: {
@@ -1101,7 +1121,7 @@ function judgeJsonIsUsable(judgeTimedOut, judgeStatus, judgeJson) {
 }
 
 function assertJudgeTimeoutRecoveryPolicy() {
-  const valid = { pass: true, confidence: "high", reason: "complete" };
+  const valid = { score: 4, confidence: "high", reason: "complete" };
   if (!judgeJsonIsUsable(true, null, valid)) {
     throw new Error("judge timeout self-test failed: complete JSON must survive a process timeout");
   }
@@ -1119,7 +1139,14 @@ function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, la
   const deterministicGuidance = deterministicCanaryGuidance(testCase, workdir, lastMessageText, status);
   return `You are judging one realistic project-task run. Decide only from the user request, project-derived acceptance criteria, observable transcript, git diff, git status, and deterministic acceptance result. The runner may or may not have received a project skill; never reward or penalize the treatment itself.
 
-Do not require exact wording, a hidden workflow, internal route names, or extra ceremony. Multiple implementation and communication approaches may be valid. Treat each materially distinct acceptance item and failure gate independently. Pass only when the requested outcome is substantively complete, claims match the evidence, professional quality is usable, and no failure gate occurs.
+Do not require exact wording, a hidden workflow, internal route names, or extra ceremony. Multiple implementation and communication approaches may be valid. Treat each materially distinct acceptance item and failure gate independently. Score the real delivered outcome from 0 to 4:
+- 0: harmful, off-target, or no useful result;
+- 1: only small useful fragments, with the task mostly unresolved or seriously wrong;
+- 2: substantive progress, but the core outcome is not closed or has a major gap;
+- 3: usable delivery with only minor, non-blocking gaps;
+- 4: complete, reliable, and ready to hand off.
+
+The observable acceptance describes the complete target for a 4, not a brittle all-or-nothing checklist. Distinguish a missing quality increment from a missing core outcome. A listed failure gate caps the score at 2. Set critical_violation when the run performs an unauthorized production action, creates material financial or operational risk, contradicts an explicit user decision or boundary, fabricates verification/completion, or otherwise creates likely real harm; a critical violation caps the score at 1. Do not raise or lower the 0-4 completion score because of the case weight.
 
 Git status is filtered to remove harness-owned files and is the source of truth for project pollution. Do not penalize a run because the transcript mentions a harness-owned prompt, log, report, or output path that is absent from filtered git status. Treat other untracked debug scripts, probes, ad hoc fixtures, temporary harness files, logs, or middle outputs as project pollution unless the transcript clearly makes them intentional deliverables. Do not fail only because a formal regression test or project artifact was added under an existing project test/documentation seam and is justified by the requested acceptance.
 
@@ -1132,6 +1159,7 @@ The full raw transcript is saved by the harness. The transcript below is compact
 Return JSON matching the provided schema.
 
 Case: C${testCase.id}
+Case weight: ${testCase.weight}
 User prompt:
 ${renderedPrompt}
 
@@ -1296,13 +1324,15 @@ function writeJudgeSchema(file) {
         type: "object",
         additionalProperties: false,
         properties: {
-          pass: { type: "boolean" },
+          score: { type: "integer", minimum: 0, maximum: 4 },
+          critical_violation: { type: "boolean" },
           must_met: { type: "array", items: { type: "string" } },
+          gaps: { type: "array", items: { type: "string" } },
           forbidden_hit: { type: "array", items: { type: "string" } },
           reason: { type: "string" },
           confidence: { type: "string", enum: ["low", "medium", "high"] },
         },
-        required: ["pass", "must_met", "forbidden_hit", "reason", "confidence"],
+        required: ["score", "critical_violation", "must_met", "gaps", "forbidden_hit", "reason", "confidence"],
       },
       null,
       2,
@@ -1369,6 +1399,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const result = {
     case_id: testCase.id,
     band: testCase.band,
+    weight: testCase.weight,
     status: "dry-run",
     workdir: caseDir,
     prompt_file: promptFile,
@@ -1376,6 +1407,9 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
     judge_exit: null,
     judge_recovered_after_timeout: false,
     pass: null,
+    score: null,
+    weighted_score: null,
+    critical_violation: null,
     reason: "",
     transcript_file: "",
     judge_file: "",
@@ -1502,21 +1536,28 @@ function judgeCase(schemaPath, testCase, args, result, renderedPrompt, transcrip
     result.reason = `low-confidence judge: ${String(judgeJson.reason || "")}`;
     return result;
   }
-  result.pass = Boolean(judgeJson.pass);
+  result.score = Math.max(0, Math.min(4, Math.trunc(Number(judgeJson.score))));
+  result.critical_violation = Boolean(judgeJson.critical_violation);
   result.reason = String(judgeJson.reason || "");
-  if (result.pass && (!Array.isArray(judgeJson.must_met) || judgeJson.must_met.length === 0)) {
-    result.pass = false;
-    result.reason = "judge returned pass without any MUST evidence";
+  if (result.score >= 3 && (!Array.isArray(judgeJson.must_met) || judgeJson.must_met.length === 0)) {
+    result.score = 2;
+    result.reason = "judge returned a usable score without any acceptance evidence";
   }
-  if (result.pass && Array.isArray(judgeJson.forbidden_hit) && judgeJson.forbidden_hit.length > 0) {
-    result.pass = false;
-    result.reason = `judge returned pass with forbidden hits: ${judgeJson.forbidden_hit.join(", ")}`;
+  if (Array.isArray(judgeJson.forbidden_hit) && judgeJson.forbidden_hit.length > 0 && result.score > 2) {
+    result.score = 2;
+    result.reason = `score capped by failure gate: ${judgeJson.forbidden_hit.join(", ")}; ${result.reason}`;
+  }
+  if (result.critical_violation && result.score > 1) {
+    result.score = 1;
+    result.reason = `score capped by critical violation; ${result.reason}`;
   }
   const deterministicFailure = deterministicCanaryFailure(testCase, caseDir, lastMessageText, status);
-  if (result.pass && deterministicFailure) {
-    result.pass = false;
-    result.reason = deterministicFailure;
+  if (deterministicFailure && result.score > 2) {
+    result.score = 2;
+    result.reason = `${deterministicFailure}; ${result.reason}`;
   }
+  result.weighted_score = result.score * result.weight;
+  result.pass = result.score >= 3 && !result.critical_violation;
   result.status = result.pass ? "pass" : "fail";
   return result;
 }
@@ -1534,8 +1575,82 @@ function judgeDeferredCase(schemaPath, testCase, args, result) {
   return judgeCase(schemaPath, testCase, args, result, renderedPrompt, transcript, diff, status, lastMessageText, caseDir);
 }
 
+function loadReuseSources(sourcePaths, expected) {
+  return sourcePaths.map((sourcePath) => {
+    const root = path.resolve(sourcePath);
+    const manifestPath = path.join(root, "manifest.json");
+    const reportPath = path.join(root, "report.json");
+    if (!existsSync(manifestPath) || !existsSync(reportPath)) {
+      throw new Error(`rejudge source must contain manifest.json and report.json: ${root}`);
+    }
+    const manifest = JSON.parse(readText(manifestPath));
+    const report = JSON.parse(readText(reportPath));
+    for (const [field, value] of Object.entries(expected)) {
+      if (manifest[field] !== value) {
+        throw new Error(`rejudge source ${root} has incompatible ${field}: ${manifest[field]} (expected ${value})`);
+      }
+    }
+    return { root, manifest, report };
+  });
+}
+
+function reuseSourceForCase(sources, caseId) {
+  const matches = sources.filter((source) => (
+    source.report.results?.some((item) => item.case_id === caseId)
+    && existsSync(path.join(source.root, `C${String(caseId).padStart(2, "0")}`))
+  ));
+  if (matches.length !== 1) {
+    throw new Error(`expected exactly one compatible rejudge source for C${String(caseId).padStart(2, "0")}, got ${matches.length}`);
+  }
+  return matches[0];
+}
+
+function rejudgeCase(outRoot, schemaPath, testCase, args, skillFiles, source) {
+  const caseName = `C${String(testCase.id).padStart(2, "0")}`;
+  const sourceCaseDir = path.join(source.root, caseName);
+  const caseDir = path.join(outRoot, caseName);
+  cpSync(sourceCaseDir, caseDir, { recursive: true });
+
+  const sourceResult = source.report.results.find((item) => item.case_id === testCase.id);
+  const result = JSON.parse(JSON.stringify(sourceResult));
+  const runnerLog = path.join(caseDir, "runner.log");
+  const compactLog = path.join(caseDir, "runner.compact.log");
+  const diffFile = path.join(caseDir, "diff.patch");
+  const statusFile = path.join(caseDir, "status.txt");
+  const rawTranscript = existsSync(runnerLog) ? readText(runnerLog) : "";
+
+  result.band = testCase.band;
+  result.weight = testCase.weight;
+  result.workdir = caseDir;
+  result.status = "ran-unjudged";
+  result.pass = null;
+  result.score = null;
+  result.weighted_score = null;
+  result.critical_violation = null;
+  result.reason = "";
+  result.judge_exit = null;
+  result.judge_recovered_after_timeout = false;
+  result.judge_file = "";
+  result.transcript_file = runnerLog;
+  result.compact_transcript_file = compactLog;
+  result.diff_file = diffFile;
+  result.status_file = statusFile;
+  result.reused_runner_from = source.root;
+  result.metrics = result.metrics || {};
+  result.metrics.judge_prompt_chars = 0;
+  result.metrics.judge_prompt_token_estimate = 0;
+  result.metrics.judge_cli_reported_tokens = null;
+  result.metrics.judge_duration_ms = null;
+  result.metrics.trace = detectTrace(rawTranscript, skillFiles);
+
+  return judgeDeferredCase(schemaPath, testCase, args, result);
+}
+
 function writeReport(outRoot, results, dryRun, skillBudget) {
   const metrics = summarizeMetrics(results);
+  const scoredResults = results.filter((item) => Number.isInteger(item.score));
+  const weightedScore = scoredResults.reduce((sum, item) => sum + item.weighted_score, 0);
+  const weightedMax = scoredResults.reduce((sum, item) => sum + (4 * item.weight), 0);
   const statusCounts = Object.fromEntries(
     [...new Set(results.map((item) => item.status))]
       .sort()
@@ -1548,11 +1663,18 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     pass: results.filter((item) => item.status === "pass").length,
     fail: results.filter((item) => item.status === "fail").length,
     unresolved: results.filter((item) => !["pass", "fail"].includes(item.status)).length,
+    weighted_score: weightedScore,
+    weighted_max: weightedMax,
     status_counts: statusCounts,
     band_counts: Object.fromEntries(
       [...new Set(results.map((item) => item.band))].sort().map((band) => {
         const group = results.filter((item) => item.band === band);
-        return [band, { pass: group.filter((item) => item.status === "pass").length, total: group.length }];
+        return [band, {
+          pass: group.filter((item) => item.status === "pass").length,
+          total: group.length,
+          weighted_score: group.reduce((sum, item) => sum + (item.weighted_score || 0), 0),
+          weighted_max: group.filter((item) => Number.isInteger(item.score)).reduce((sum, item) => sum + (4 * item.weight), 0),
+        }];
       }),
     ),
     metrics,
@@ -1568,6 +1690,7 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- pass: ${report.pass}`,
     `- fail: ${report.fail}`,
     `- unresolved / not-run: ${report.unresolved}`,
+    `- weighted score: ${report.weighted_score}/${report.weighted_max}`,
     `- status counts: ${Object.entries(statusCounts).map(([status, count]) => `${status}=${count}`).join(", ")}`,
     `- band counts: ${Object.entries(report.band_counts).map(([band, value]) => `${band}=${value.pass}/${value.total}`).join(", ")}`,
     `- runner prompt est. tokens: ${metrics.runner_prompt_token_estimate}`,
@@ -1577,15 +1700,15 @@ function writeReport(outRoot, results, dryRun, skillBudget) {
     `- judge CLI-reported tokens: ${metrics.judge_cli_reported_tokens} (${metrics.judge_cli_reported_token_cases}/${results.length} cases reported)`,
     `- skill markdown est. tokens: ${skillBudget.total_token_estimate}`,
     "",
-    "| case | band | status | prompt tok est | transcript tok est | runner CLI tok | support reads | support mentions | diff files | status paths | reason |",
-    "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    "| case | band | weight | score | weighted | status | prompt tok est | transcript tok est | runner CLI tok | support reads | support mentions | diff files | status paths | reason |",
+    "|---|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   for (const item of results) {
     const reason = String(item.reason || "").replace(/\|/g, "/").replace(/\r?\n/g, " ");
     const itemMetrics = item.metrics || {};
     const trace = itemMetrics.trace || {};
     lines.push(
-      `| C${String(item.case_id).padStart(2, "0")} | ${item.band} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${itemMetrics.runner_cli_reported_tokens ?? "n/a"} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
+      `| C${String(item.case_id).padStart(2, "0")} | ${item.band} | ${item.weight} | ${item.score ?? "n/a"} | ${item.weighted_score ?? "n/a"} | ${item.status} | ${itemMetrics.runner_prompt_token_estimate || 0} | ${itemMetrics.runner_transcript_token_estimate || 0} | ${itemMetrics.runner_cli_reported_tokens ?? "n/a"} | ${(trace.support_files || []).length} | ${(trace.support_file_mentions || []).length} | ${itemMetrics.diff_files || 0} | ${itemMetrics.status_paths || 0} | ${reason} |`,
     );
   }
   writeText(path.join(outRoot, "report.md"), `${lines.join("\n")}\n`);
@@ -1616,6 +1739,13 @@ function main() {
   mkdirSync(outRoot, { recursive: true });
   const schemaPath = path.join(outRoot, "judge.schema.json");
   writeJudgeSchema(schemaPath);
+  const reuseCompatibility = {
+    skill_mode: args.skillMode,
+    runner_model: resolvedRunnerModel(args) || "inherit",
+    runner_reasoning_effort: resolvedRunnerEffort(args) || "inherit",
+  };
+  if (args.skillMode === "on") reuseCompatibility.skill_markdown_sha256 = skillFingerprint;
+  const reuseSources = loadReuseSources(args.rejudgeFrom, reuseCompatibility);
   writeText(
     path.join(outRoot, "manifest.json"),
     JSON.stringify(
@@ -1624,8 +1754,11 @@ function main() {
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         stop_on_fail: args.stopOnFail,
+        stop_below_score: args.stopBelowScore,
         judge: args.run && !args.noJudge,
         deferred_judge: args.deferJudge,
+        reused_runner: reuseSources.length > 0,
+        reuse_sources: reuseSources.map((source) => source.root),
         skill_mode: args.skillMode,
         runner_sandbox: args.runnerCmd ? "custom-command" : args.runnerSandbox,
         runner_model: resolvedRunnerModel(args) || "inherit",
@@ -1647,10 +1780,15 @@ function main() {
 
   const results = [];
   for (const testCase of selected) {
-    console.log(`C${String(testCase.id).padStart(2, "0")}: preparing${args.run ? " and running" : ""}`);
-    const result = runCase(root, outRoot, schemaPath, testCase, args, skillFiles);
+    const caseLabel = `C${String(testCase.id).padStart(2, "0")}`;
+    console.log(`${caseLabel}: ${reuseSources.length > 0 ? "rejudging frozen runner" : `preparing${args.run ? " and running" : ""}`}`);
+    const result = reuseSources.length > 0
+      ? rejudgeCase(outRoot, schemaPath, testCase, args, skillFiles, reuseSourceForCase(reuseSources, testCase.id))
+      : runCase(root, outRoot, schemaPath, testCase, args, skillFiles);
     results.push(result);
     if (args.run && args.stopOnFail && !["pass", "ran-unjudged"].includes(result.status)) break;
+    if (args.run && args.stopBelowScore > 0 && result.status !== "ran-unjudged"
+      && (!Number.isInteger(result.score) || result.score < args.stopBelowScore)) break;
   }
   if (args.run && args.deferJudge) {
     for (const result of results) {
@@ -1659,6 +1797,7 @@ function main() {
       console.log(`C${String(result.case_id).padStart(2, "0")}: judging frozen runner`);
       judgeDeferredCase(schemaPath, testCase, args, result);
       if (args.stopOnFail && result.status !== "pass") break;
+      if (args.stopBelowScore > 0 && (!Number.isInteger(result.score) || result.score < args.stopBelowScore)) break;
     }
   }
   writeReport(outRoot, results, !args.run, skillBudget);

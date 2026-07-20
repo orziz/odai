@@ -1,6 +1,6 @@
 # odai 匿名横评计划
 
-本计划定义同类 skill 匿名横评的运行方式。默认五题 fixture 和确定性门禁在 [`odai-blind-cases.json`](odai-blind-cases.json)，执行器是 [`scripts/odai-blind-harness.mjs`](../scripts/odai-blind-harness.mjs)。评测口径见 [`docs/evaluation.md`](../docs/evaluation.md)，当前结果见 [`docs/evaluation-results.md`](../docs/evaluation-results.md)。
+本计划定义同类 skill 匿名横评的运行方式。默认五题 fixture 和确定性门禁在 [`odai-blind-cases.json`](odai-blind-cases.json)，执行器是 [`scripts/odai-blind-harness.mjs`](../scripts/odai-blind-harness.mjs)。本计划只维护横评协议，单次结果留在对应输出目录，不并入当前全量 / A/B 结果。
 
 ## 运行纪律
 
@@ -26,7 +26,7 @@ node scripts/odai-blind-harness.mjs \
 
 ## 当前同类横评候选
 
-- odai r7：canonical `skills/odai`。
+- odai：运行时 canonical `skills/odai`。
 - obra/superpowers：`d884ae04edebef577e82ff7c4e143debd0bbec99`。
 - mattpocock/skills：`9603c1cc8118d08bc1b3bf34cf714f62178dea3b`。
 - NeoLabHQ/context-engineering-kit：`a0bfff1938624ee71b9eeba641d77729ab4f84f6`。
