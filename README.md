@@ -20,6 +20,7 @@ It helps an agent:
 - keep lightweight tasks lightweight instead of turning every request into ceremony
 - avoid claiming that something was tested, delegated, reviewed, or verified when it was not
 - combine specialist skills and domain guidance only when the task needs them, instead of stuffing every rule into every turn
+- reuse existing host or project memory, persisting only durable information with provenance, scope, and invalidation conditions
 
 ## The Dao of odai
 
@@ -67,7 +68,7 @@ You do not need to know the internal structure or choose a methodology. `odai` i
 
 `odai` continuously evaluates four dimensions:
 
-- **Complexity**: direct action, a small amount of structure, staged execution, or durable task state.
+- **Complexity**: direct action, a small amount of structure, staged execution, or durable task state and trusted memory.
 - **Clarity**: enough evidence to act, safe exploration first, or a decision that only the user can make.
 - **Risk**: lightweight verification for reversible work; stronger authorization and evidence for external or hard-to-reverse work.
 - **Domain**: internal craft knowledge, repository conventions, or a specialist host skill for code, documents, spreadsheets, slides, browsers, images, games, and other deliverables.
@@ -102,7 +103,8 @@ The point is not to slow the agent down. The point is to make sure it is fast in
                   new evidence updates the path
 
 Only complex or long-running work loads durable state,
-agent coordination, independent challenge, or consensus.
+trusted memory, agent coordination, independent challenge, or consensus;
+existing memory stays authoritative instead of being mirrored.
 ```
 
 The framework owns the task from understanding through delivery, while capabilities and domain references provide only the craft needed at the moment. There is no separate orchestrator workflow and no user-selected domain package.

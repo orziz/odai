@@ -54,7 +54,7 @@ description: 以“成事而不妄为”治理并推进任务。调用 odai / da
 
 - 目标所有权、歧义、授权与高风险动作读 `references/dao/authority.md`；生产、外部、付费、破坏性或难回退动作再读 `references/dao/verification.md`。
 - 按交付选主资料：方案与取舍读 `references/capabilities/planning.md`；行为、交互与视觉交接读 `references/capabilities/design.md`；诊断与实施读 `references/capabilities/delivery.md`；审查读 `references/capabilities/review.md`。第一份未留下独立缺口，不并读 planning 与 design。
-- “继续”先读现有状态；已唯一给出目标、下一动作、验收和证据就直复。状态不足、冲突、多阶段或多人共享才读 `references/dao/continuity.md`；完成或证据不清才读 `references/dao/verification.md`。宿主技能、项目规则、外部能力、agent 与多模型协作读 `references/dao/leverage.md`。
+- “继续”或跨任务恢复先读现有状态与权威记忆载体；已唯一给出目标、下一动作、验收和证据就直复。状态不足、冲突、多阶段、多人共享或需要判断长期记忆准入与失效时，读 `references/dao/continuity.md`；完成或证据不清才读 `references/dao/verification.md`。宿主技能、项目规则、外部能力、agent 与多模型协作读 `references/dao/leverage.md`。
 - 通用 UI 专项：`references/domains/ui-design.md`；游戏、仿真、HUD 与实时输入反馈：`references/domains/interactive-systems.md`。按对象判断，不让用户选内部包。
 - 用户明确要求合议 / 多模型复核：`references/techniques/consensus.md`；正式准入、连续 clean 或收敛审查：`references/techniques/review-modes.md`。
 
