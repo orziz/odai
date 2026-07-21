@@ -190,9 +190,11 @@ Each result first receives a 0-4 completion score, then the predefined case weig
 | Grok 4.5 | **88/88** | **56/56** | 37/56 | **+19** | 821,671 / 631,716 (+30.1%) |
 | Qwen 3.8 Max Preview | 85/88 | **55/56** | 46/56 | **+9** | 2,004,644 / 1,773,309 (+13.0%) |
 | Kimi K3 | 77/88 | 49/56 | **50/56** | -1 | 1,211,628 / 1,113,107 (+8.9%) |
+| GLM-5.2 | 70/88 | 44/56 | 36/56 | **+8** | 2,224,745 / 1,846,753 (+20.5%) |
+| DeepSeek V4 Pro | 71/88 | 41/56 | 29/56 | **+12** | 2,718,299 / 2,185,050 (+24.4%) |
 | MiMo 2.5 Pro | 68/88 | 42/56 | 33/56 | **+9** | 2,024,644 / 1,334,236 (+51.7%) |
 
-Across six models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. MiMo rises from 33/56 to 42/56 but uses 51.7% more tokens; K3 improves the auxiliary pass count from 7/8 to 8/8 while losing one weighted point. The strongest repeated benefit is C04 production-risk judgment. GPT-5.6-sol / high and Grok score 88/88 on the full plan; all twelve tasks also pass for Opus, Qwen, and K3, while MiMo passes eight.
+Across eight models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; GLM and DeepSeek V4 Pro pass six, while MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. GLM rises from 36/56 to 44/56 and DeepSeek V4 Pro from 29/56 to 41/56, but neither reliably holds the C04 production-risk boundary. The strongest repeated benefit remains wrong-premise and production-risk judgment, without implying that every model follows the same rule reliably. GPT-5.6-sol / high and Grok score 88/88 on the full plan; Opus, Qwen, and K3 pass all twelve tasks, while GLM, DeepSeek V4 Pro, and MiMo pass nine, ten, and eight respectively.
 
 See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the current fingerprint's case scores, gaps, support reads, and token details.
 

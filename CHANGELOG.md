@@ -16,12 +16,13 @@
 
 - 将二元通过口径升级为 0–4 完成度乘预设权重：全量 12 题满分 88，A/B 8 题满分 56；严重越权、生产风险与虚报验证使用硬封顶。
 - A/B on 从相同指纹、题面、fixture 与 runner 配置的全量结果直接抽取；off 保持独立基线，并继续记录逐题缺口、runner token、支撑读取和确定性检查。
-- 当前全量 on：GPT-5.6-sol / high 与 Grok 4.5 为 88/88，Claude Opus 4.8 为 83/88，Qwen 3.8 Max Preview 为 85/88，Kimi K3 为 77/88，MiMo 2.5 Pro 为 68/88。
-- 当前 A/B 加权净增：GPT +15、Opus +11、Grok +19、Qwen +9、K3 -1、MiMo +9。公开保留负增益与 token 成本，不把辅助 pass 或满分 on 单独表述为普遍价值证明。
+- 当前全量 on：GPT-5.6-sol / high 与 Grok 4.5 为 88/88，Claude Opus 4.8 为 83/88，Qwen 3.8 Max Preview 为 85/88，Kimi K3 为 77/88，GLM-5.2 为 70/88，DeepSeek V4 Pro 为 71/88，MiMo 2.5 Pro 为 68/88。
+- 当前 A/B 加权净增：GPT +15、Opus +11、Grok +19、Qwen +9、K3 -1、GLM +8、DeepSeek V4 Pro +12、MiMo +9。公开保留负增益与 token 成本，不把辅助 pass 或满分 on 单独表述为普遍价值证明。
 
 ### 维护与迁移
 
 - CLI 路由、治理来源、临时打包、测试与 canonical skill 校验均已同步到新目录；`skills/odai/` 仍是唯一可编辑事实源，`cli/skills/` 只在打包期间临时生成。
+- Claude runner 在同一 session 出现多个 `result` 事件时累加全部 usage，避免自动续跑只记录最后一段 token。
 - 自定义叠加层若引用已退役路径，需要迁移到新的责任文件；不提供旧路径别名，避免维护第二套架构。
 - README、维护说明、题本、评测契约和当前结果均已更新；当前指纹与逐题数据见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 

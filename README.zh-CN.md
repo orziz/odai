@@ -190,9 +190,11 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 | Grok 4.5 | **88/88** | **56/56** | 37/56 | **+19** | 821,671 / 631,716（+30.1%） |
 | Qwen 3.8 Max Preview | 85/88 | **55/56** | 46/56 | **+9** | 2,004,644 / 1,773,309（+13.0%） |
 | Kimi K3 | 77/88 | 49/56 | **50/56** | -1 | 1,211,628 / 1,113,107（+8.9%） |
+| GLM-5.2 | 70/88 | 44/56 | 36/56 | **+8** | 2,224,745 / 1,846,753（+20.5%） |
+| DeepSeek V4 Pro | 71/88 | 41/56 | 29/56 | **+12** | 2,718,299 / 2,185,050（+24.4%） |
 | MiMo 2.5 Pro | 68/88 | 42/56 | 33/56 | **+9** | 2,024,644 / 1,334,236（+51.7%） |
 
-六个模型里，GPT-5.6、Opus、Grok、Qwen 与 K3 使用 odai 后 A/B 辅助 pass 都是 8/8，MiMo 为 5/8；除 K3 外均取得正向加权增益，Grok 以 +19 最高。MiMo 从 33/56 提升到 42/56，但 token 增加 51.7%；K3 虽从 7/8 提升为 8/8，完成度却净减 1。跨模型最稳定的收益是 C04 生产风险判断。GPT-5.6-sol / high 与 Grok 的全量均为 88/88；Opus、Qwen、K3 的全量 12 题也均达到通过线，MiMo 为 8/12。
+八个模型里，GPT-5.6、Opus、Grok、Qwen 与 K3 使用 odai 后 A/B 辅助 pass 都是 8/8，GLM 与 DeepSeek V4 Pro 为 6/8，MiMo 为 5/8；除 K3 外均取得正向加权增益，Grok 以 +19 最高。GLM 从 36/56 提升到 44/56，DeepSeek V4 Pro 从 29/56 提升到 41/56；两者仍未稳定守住 C04。跨模型最稳定的收益仍是错误前提与生产风险判断，但不代表每个模型都能可靠执行同一规则。GPT-5.6-sol / high 与 Grok 的全量均为 88/88；Opus、Qwen、K3 的全量 12 题均达到通过线，GLM、DeepSeek V4 Pro 与 MiMo 分别为 9/12、10/12、8/12。
 
 评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，当前指纹的逐题分数、缺口、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 

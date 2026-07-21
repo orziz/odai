@@ -96,7 +96,13 @@ const raw = `${result.stdout || ""}${result.stderr || ""}`;
 process.stdout.write(raw);
 
 let finalText = "";
-let usage = null;
+const usage = {
+  input_tokens: 0,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0,
+  output_tokens: 0,
+};
+let usageResultEvents = 0;
 let costUsd = null;
 let actualModel = "";
 let streamCliVersion = "";
@@ -111,7 +117,12 @@ for (const line of raw.split(/\r?\n/)) {
   }
   if (evt.type === "result" && typeof evt.result === "string") {
     finalText = evt.result;
-    usage = evt.usage || null;
+    if (evt.usage && typeof evt.usage === "object") {
+      usageResultEvents += 1;
+      for (const field of Object.keys(usage)) {
+        usage[field] += Number(evt.usage[field] || 0);
+      }
+    }
     costUsd = typeof evt.total_cost_usd === "number" ? evt.total_cost_usd : null;
   }
 }
@@ -130,12 +141,13 @@ if (result.status === 0 && !finalText) {
 
   // Emit a `tokens used` footer that the harness parseCliReportedTokens() recognizes:
   // total context tokens processed (input + cache + output) as a session-total figure.
-  if (usage) {
+  if (usageResultEvents > 0) {
     const total =
       (usage.input_tokens || 0) +
       (usage.cache_creation_input_tokens || 0) +
       (usage.cache_read_input_tokens || 0) +
       (usage.output_tokens || 0);
+    process.stdout.write(`[claude-runner usage_result_events ${usageResultEvents}]\n`);
     process.stdout.write(`\ntokens used\n${total.toLocaleString("en-US")}\n`);
   }
   if (costUsd != null) process.stdout.write(`\n[claude-runner cost_usd ${costUsd.toFixed(6)}]\n`);
