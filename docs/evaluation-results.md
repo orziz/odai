@@ -2,7 +2,7 @@
 
 更新日期：2026-07-21
 
-这里只保留当前 skill、题本和 harness 指纹下的最终结果。评测方法见 [`evaluation.md`](evaluation.md)，全量与 A/B 题本分别见 [`plans/odai-canary.md`](../plans/odai-canary.md) 和 [`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md)。
+这里只保留最近一次冻结 skill、题本和 harness 指纹下的最终结果，不代表其后的未冻结 source 修改已取得相同分数。评测方法见 [`evaluation.md`](evaluation.md)，全量与 A/B 题本分别见 [`plans/odai-canary.md`](../plans/odai-canary.md) 和 [`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md)。
 
 ## 一眼看懂
 

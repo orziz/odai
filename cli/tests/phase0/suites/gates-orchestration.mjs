@@ -1784,7 +1784,7 @@ const continuedDoctorEvidence = await continueLatestRun({ repoRoot: initRoot, ar
 assert.equal(continuedDoctorEvidence.status, "partial");
 assert.equal(continuedDoctorEvidence.kind, "external-evidence");
 assert.equal(continuedDoctorEvidence.summary.ready, 0);
-const acceptance = runAcceptance();
+const acceptance = runAcceptance({ repoRoot: initRoot, env: {} });
 assert.equal(acceptance.status, "partial");
 assert.equal(acceptance.kind, "plan-acceptance");
 assert.equal(acceptance.summary.total, 9);

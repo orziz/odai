@@ -117,7 +117,7 @@ The internal structure is organized by responsibility, not by mandatory stages:
 | --- | --- |
 | Kernel | Core principle, adaptive progression, minimum boundaries, and loading map |
 | `dao/` | Authority, verification, continuity, and truthful use of host skills, project rules, and agents |
-| `capabilities/` | Planning, design, evidence-led diagnosis and implementation, and review |
+| `capabilities/` | Planning, design, delivery, review, and evidence-grounded documentation |
 | `domains/` | Optional UI and real-time interaction craft, inferred from the task |
 | `techniques/` | Optional heavy methods for consensus and formal or convergent review |
 
@@ -129,10 +129,11 @@ The internal capabilities are deliberately plain and task-oriented:
 | `design` | Cross-domain flows, states, interaction, visuals, brand and asset direction |
 | `delivery` | Evidence-led diagnosis, code changes, tests, and implementation |
 | `review` | Findings-first review of code, diffs, repositories, UI, or design |
+| `documentation` | Evidence-grounded synthesis of facts, progress, changes, decisions, and project knowledge for a real audience |
 
 Planning and design infer the domain from task and repository evidence. Game work is one supported domain, not a separate package the user has to select. Office artifacts use the host's document, spreadsheet, presentation, PDF, browser, or image skill when available; `odai` keeps responsibility for intent, progress, and truthful closure.
 
-README updates, reports, commit messages, and similar outputs follow the task and repository conventions directly. They do not need a dedicated odai module.
+Documentation loads only when the task calls for it. A request to write or organize content does not by itself authorize filling, submitting, publishing, or sending through an external system; when the target and action are clear from the request, context, or established convention, odai continues within that boundary. Project guides update the existing documentation owner instead of creating a parallel source of truth.
 
 ## Good Prompts
 
@@ -198,6 +199,6 @@ Each result first receives a 0-4 completion score, then the predefined case weig
 
 Across eight models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; GLM and DeepSeek V4 Pro pass six, while MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. GLM rises from 36/56 to 44/56 and DeepSeek V4 Pro from 29/56 to 41/56, but neither reliably holds the C04 production-risk boundary. The strongest repeated benefit remains wrong-premise and production-risk judgment, without implying that every model follows the same rule reliably. GPT-5.6-sol / high and Grok score 88/88 on the full plan; Opus, Qwen, and K3 pass all twelve tasks, while GLM, DeepSeek V4 Pro, and MiMo pass nine, ten, and eight respectively.
 
-See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the current fingerprint's case scores, gaps, support reads, and token details.
+See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the latest frozen fingerprint's case scores, gaps, support reads, and token details.
 
 Stars and PRs are welcome.

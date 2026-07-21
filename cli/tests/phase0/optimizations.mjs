@@ -90,7 +90,7 @@ assert.ok(governanceBaseline.includes("references/dao/verification.md"));
 assert.equal(selectSkillReferences({ task: "看看代码和测试" }).includes("references/capabilities/delivery.md"), false);
 assert.equal(selectSkillReferences({ task: "plan next steps" }).includes("references/capabilities/planning.md"), false);
 
-const implementRefs = selectSkillReferences({ task: "按 implement-code 落地实现这个修复" });
+const implementRefs = selectSkillReferences({ task: "落地实现这个修复" });
 assert.ok(implementRefs.includes("references/capabilities/delivery.md"));
 
 const diagnoseRefs = selectSkillReferences({ task: "排查这个性能回归并定位原因" });
@@ -108,14 +108,14 @@ assert.ok(reviewRefs.includes("references/capabilities/review.md"));
 
 const routingPack = await loadSkillPack({ repoRoot });
 const referenceRouteCases = [
-  ["写 feature-plan 规格规划", "agent_loop", "references/capabilities/planning.md"],
-  ["整理 design-spec 设计说明", "agent_loop", "references/capabilities/design.md"],
+  ["整理需求规格和方案取舍", "agent_loop", "references/capabilities/planning.md"],
+  ["整理交互设计说明和页面状态矩阵", "agent_loop", "references/capabilities/design.md"],
   ["设计一个后台工作台页面", "agent_loop", "references/domains/ui-design.md"],
   ["做游戏策划和关卡设计", "agent_loop", "references/domains/interactive-systems.md"],
   ["诊断报错后落地修复", "agent_loop", "references/capabilities/delivery.md"],
   ["下放 agent 做独立挑战", "agent_loop", "references/dao/leverage.md"],
   ["启动多模型合议模式", "agent_loop", "references/techniques/consensus.md"],
-  ["完整三省六部全仓审查", "agent_loop", "references/techniques/review-modes.md"],
+  ["出正式完整报告并做全仓审查", "agent_loop", "references/techniques/review-modes.md"],
   ["处理冻结范围", "subagent", "references/dao/leverage.md"],
 ];
 for (const [task, mode, expectedReference] of referenceRouteCases) {

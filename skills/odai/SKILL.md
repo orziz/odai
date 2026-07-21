@@ -50,10 +50,15 @@ description: 以“成事而不妄为”治理并推进任务。调用 odai / da
 
 ## 按需借力
 
-每次只读最可能改变当前决定的最少资料：先选一份，不预排后续；仅有会改结果的已命名缺口才加一份。不因目录或“更完整”串读；规划不是设计前置，验证不是收尾仪式。
+资料逐份加载：先读当前最可能改变决定的一份，不预排；复杂任务随新证据重判，有会改变结果的明确缺口才换或加下一份。没有此缺口，不并读 planning 与 design 或其他能力资料；验证不是收尾仪式。
 
 - 目标所有权、歧义、授权与高风险动作读 `references/dao/authority.md`；生产、外部、付费、破坏性或难回退动作再读 `references/dao/verification.md`。
-- 按交付选主资料：方案与取舍读 `references/capabilities/planning.md`；行为、交互与视觉交接读 `references/capabilities/design.md`；诊断与实施读 `references/capabilities/delivery.md`；审查读 `references/capabilities/review.md`。第一份未留下独立缺口，不并读 planning 与 design。
+- 当前交付的首选能力资料：
+  - 规划：`references/capabilities/planning.md`
+  - 交互 / 视觉：`references/capabilities/design.md`
+  - 诊断 / 实施：`references/capabilities/delivery.md`
+  - 审查：`references/capabilities/review.md`
+  - 事实整理、进展沟通、项目文档：`references/capabilities/documentation.md`
 - “继续”或跨任务恢复先读现有状态与权威记忆载体；已唯一给出目标、下一动作、验收和证据就直复。状态不足、冲突、多阶段、多人共享或需要判断长期记忆准入与失效时，读 `references/dao/continuity.md`；完成或证据不清才读 `references/dao/verification.md`。宿主技能、项目规则、外部能力、agent 与多模型协作读 `references/dao/leverage.md`。
 - 通用 UI 专项：`references/domains/ui-design.md`；游戏、仿真、HUD 与实时输入反馈：`references/domains/interactive-systems.md`。按对象判断，不让用户选内部包。
 - 用户明确要求合议 / 多模型复核：`references/techniques/consensus.md`；正式准入、连续 clean 或收敛审查：`references/techniques/review-modes.md`。

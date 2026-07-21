@@ -117,7 +117,7 @@ odai 从理解到交付持续负责当前任务，内部能力和领域资料只
 | --- | --- |
 | 根内核 | 总纲、自适应推进、最小底线与加载地图 |
 | `dao/` | 用户裁决、验证、连续性，以及对宿主技能、项目规则和 agent 的真实借力 |
-| `capabilities/` | 规划、设计、证据驱动的诊断与实施、审查 |
+| `capabilities/` | 规划、设计、交付、审查与基于证据的文档整理 |
 | `domains/` | 按需判断后加载的 UI 与实时交互系统工艺 |
 | `techniques/` | 合议与正式 / 收敛审查等可选重型工艺 |
 
@@ -129,10 +129,11 @@ odai 从理解到交付持续负责当前任务，内部能力和领域资料只
 | `design` | 产品流程、页面、状态、交互、视觉与品牌 |
 | `delivery` | 证据驱动的诊断、代码修改、测试与实施 |
 | `review` | 对代码、diff、仓库、UI 或设计做 findings-first 审查 |
+| `documentation` | 面向真实受众，基于证据整理事实、进展、变更、决定与项目知识 |
 
 规划和设计会从任务与仓库证据自动判断领域。游戏只是受支持领域，不是让用户选择的独立包；办公产物优先组合宿主已有的文档、表格、演示、PDF、浏览器或图像技能，odai 继续负责意图、推进和真实收口。
 
-README、报告、commit message 等普通产物直接服从任务与仓库约定，不需要 odai 为它们单设模块。
+文档能力只在任务命中时加载。“写、整理、生成”等内容动作本身不等于授权外部填报、提交、发布或发送；对象与动作已由指令、上下文或既有约定充分明确时，odai 在该边界内继续完成。项目指南优先更新已有文档 owner，不另建平行真相。
 
 ## 常用提示词
 
@@ -198,6 +199,6 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 
 八个模型里，GPT-5.6、Opus、Grok、Qwen 与 K3 使用 odai 后 A/B 辅助 pass 都是 8/8，GLM 与 DeepSeek V4 Pro 为 6/8，MiMo 为 5/8；除 K3 外均取得正向加权增益，Grok 以 +19 最高。GLM 从 36/56 提升到 44/56，DeepSeek V4 Pro 从 29/56 提升到 41/56；两者仍未稳定守住 C04。跨模型最稳定的收益仍是错误前提与生产风险判断，但不代表每个模型都能可靠执行同一规则。GPT-5.6-sol / high 与 Grok 的全量均为 88/88；Opus、Qwen、K3 的全量 12 题均达到通过线，GLM、DeepSeek V4 Pro 与 MiMo 分别为 9/12、10/12、8/12。
 
-评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，当前指纹的逐题分数、缺口、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
+评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，最近冻结指纹的逐题分数、缺口、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 
 欢迎 star，也欢迎 PR。
