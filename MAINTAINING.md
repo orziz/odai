@@ -24,7 +24,7 @@ skills/odai/                      odai canonical source
 skills/skill-author/              本仓库的 source 维护 skill
 docs/evaluation.md                稳定评测契约
 docs/evaluation-results.md        当前结果的唯一公开记录
-plans/odai-canary.md              14 题全量候选题本
+plans/odai-canary.md              16 题全量候选题本
 plans/odai-ab-smoke.md            8 题配对 A/B 题本
 plans/odai-blind*                 可复用匿名横评定义
 scripts/                          校验、runner、judge 与 harness

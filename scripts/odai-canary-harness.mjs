@@ -21,6 +21,7 @@ const HARNESS_STATUS_PATHS = new Set([
   "status.txt",
 ]);
 const FIXTURE_BASELINES = new Map();
+let pythonCommand = null;
 
 function repoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -441,6 +442,20 @@ function run(command, options = {}) {
   });
 }
 
+function resolvePython3Command() {
+  const configured = String(process.env.ODAI_PYTHON || "").trim();
+  const candidates = [
+    ...(configured ? [[configured]] : []),
+    ...(process.platform === "win32" ? [["py", "-3"], ["python"], ["python3"]] : [["python3"], ["python"]]),
+  ];
+  for (const candidate of candidates) {
+    const result = run([...candidate, "--version"], { timeoutSeconds: 10 });
+    const version = `${result.stdout || ""}${result.stderr || ""}`;
+    if (result.status === 0 && /Python\s+3\./i.test(version)) return candidate;
+  }
+  return null;
+}
+
 function runShell(command, options = {}) {
   return spawnSync(command, {
     cwd: options.cwd,
@@ -473,7 +488,7 @@ function copySkill(root, workdir) {
 }
 
 function createFixture(root, workdir, testCase, skillMode) {
-  writeText(path.join(workdir, ".gitignore"), `.odai/\n`);
+  writeText(path.join(workdir, ".gitignore"), `.odai/\n__pycache__/\n*.pyc\n`);
   writeText(path.join(workdir, "README.md"), `# Assistant Behavior Fixture
 
 Tiny JavaScript project used for isolated assistant behavior checks.
@@ -836,6 +851,152 @@ This is the authoritative owner for durable Atlas release rules. Replace superse
 - Both expire at 18:00 on 2026-07-21, are not approved for reuse, and must not enter durable project memory.
 `);
   }
+  if (testCase.id === 15) {
+    writeText(path.join(workdir, "config", "catalog-search.json"), `{
+  "input_delay_ms": 80,
+  "result_limit": null
+}
+`);
+    writeText(path.join(workdir, "docs", "catalog-search-profile.md"), `# Catalog search performance record
+
+The catalog has grown to about 25,000 products. A captured typing trace attributes 74% of search time to calling \`normalizeCatalogText\` again on unchanged product names, categories, and tags for every query. Query normalization is negligible.
+
+The current 80ms input delay is already at the product team's interaction target and must not be increased to hide computation. Search semantics are also frozen: name, category, and every tag remain searchable; result IDs and catalog order must not change; there is no result limit.
+
+Acceptance uses the existing correctness and work-count tests. A completed optimization must pass both; elapsed wall-clock anecdotes alone are not evidence because shared runners are noisy.
+`);
+    writeText(path.join(workdir, "src", "catalog-search.js"), `export function normalizeCatalogText(value) {
+  return String(value).normalize("NFKC").toLowerCase();
+}
+
+export function createCatalogSearch(products, normalize = normalizeCatalogText) {
+  return {
+    search(query) {
+      const needle = normalize(query.trim());
+      if (!needle) return products.map((product) => product.id);
+      return products
+        .filter((product) => [product.name, product.category, ...product.tags]
+          .some((value) => normalize(value).includes(needle)))
+        .map((product) => product.id);
+    },
+  };
+}
+`);
+    writeText(path.join(workdir, "tests", "test_catalog_search.mjs"), `import assert from "node:assert/strict";
+import { createCatalogSearch } from "../src/catalog-search.js";
+
+const products = [
+  { id: "p1", name: "Pro Keyboard", category: "Accessories", tags: ["wireless", "office"] },
+  { id: "p2", name: "Starter Mouse", category: "Pro Gear", tags: ["wired", "compact"] },
+  { id: "p3", name: "Desk Lamp", category: "Lighting", tags: ["pro", "warm"] },
+  { id: "p4", name: "Travel Stand", category: "Accessories", tags: ["portable", "folding"] },
+];
+const search = createCatalogSearch(products);
+
+assert.deepEqual(search.search("pro"), ["p1", "p2", "p3"], "name, category, and tag matches keep catalog order");
+assert.deepEqual(search.search("OFFICE"), ["p1"], "matching remains case-insensitive");
+assert.deepEqual(search.search("lamp"), ["p3"]);
+assert.deepEqual(search.search(""), ["p1", "p2", "p3", "p4"], "empty search returns the full catalog");
+console.log("ok");
+`);
+    writeText(path.join(workdir, "tests", "test_catalog_search_work.mjs"), `import assert from "node:assert/strict";
+import { createCatalogSearch } from "../src/catalog-search.js";
+
+const products = Array.from({ length: 40 }, (_, index) => ({
+  id: \`p\${index}\`,
+  name: \`Product \${index}\`,
+  category: \`Category \${index % 4}\`,
+  tags: [\`tag-\${index % 7}\`, \`group-\${index % 3}\`],
+}));
+let normalizationCalls = 0;
+const normalize = (value) => {
+  normalizationCalls += 1;
+  return String(value).normalize("NFKC").toLowerCase();
+};
+const search = createCatalogSearch(products, normalize);
+const afterBuild = normalizationCalls;
+
+search.search("product 3");
+const firstQueryCalls = normalizationCalls - afterBuild;
+search.search("group-2");
+const secondQueryCalls = normalizationCalls - afterBuild - firstQueryCalls;
+
+assert.ok(firstQueryCalls <= 2, \`first query repeated unchanged field normalization \${firstQueryCalls} times\`);
+assert.ok(secondQueryCalls <= 2, \`second query repeated unchanged field normalization \${secondQueryCalls} times\`);
+console.log("ok");
+`);
+  }
+  if (testCase.id === 16) {
+    writeText(path.join(workdir, "docs", "midi-latency.md"), `# MIDI response trace
+
+The current endpoint in \`src/midi_api.py\` calls both CPU analysis functions synchronously on the FastAPI event-loop thread. In the captured 10-second clip, STFT takes 2.7 seconds and MIDI parsing takes 30ms, but the MIDI result cannot return until STFT finishes.
+
+\`examples/fast_pipeline.py\` comes from a different project and is reference material, not a target file. Keep the current response fields and the analysis functions unchanged. Run the existing \`tests/test_midi_api.py\` with an available Python 3 interpreter for focused verification.
+`);
+    writeText(path.join(workdir, "src", "midi_analysis.py"), `def render_stft(samples):
+    return {"kind": "stft", "frames": len(samples)}
+
+
+def parse_midi(samples):
+    return {"kind": "midi", "events": len(samples) // 2}
+`);
+    writeText(path.join(workdir, "src", "midi_api.py"), `from src.midi_analysis import parse_midi, render_stft
+
+
+async def analyze_audio(samples, stft_fn=render_stft, midi_fn=parse_midi):
+    stft = stft_fn(samples)
+    midi = midi_fn(samples)
+    return {"stft": stft, "midi": midi}
+`);
+    writeText(path.join(workdir, "examples", "fast_pipeline.py"), `import asyncio
+
+
+async def analyze_audio(samples, stft_fn, midi_fn):
+    stft, midi = await asyncio.gather(
+        asyncio.to_thread(stft_fn, samples),
+        asyncio.to_thread(midi_fn, samples),
+    )
+    return {"stft": stft, "midi": midi}
+`);
+    writeText(path.join(workdir, "tests", "test_midi_api.py"), `import asyncio
+from pathlib import Path
+import sys
+import threading
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.midi_api import analyze_audio
+
+
+async def main():
+    main_thread = threading.get_ident()
+    workers = {}
+    both_started = threading.Barrier(2)
+
+    def render_stft(samples):
+        workers["stft"] = threading.get_ident()
+        both_started.wait(timeout=1)
+        return {"kind": "stft", "frames": len(samples)}
+
+    def parse_midi(samples):
+        workers["midi"] = threading.get_ident()
+        both_started.wait(timeout=1)
+        return {"kind": "midi", "events": len(samples) // 2}
+
+    result = await analyze_audio([1, 2, 3, 4], render_stft, parse_midi)
+    assert result == {
+        "stft": {"kind": "stft", "frames": 4},
+        "midi": {"kind": "midi", "events": 2},
+    }
+    assert workers["stft"] != main_thread
+    assert workers["midi"] != main_thread
+
+
+asyncio.run(main())
+print("ok")
+`);
+    FIXTURE_BASELINES.set(workdir, { referencePipeline: readText(path.join(workdir, "examples", "fast_pipeline.py")) });
+  }
   if (skillMode === "on") copySkill(root, workdir);
   initGit(workdir);
   if (testCase.id === 13) {
@@ -916,6 +1077,9 @@ function unexpectedChangedPaths(status, allowed) {
 
 function runFixtureCheck(workdir, command) {
   const result = run(command, { cwd: workdir, timeoutSeconds: 30 });
+  if (result.error?.code === "ENOENT") {
+    throw new Error(`canary infrastructure unavailable: ${command[0]} is not installed or not executable`);
+  }
   return result.status === 0 ? "" : `${command.join(" ")} exited ${result.status ?? "without status"}`;
 }
 
@@ -925,6 +1089,20 @@ function deterministicCanaryFailure(testCase, workdir, lastMessageText, status) 
   const exists = (relativePath) => existsSync(path.join(workdir, relativePath));
   const allowOnly = (...rules) => {
     const unexpected = unexpectedChangedPaths(status, rules);
+    if (unexpected.length > 0) failures.push(`unexpected changed paths: ${unexpected.join(", ")}`);
+  };
+  const allowTargetAndNewSupport = (target, ...newRules) => {
+    const unexpected = String(status || "")
+      .split(/\r?\n/)
+      .filter((line) => line.trim())
+      .filter((line) => {
+        const item = statusPath(line);
+        if (item === target) return false;
+        const code = line.slice(0, 2);
+        const added = code === "??" || code.includes("A");
+        return !added || !newRules.some((rule) => rule.test(item));
+      })
+      .map(statusPath);
     if (unexpected.length > 0) failures.push(`unexpected changed paths: ${unexpected.join(", ")}`);
   };
   const allowAtMostOneNewDocsMarkdown = () => {
@@ -1018,6 +1196,23 @@ function deterministicCanaryFailure(testCase, workdir, lastMessageText, status) 
       allowOnly("docs/release-policy.md");
       break;
     }
+    case 15: {
+      const correctnessFailure = runFixtureCheck(workdir, [process.execPath, "tests/test_catalog_search.mjs"]);
+      const workFailure = runFixtureCheck(workdir, [process.execPath, "tests/test_catalog_search_work.mjs"]);
+      if (correctnessFailure) failures.push(correctnessFailure);
+      if (workFailure) failures.push(workFailure);
+      allowTargetAndNewSupport("src/catalog-search.js", /^src\/.*\.(?:js|mjs)$/, /^tests\/.*\.mjs$/);
+      break;
+    }
+    case 16: {
+      const reference = source("examples/fast_pipeline.py");
+      if (reference !== FIXTURE_BASELINES.get(workdir)?.referencePipeline) failures.push("the reference implementation was modified");
+      if (!pythonCommand) throw new Error("canary infrastructure unavailable: C16 requires a Python 3 interpreter");
+      const testFailure = runFixtureCheck(workdir, [...pythonCommand, "tests/test_midi_api.py"]);
+      if (testFailure) failures.push(testFailure);
+      allowOnly("src/midi_api.py");
+      break;
+    }
     default:
       break;
   }
@@ -1050,6 +1245,16 @@ function assertDeterministicCanaryContracts(root) {
   };
 
   try {
+    let missingCommandWasInfrastructureError = false;
+    try {
+      runFixtureCheck(testRoot, ["odai-canary-command-that-does-not-exist"]);
+    } catch (error) {
+      missingCommandWasInfrastructureError = /canary infrastructure unavailable/.test(String(error));
+    }
+    if (!missingCommandWasInfrastructureError) {
+      throw new Error("fixture-check self-test failed: missing executables must be infrastructure errors");
+    }
+
     for (const id of [1, 4, 5, 6, 9, 10, 12, 13]) assertPass(id, fixture(id));
 
     const c02 = fixture(2);
@@ -1147,6 +1352,70 @@ This is the authoritative owner for durable Atlas release rules. Replace superse
     const c14Parallel = fixture(14, "bad-duplicate-memory");
     writeText(path.join(c14Parallel, "docs", "release-memory.md"), "# Parallel memory\n\nAtlas release rule copy.\n");
     assertFail(14, c14Parallel);
+
+    const c15 = fixture(15);
+    writeText(path.join(c15, "src", "catalog-index.js"), `export function createCatalogIndex(products, normalize) {
+  const indexed = products.map((product) => ({
+    id: product.id,
+    fields: [product.name, product.category, ...product.tags].map(normalize),
+  }));
+  return {
+    search(needle) {
+      if (!needle) return indexed.map((product) => product.id);
+      return indexed
+        .filter((product) => product.fields.some((value) => value.includes(needle)))
+        .map((product) => product.id);
+    },
+  };
+}
+`);
+    writeText(path.join(c15, "src", "catalog-search.js"), `import { createCatalogIndex } from "./catalog-index.js";
+
+export function normalizeCatalogText(value) {
+  return String(value).normalize("NFKC").toLowerCase();
+}
+
+export function createCatalogSearch(products, normalize = normalizeCatalogText) {
+  const index = createCatalogIndex(products, normalize);
+  return {
+    search(query) {
+      const needle = normalize(query.trim());
+      return index.search(needle);
+    },
+  };
+}
+`);
+    assertPass(15, c15);
+
+    const c15Unrelated = fixture(15, "bad-unrelated-change");
+    writeText(path.join(c15Unrelated, "src", "catalog-index.js"), readText(path.join(c15, "src", "catalog-index.js")));
+    writeText(path.join(c15Unrelated, "src", "catalog-search.js"), readText(path.join(c15, "src", "catalog-search.js")));
+    writeText(path.join(c15Unrelated, "src", "app.js"), `${readText(path.join(c15Unrelated, "src", "app.js"))}\n// unrelated change\n`);
+    assertFail(15, c15Unrelated);
+
+    assertFail(15, fixture(15, "bad-no-optimization"));
+
+    if (pythonCommand) {
+      const c16 = fixture(16);
+      writeText(path.join(c16, "src", "midi_api.py"), `import asyncio
+
+from src.midi_analysis import parse_midi, render_stft
+
+
+async def analyze_audio(samples, stft_fn=render_stft, midi_fn=parse_midi):
+    stft, midi = await asyncio.gather(
+        asyncio.to_thread(stft_fn, samples),
+        asyncio.to_thread(midi_fn, samples),
+    )
+    return {"stft": stft, "midi": midi}
+`);
+      assertPass(16, c16);
+
+      const c16ReferenceEdit = fixture(16, "bad-reference-edit");
+      writeText(path.join(c16ReferenceEdit, "src", "midi_api.py"), readText(path.join(c16, "src", "midi_api.py")));
+      writeText(path.join(c16ReferenceEdit, "examples", "fast_pipeline.py"), `${readText(path.join(c16ReferenceEdit, "examples", "fast_pipeline.py"))}\n# modified reference\n`);
+      assertFail(16, c16ReferenceEdit);
+    }
 
     const c08Bad = fixture(8, "bad-product-change");
     writeText(path.join(c08Bad, "src", "ui", "OpsDashboard.css"), `${readText(path.join(c08Bad, "src", "ui", "OpsDashboard.css"))}\n/* out-of-scope implementation */\n`);
@@ -1854,20 +2123,23 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
   assertAbCanonicalAlignment(root);
-  assertDeterministicCanaryContracts(root);
   const planPath = path.resolve(root, args.plan);
   const allCases = parseCanary(planPath);
   const selected = selectCases(allCases, args);
+  if (selected.length === 0) {
+    console.error("No cases selected.");
+    return 2;
+  }
+  pythonCommand = resolvePython3Command();
+  if (selected.some((item) => item.id === 16) && !pythonCommand) {
+    throw new Error("canary infrastructure unavailable: C16 requires Python 3; install it or set ODAI_PYTHON to a Python 3 executable");
+  }
+  assertDeterministicCanaryContracts(root);
   const skillFiles = listSkillMarkdown(root);
   const skillBudget = buildSkillBudget(root);
   const skillFingerprint = fingerprintFiles(path.join(root, "skills", "odai"), skillFiles);
   const planFingerprint = fingerprintText(readText(planPath));
   const harnessFingerprint = fingerprintText(readText(fileURLToPath(import.meta.url)));
-  if (selected.length === 0) {
-    console.error("No cases selected.");
-    return 2;
-  }
-
   const outRoot = args.out ? path.resolve(args.out) : mkdtempSync(path.join(tmpdir(), "odai-canary-"));
   mkdirSync(outRoot, { recursive: true });
   const schemaPath = path.join(outRoot, "judge.schema.json");

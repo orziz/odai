@@ -13,8 +13,7 @@ const skillFile = path.join(skillRoot, "SKILL.md");
 if (!existsSync(skillFile)) fail("SKILL.md: missing");
 const skillText = readFileSync(skillFile, "utf8");
 const entryTokenEstimate = estimateTokens(skillText);
-if (entryTokenEstimate > 2600) fail(`SKILL.md: entry token estimate ${entryTokenEstimate} exceeds anti-bloat ceiling 2600`);
-else if (entryTokenEstimate > 2200) warn(`SKILL.md: entry token estimate ${entryTokenEstimate} exceeds review threshold 2200`);
+if (entryTokenEstimate > 2200) warn(`SKILL.md: entry token estimate ${entryTokenEstimate} exceeds review threshold 2200; review clarity and semantic rent, but do not trim required behavior to satisfy a quota`);
 
 validateFrontmatter(skillText);
 validateConstitution(skillText);
@@ -24,8 +23,7 @@ const files = listFiles(skillRoot);
 const markdownTokenEstimate = files
   .filter((file) => file.endsWith(".md"))
   .reduce((total, file) => total + estimateTokens(readFileSync(path.join(skillRoot, file), "utf8")), 0);
-if (markdownTokenEstimate > 15000) fail(`skill markdown estimate ${markdownTokenEstimate} exceeds total anti-bloat ceiling 15000`);
-else if (markdownTokenEstimate > 12000) warn(`skill markdown estimate ${markdownTokenEstimate} exceeds total review threshold 12000`);
+if (markdownTokenEstimate > 12000) warn(`skill markdown estimate ${markdownTokenEstimate} exceeds total review threshold 12000; review ownership and duplication, but do not remove useful capability to satisfy a quota`);
 const requiredFiles = [
   "assets/task-ledger.md",
   "assets/task-state.md",
@@ -101,6 +99,8 @@ const discoverabilityChecks = [
       "事（用户要什么结果）",
       "实（依据与缺口）",
       "法（当前最轻充分路径）",
+      "充分先于轻",
+      "用户可观察效果、质量底线与主要风险",
       "成（验成证据）",
       "界（授权、风险与止点）",
       "五项是随时重判的问题，不是阶段或输出模板",
@@ -121,6 +121,9 @@ const discoverabilityChecks = [
       "相邻异常、自造输入和新增测试只可探索",
       "补丁两者皆有就先删替代项再验证",
       "不以健壮性或“保险起见”为由并做",
+      "**目标与参考分离**",
+      "提供证据或借鉴的对象默认只读",
+      "只写用户已授权的目标",
       "**展开**",
       "**守险**",
       "交付具体缺口、取证点与通过 / 停止条件",
@@ -167,6 +170,7 @@ const discoverabilityChecks = [
       "未见结果不得同批预排候选源、仓库枚举或后续检查",
       "答案出现立即收口",
       "不授权执行所问命令、读取旁路实现或验证答案",
+      "**目标与参考分离**",
       "**明确局部修改**",
       "冻结用户点名的结果、对象、字段和验收",
       "只读直接实现与现成验证缝，只改冻结行为",
@@ -189,6 +193,10 @@ const discoverabilityChecks = [
       "事由用户定义",
       "发现或提案不等于新增目标或实施授权",
       "可自行查证的先查证",
+      "为目标提供证据或借鉴的对象默认只读",
+      "用户把它纳入目标时才改变其写域",
+      "可在已授权的目标对象上行动",
+      "作为证据的对象仍保持只读",
       "可逆设计探索可以先做",
       "不自动禁止可逆探索",
     ],
@@ -216,7 +224,7 @@ const discoverabilityChecks = [
   {
     path: "references/dao/continuity.md",
     label: "long-task continuity",
-    fragments: ["状态文件是恢复手段，不是交付本身", "短任务不创建状态文件", "assets/task-state.md", "assets/task-ledger.md", "第二套真相", "`.odai/local.md` 是 odai 的项目叠加规则", "不是任务状态、项目事实、决定或长期记忆载体"],
+    fragments: ["状态文件是恢复手段，不是交付本身", "短任务不创建状态文件", "已有 TODO、计划、issue 或任务表", "以真实证据更新同一条目", "不另建平行 TODO", "assets/task-state.md", "assets/task-ledger.md", "第二套真相", "`.odai/local.md` 是 odai 的项目叠加规则", "不是任务状态、项目事实、决定或长期记忆载体"],
   },
   {
     path: "references/dao/leverage.md",
@@ -286,7 +294,8 @@ const discoverabilityChecks = [
     path: "references/capabilities/documentation.md",
     label: "evidence-grounded documentation",
     fragments: [
-      "不因“写、整理、生成”等内容动作本身推定用户已授权外部提交、发送或系统操作",
+      "内容动作不自行扩大为外部提交、发送或系统操作",
+      "实施会使现有权威文档失真",
       "对象与动作已由用户指令、上下文或既有约定充分明确时，在边界内继续完成",
       "当前页面、可用工具、待办列表或既有表单的存在本身不构成写入授权",
       "完成百分比、工时、负责人、日期区间、状态和承诺不得从任务数、提交数或语气推断",
@@ -296,6 +305,7 @@ const discoverabilityChecks = [
       "不把讨论中事项写成承诺",
       "优先更新已有 README、PROJECT 或 docs 入口",
       "不复制平行指南",
+      "更新直接 owner",
       "不声称已填报、已发送或“功能完成”",
     ],
   },

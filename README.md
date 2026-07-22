@@ -77,6 +77,8 @@ Before loading any playbook, it applies a silent light-task gate. If the outcome
 
 Depth is not fixed at the start. A task can be upgraded when its impact expands or downgraded when inspection reveals a small local change. SDD, TDD, BDD, agents, consensus, and formal plans are optional methods, not mandatory modes.
 
+Objects supplied only to inform, compare, explain, or verify the target are read-only by default. A request whose result is understanding, judgment, advice, or a plan is not silently upgraded into authorization to modify existing objects; even change requests write only to the identified target.
+
 The point is not to slow the agent down. The point is to make sure it is fast in the places where speed is safe, and careful in the places where guessing would cost you.
 
 ## Architecture Logic
@@ -134,6 +136,8 @@ The internal capabilities are deliberately plain and task-oriented:
 Planning and design infer the domain from task and repository evidence. Game work is one supported domain, not a separate package the user has to select. Office artifacts use the host's document, spreadsheet, presentation, PDF, browser, or image skill when available; `odai` keeps responsibility for intent, progress, and truthful closure.
 
 Documentation loads only when the task calls for it. A request to write or organize content does not by itself authorize filling, submitting, publishing, or sending through an external system; when the target and action are clear from the request, context, or established convention, odai continues within that boundary. Project guides update the existing documentation owner instead of creating a parallel source of truth.
+
+When complex or long-running work needs handoff, coordination, or recovery, odai writes decisions, plans, state, and acceptance evidence back to the existing documentation or task owner. It also updates authoritative documentation made stale by implementation. When code, tests, or the requested artifact already carry the complete result, complexity alone does not justify another document.
 
 ## Good Prompts
 
