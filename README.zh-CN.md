@@ -182,7 +182,7 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 
 ## 评测
 
-当前验证基线（2026-07-20）包含 12 条全量现实委托和 8 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中，覆盖用户给错根因、给出有害修法、需求模糊、长任务恢复与生产边界。
+当前评测结果（2026-07-22）包含 12 条全量现实委托和 8 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中，覆盖用户给错根因、给出有害修法、需求模糊、长任务恢复与生产边界。
 
 结果先按真实完成度评为 0-4，再乘预设权重；全量满分 88，A/B 满分 56。direct、judgment、complex、boundary 四层分别报告，严重越权、生产风险和虚报验证另设硬封顶。on 臂满分本身不算价值证明，必须与同模型 off 的结果和成本一起看。
 
@@ -191,14 +191,15 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 | GPT-5.6-sol / high | **88/88** | **56/56** | 41/56 | **+15** | 184,940 / 164,275（+12.6%） |
 | Claude Opus 4.8 | 83/88 | **53/56** | 42/56 | **+11** | 1,201,072 / 968,460（+24.0%） |
 | Grok 4.5 | **88/88** | **56/56** | 37/56 | **+19** | 821,671 / 631,716（+30.1%） |
+| Gemini 3.6 Flash (High) | 74/88 | 46/56 | 31/56 | **+15** | 805,255 / 1,407,955（-42.8%） |
 | Qwen 3.8 Max Preview | 85/88 | **55/56** | 46/56 | **+9** | 2,004,644 / 1,773,309（+13.0%） |
 | Kimi K3 | 77/88 | 49/56 | **50/56** | -1 | 1,211,628 / 1,113,107（+8.9%） |
 | GLM-5.2 | 70/88 | 44/56 | 36/56 | **+8** | 2,224,745 / 1,846,753（+20.5%） |
 | DeepSeek V4 Pro | 71/88 | 41/56 | 29/56 | **+12** | 2,718,299 / 2,185,050（+24.4%） |
 | MiMo 2.5 Pro | 68/88 | 42/56 | 33/56 | **+9** | 2,024,644 / 1,334,236（+51.7%） |
 
-八个模型里，GPT-5.6、Opus、Grok、Qwen 与 K3 使用 odai 后 A/B 辅助 pass 都是 8/8，GLM 与 DeepSeek V4 Pro 为 6/8，MiMo 为 5/8；除 K3 外均取得正向加权增益，Grok 以 +19 最高。GLM 从 36/56 提升到 44/56，DeepSeek V4 Pro 从 29/56 提升到 41/56；两者仍未稳定守住 C04。跨模型最稳定的收益仍是错误前提与生产风险判断，但不代表每个模型都能可靠执行同一规则。GPT-5.6-sol / high 与 Grok 的全量均为 88/88；Opus、Qwen、K3 的全量 12 题均达到通过线，GLM、DeepSeek V4 Pro 与 MiMo 分别为 9/12、10/12、8/12。
+九个模型里，GPT-5.6、Opus、Grok、Qwen 与 K3 使用 odai 后 A/B 辅助 pass 都是 8/8，Gemini、GLM 与 DeepSeek V4 Pro 为 6/8，MiMo 为 5/8；除 K3 外均取得正向加权增益，Grok 以 +19 最高。Gemini 从 31/56 提升到 46/56，runner token 同时下降 42.8%；这来自 Antigravity 轨迹中的规划与命令轮次显著减少，不代表其他模型或后续轮次也必然省 token。跨模型最稳定的收益仍是错误前提与生产风险判断，但不代表每个模型都能可靠执行同一规则。GPT-5.6-sol / high 与 Grok 的全量均为 88/88；Opus、Qwen、K3 的全量 12 题均达到通过线，Gemini、GLM、DeepSeek V4 Pro 与 MiMo 分别为 10/12、9/12、10/12、8/12。
 
-评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，最近冻结指纹的逐题分数、缺口、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
+评测口径见 [`docs/evaluation.md`](docs/evaluation.md)，当前保留结果的逐题分数、缺口、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。
 
 欢迎 star，也欢迎 PR。

@@ -182,7 +182,7 @@ Canonical source lives in `skills/`. Distribution is handled through the [skills
 
 ## Evaluation
 
-The current verified baseline (2026-07-20) contains 12 realistic full-plan tasks and an 8-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.
+The current results (2026-07-22) contain 12 realistic full-plan tasks and an 8-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.
 
 Each result first receives a 0-4 completion score, then the predefined case weight is applied. The full plan is worth 88 points and the A/B subset 56. Direct, judgment, complex, and boundary work are reported separately, while severe scope, production-risk, and false-verification violations have hard score caps. A perfect treatment score alone is not evidence of value; it must be read against the same model's control result and cost.
 
@@ -191,14 +191,15 @@ Each result first receives a 0-4 completion score, then the predefined case weig
 | GPT-5.6-sol / high | **88/88** | **56/56** | 41/56 | **+15** | 184,940 / 164,275 (+12.6%) |
 | Claude Opus 4.8 | 83/88 | **53/56** | 42/56 | **+11** | 1,201,072 / 968,460 (+24.0%) |
 | Grok 4.5 | **88/88** | **56/56** | 37/56 | **+19** | 821,671 / 631,716 (+30.1%) |
+| Gemini 3.6 Flash (High) | 74/88 | 46/56 | 31/56 | **+15** | 805,255 / 1,407,955 (-42.8%) |
 | Qwen 3.8 Max Preview | 85/88 | **55/56** | 46/56 | **+9** | 2,004,644 / 1,773,309 (+13.0%) |
 | Kimi K3 | 77/88 | 49/56 | **50/56** | -1 | 1,211,628 / 1,113,107 (+8.9%) |
 | GLM-5.2 | 70/88 | 44/56 | 36/56 | **+8** | 2,224,745 / 1,846,753 (+20.5%) |
 | DeepSeek V4 Pro | 71/88 | 41/56 | 29/56 | **+12** | 2,718,299 / 2,185,050 (+24.4%) |
 | MiMo 2.5 Pro | 68/88 | 42/56 | 33/56 | **+9** | 2,024,644 / 1,334,236 (+51.7%) |
 
-Across eight models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; GLM and DeepSeek V4 Pro pass six, while MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. GLM rises from 36/56 to 44/56 and DeepSeek V4 Pro from 29/56 to 41/56, but neither reliably holds the C04 production-risk boundary. The strongest repeated benefit remains wrong-premise and production-risk judgment, without implying that every model follows the same rule reliably. GPT-5.6-sol / high and Grok score 88/88 on the full plan; Opus, Qwen, and K3 pass all twelve tasks, while GLM, DeepSeek V4 Pro, and MiMo pass nine, ten, and eight respectively.
+Across nine models, GPT-5.6, Opus, Grok, Qwen, and K3 pass all eight A/B tasks with odai; Gemini, GLM, and DeepSeek V4 Pro pass six, while MiMo passes five. Every model except K3 gains weighted quality, led by Grok at +19. Gemini rises from 31/56 to 46/56 while runner tokens fall by 42.8%; this comes from materially fewer planning and command rounds in the Antigravity trajectories and does not imply that other models or later runs will always save tokens. The strongest repeated benefit remains wrong-premise and production-risk judgment, without implying that every model follows the same rule reliably. GPT-5.6-sol / high and Grok score 88/88 on the full plan; Opus, Qwen, and K3 pass all twelve tasks, while Gemini, GLM, DeepSeek V4 Pro, and MiMo pass ten, nine, ten, and eight respectively.
 
-See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the latest frozen fingerprint's case scores, gaps, support reads, and token details.
+See [`docs/evaluation.md`](docs/evaluation.md) for the contract and [`docs/evaluation-results.md`](docs/evaluation-results.md) for the latest retained case scores, gaps, support reads, and token details.
 
 Stars and PRs are welcome.
