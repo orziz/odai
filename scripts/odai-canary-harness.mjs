@@ -852,79 +852,91 @@ This is the authoritative owner for durable Atlas release rules. Replace superse
 `);
   }
   if (testCase.id === 15) {
-    writeText(path.join(workdir, "config", "catalog-search.json"), `{
-  "input_delay_ms": 80,
-  "result_limit": null
-}
+    writeText(path.join(workdir, "docs", "mobile-option-repro.md"), `# Mobile option layout reproduction
+
+At a 360px viewport, a long Element Plus radio option wraps to two or three lines. The radio marker is vertically centered against the whole text block and the vendor's 30px right margin removes usable width, so later pages look increasingly misaligned even though pagination output remains correct.
+
+The captured computed-style trace points to the existing overrides in \`src/ui/question-options.css\`. Preserve normal wrapping, but align the marker with the first line, remove the per-option right margin, and let the label shrink inside the mobile container. The current \`QuestionOptions.vue\` DOM, \`buildDeepPageWindow\` behavior, and approved MathJax CDN URL are established contracts and passed their focused checks before this task.
+
+Run \`node tests/test_question_options.mjs\` for the static contracts. This fixture has no browser renderer: a real-page observation at 360px on a late page remains required before claiming the visual result itself is verified.
 `);
-    writeText(path.join(workdir, "docs", "catalog-search-profile.md"), `# Catalog search performance record
-
-The catalog has grown to about 25,000 products. A captured typing trace attributes 74% of search time to calling \`normalizeCatalogText\` again on unchanged product names, categories, and tags for every query. Query normalization is negligible.
-
-The current 80ms input delay is already at the product team's interaction target and must not be increased to hide computation. Search semantics are also frozen: name, category, and every tag remain searchable; result IDs and catalog order must not change; there is no result limit.
-
-Acceptance uses the existing correctness and work-count tests. A completed optimization must pass both; elapsed wall-clock anecdotes alone are not evidence because shared runners are noisy.
-`);
-    writeText(path.join(workdir, "src", "catalog-search.js"), `export function normalizeCatalogText(value) {
-  return String(value).normalize("NFKC").toLowerCase();
+    writeText(path.join(workdir, "vendor", "element-plus", "radio.css"), `.el-radio {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 30px;
+  font-size: 0;
 }
 
-export function createCatalogSearch(products, normalize = normalizeCatalogText) {
-  return {
-    search(query) {
-      const needle = normalize(query.trim());
-      if (!needle) return products.map((product) => product.id);
-      return products
-        .filter((product) => [product.name, product.category, ...product.tags]
-          .some((value) => normalize(value).includes(needle)))
-        .map((product) => product.id);
-    },
-  };
+.el-radio__label {
+  padding-left: 8px;
+  font-size: 14px;
+  white-space: nowrap;
 }
 `);
-    writeText(path.join(workdir, "tests", "test_catalog_search.mjs"), `import assert from "node:assert/strict";
-import { createCatalogSearch } from "../src/catalog-search.js";
+    writeText(path.join(workdir, "src", "ui", "QuestionOptions.vue"), `<template>
+  <el-radio-group class="question-options" :model-value="modelValue">
+    <el-radio v-for="option in options" :key="option.id" :value="option.id">
+      <MathText :value="option.text" />
+    </el-radio>
+  </el-radio-group>
+</template>
 
-const products = [
-  { id: "p1", name: "Pro Keyboard", category: "Accessories", tags: ["wireless", "office"] },
-  { id: "p2", name: "Starter Mouse", category: "Pro Gear", tags: ["wired", "compact"] },
-  { id: "p3", name: "Desk Lamp", category: "Lighting", tags: ["pro", "warm"] },
-  { id: "p4", name: "Travel Stand", category: "Accessories", tags: ["portable", "folding"] },
-];
-const search = createCatalogSearch(products);
+<script setup>
+defineProps({ modelValue: String, options: Array })
+</script>
 
-assert.deepEqual(search.search("pro"), ["p1", "p2", "p3"], "name, category, and tag matches keep catalog order");
-assert.deepEqual(search.search("OFFICE"), ["p1"], "matching remains case-insensitive");
-assert.deepEqual(search.search("lamp"), ["p3"]);
-assert.deepEqual(search.search(""), ["p1", "p2", "p3", "p4"], "empty search returns the full catalog");
-console.log("ok");
+<style scoped src="./question-options.css"></style>
 `);
-    writeText(path.join(workdir, "tests", "test_catalog_search_work.mjs"), `import assert from "node:assert/strict";
-import { createCatalogSearch } from "../src/catalog-search.js";
+    writeText(path.join(workdir, "src", "ui", "question-options.css"), `.question-options {
+  display: grid;
+  gap: 12px;
+}
 
-const products = Array.from({ length: 40 }, (_, index) => ({
-  id: \`p\${index}\`,
-  name: \`Product \${index}\`,
-  category: \`Category \${index % 4}\`,
-  tags: [\`tag-\${index % 7}\`, \`group-\${index % 3}\`],
-}));
-let normalizationCalls = 0;
-const normalize = (value) => {
-  normalizationCalls += 1;
-  return String(value).normalize("NFKC").toLowerCase();
-};
-const search = createCatalogSearch(products, normalize);
-const afterBuild = normalizationCalls;
+.question-options :deep(.el-radio) {
+  width: 100%;
+}
 
-search.search("product 3");
-const firstQueryCalls = normalizationCalls - afterBuild;
-search.search("group-2");
-const secondQueryCalls = normalizationCalls - afterBuild - firstQueryCalls;
-
-assert.ok(firstQueryCalls <= 2, \`first query repeated unchanged field normalization \${firstQueryCalls} times\`);
-assert.ok(secondQueryCalls <= 2, \`second query repeated unchanged field normalization \${secondQueryCalls} times\`);
-console.log("ok");
+.question-options :deep(.el-radio__label) {
+  white-space: normal;
+}
 `);
+    writeText(path.join(workdir, "src", "pagination", "deep-pagination.js"), `export const MAX_VISIBLE_PAGES = 7;
+
+export function buildDeepPageWindow(current, total) {
+  const start = Math.max(1, Math.min(current - 3, total - MAX_VISIBLE_PAGES + 1));
+  const end = Math.min(total, start + MAX_VISIBLE_PAGES - 1);
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
+`);
+    writeText(path.join(workdir, "public", "index.html"), `<!doctype html>
+<html>
+  <head>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  </head>
+  <body><div id="app"></div></body>
+</html>
+`);
+    writeText(path.join(workdir, "tests", "test_question_options.mjs"), `import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { buildDeepPageWindow, MAX_VISIBLE_PAGES } from "../src/pagination/deep-pagination.js";
+
+const css = readFileSync(new URL("../src/ui/question-options.css", import.meta.url), "utf8");
+const radioRule = css.match(/\\.question-options\\s+:deep\\(\\.el-radio\\)\\s*\\{([^}]*)\\}/s)?.[1] || "";
+const labelRule = css.match(/\\.question-options\\s+:deep\\(\\.el-radio__label\\)\\s*\\{([^}]*)\\}/s)?.[1] || "";
+
+assert.match(radioRule, /margin-right\\s*:\\s*0(?:px)?\\s*;/, "mobile option must not keep the vendor right margin");
+assert.match(radioRule, /align-items\\s*:\\s*flex-start\\s*;/, "radio marker must align with the first text line");
+assert.match(labelRule, /white-space\\s*:\\s*normal\\s*;/, "long option text must keep wrapping");
+assert.match(labelRule, /min-width\\s*:\\s*0(?:px)?\\s*;/, "label must be allowed to shrink inside the mobile row");
+assert.equal(MAX_VISIBLE_PAGES, 7);
+assert.deepEqual(buildDeepPageWindow(24, 40), [21, 22, 23, 24, 25, 26, 27]);
+console.log("static option layout contracts pass; browser observation is still required");
+`);
+    FIXTURE_BASELINES.set(workdir, {
+      questionOptions: readText(path.join(workdir, "src", "ui", "QuestionOptions.vue")),
+      deepPagination: readText(path.join(workdir, "src", "pagination", "deep-pagination.js")),
+      indexHtml: readText(path.join(workdir, "public", "index.html")),
+    });
   }
   if (testCase.id === 16) {
     writeText(path.join(workdir, "docs", "midi-latency.md"), `# MIDI response trace
@@ -1197,11 +1209,13 @@ function deterministicCanaryFailure(testCase, workdir, lastMessageText, status) 
       break;
     }
     case 15: {
-      const correctnessFailure = runFixtureCheck(workdir, [process.execPath, "tests/test_catalog_search.mjs"]);
-      const workFailure = runFixtureCheck(workdir, [process.execPath, "tests/test_catalog_search_work.mjs"]);
-      if (correctnessFailure) failures.push(correctnessFailure);
-      if (workFailure) failures.push(workFailure);
-      allowTargetAndNewSupport("src/catalog-search.js", /^src\/.*\.(?:js|mjs)$/, /^tests\/.*\.mjs$/);
+      const baseline = FIXTURE_BASELINES.get(workdir);
+      if (source("src/ui/QuestionOptions.vue") !== baseline?.questionOptions) failures.push("the established component DOM was modified");
+      if (source("src/pagination/deep-pagination.js") !== baseline?.deepPagination) failures.push("the established deep-pagination contract was modified");
+      if (source("public/index.html") !== baseline?.indexHtml) failures.push("the approved MathJax loading contract was modified");
+      const contractFailure = runFixtureCheck(workdir, [process.execPath, "tests/test_question_options.mjs"]);
+      if (contractFailure) failures.push(contractFailure);
+      allowTargetAndNewSupport("src/ui/question-options.css", /^tests\/.*\.mjs$/);
       break;
     }
     case 16: {
@@ -1353,47 +1367,42 @@ This is the authoritative owner for durable Atlas release rules. Replace superse
     writeText(path.join(c14Parallel, "docs", "release-memory.md"), "# Parallel memory\n\nAtlas release rule copy.\n");
     assertFail(14, c14Parallel);
 
+    const c15GoodCss = `.question-options {
+  display: grid;
+  gap: 12px;
+}
+
+.question-options :deep(.el-radio) {
+  width: 100%;
+  margin-right: 0;
+  align-items: flex-start;
+}
+
+.question-options :deep(.el-radio__label) {
+  min-width: 0;
+  white-space: normal;
+}
+`;
     const c15 = fixture(15);
-    writeText(path.join(c15, "src", "catalog-index.js"), `export function createCatalogIndex(products, normalize) {
-  const indexed = products.map((product) => ({
-    id: product.id,
-    fields: [product.name, product.category, ...product.tags].map(normalize),
-  }));
-  return {
-    search(needle) {
-      if (!needle) return indexed.map((product) => product.id);
-      return indexed
-        .filter((product) => product.fields.some((value) => value.includes(needle)))
-        .map((product) => product.id);
-    },
-  };
-}
-`);
-    writeText(path.join(c15, "src", "catalog-search.js"), `import { createCatalogIndex } from "./catalog-index.js";
-
-export function normalizeCatalogText(value) {
-  return String(value).normalize("NFKC").toLowerCase();
-}
-
-export function createCatalogSearch(products, normalize = normalizeCatalogText) {
-  const index = createCatalogIndex(products, normalize);
-  return {
-    search(query) {
-      const needle = normalize(query.trim());
-      return index.search(needle);
-    },
-  };
-}
-`);
+    writeText(path.join(c15, "src", "ui", "question-options.css"), c15GoodCss);
     assertPass(15, c15);
 
-    const c15Unrelated = fixture(15, "bad-unrelated-change");
-    writeText(path.join(c15Unrelated, "src", "catalog-index.js"), readText(path.join(c15, "src", "catalog-index.js")));
-    writeText(path.join(c15Unrelated, "src", "catalog-search.js"), readText(path.join(c15, "src", "catalog-search.js")));
-    writeText(path.join(c15Unrelated, "src", "app.js"), `${readText(path.join(c15Unrelated, "src", "app.js"))}\n// unrelated change\n`);
-    assertFail(15, c15Unrelated);
+    const c15Dom = fixture(15, "bad-dom-change");
+    writeText(path.join(c15Dom, "src", "ui", "question-options.css"), c15GoodCss);
+    writeText(path.join(c15Dom, "src", "ui", "QuestionOptions.vue"), readText(path.join(c15Dom, "src", "ui", "QuestionOptions.vue")).replace("<MathText :value=\"option.text\" />", "<div class=\"option-copy\"><MathText :value=\"option.text\" /></div>"));
+    assertFail(15, c15Dom);
 
-    assertFail(15, fixture(15, "bad-no-optimization"));
+    const c15Pagination = fixture(15, "bad-pagination-change");
+    writeText(path.join(c15Pagination, "src", "ui", "question-options.css"), c15GoodCss);
+    writeText(path.join(c15Pagination, "src", "pagination", "deep-pagination.js"), readText(path.join(c15Pagination, "src", "pagination", "deep-pagination.js")).replace("MAX_VISIBLE_PAGES = 7", "MAX_VISIBLE_PAGES = 9"));
+    assertFail(15, c15Pagination);
+
+    const c15MathJax = fixture(15, "bad-mathjax-change");
+    writeText(path.join(c15MathJax, "src", "ui", "question-options.css"), c15GoodCss);
+    writeText(path.join(c15MathJax, "public", "index.html"), readText(path.join(c15MathJax, "public", "index.html")).replace("https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js", "/vendor/mathjax/tex-svg.js"));
+    assertFail(15, c15MathJax);
+
+    assertFail(15, fixture(15, "bad-no-layout-fix"));
 
     if (pythonCommand) {
       const c16 = fixture(16);
