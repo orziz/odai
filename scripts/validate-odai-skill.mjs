@@ -18,6 +18,7 @@ if (entryTokenEstimate > 2200) warn(`SKILL.md: entry token estimate ${entryToken
 validateFrontmatter(skillText);
 validateConstitution(skillText);
 validateOpenaiMetadata();
+validateHookSources();
 
 const files = listFiles(skillRoot);
 const markdownTokenEstimate = files
@@ -25,6 +26,7 @@ const markdownTokenEstimate = files
   .reduce((total, file) => total + estimateTokens(readFileSync(path.join(skillRoot, file), "utf8")), 0);
 if (markdownTokenEstimate > 12000) warn(`skill markdown estimate ${markdownTokenEstimate} exceeds total review threshold 12000; review ownership and duplication, but do not remove useful capability to satisfy a quota`);
 const requiredFiles = [
+  "assets/hooks-policy.example.json",
   "assets/task-ledger.md",
   "assets/task-state.md",
   "references/dao/authority.md",
@@ -40,6 +42,8 @@ const requiredFiles = [
   "references/domains/interactive-systems.md",
   "references/techniques/consensus.md",
   "references/techniques/review-modes.md",
+  "scripts/build-hooks.mjs",
+  "scripts/odai-hook.mjs",
 ];
 for (const relativePath of requiredFiles) {
   if (!files.includes(relativePath)) fail(`${relativePath}: required vNext resource is missing`);
@@ -422,6 +426,47 @@ function validateOpenaiMetadata() {
     fail(`agents/openai.yaml: short_description must be 25-64 chars, got ${shortDescription.length}`);
   }
   if (defaultPrompt && !defaultPrompt.includes("$odai")) fail("agents/openai.yaml: default_prompt must mention $odai");
+}
+
+function validateHookSources() {
+  const policyFile = path.join(skillRoot, "assets", "hooks-policy.example.json");
+  const runtimeFile = path.join(skillRoot, "scripts", "odai-hook.mjs");
+  const builderFile = path.join(skillRoot, "scripts", "build-hooks.mjs");
+  for (const file of [policyFile, runtimeFile, builderFile]) {
+    if (!existsSync(file)) fail(`${path.relative(skillRoot, file)}: missing optional hooks source`);
+  }
+  if (![policyFile, runtimeFile, builderFile].every(existsSync)) return;
+
+  let policy;
+  try {
+    policy = JSON.parse(readFileSync(policyFile, "utf8"));
+  } catch (error) {
+    fail(`assets/hooks-policy.example.json: invalid JSON: ${error.message}`);
+    return;
+  }
+  if (policy.version !== 1) fail("assets/hooks-policy.example.json: version must be 1");
+  if (!Array.isArray(policy.protectedPaths)) fail("assets/hooks-policy.example.json: protectedPaths must be an array");
+  if (!Array.isArray(policy.checks)) fail("assets/hooks-policy.example.json: checks must be an array");
+
+  const runtime = readFileSync(runtimeFile, "utf8");
+  for (const fragment of [
+    '".odai", "hooks.json"',
+    "protectedPaths",
+    "blockUnresolvedWrites",
+    "stop_hook_active",
+    "collectChangedPaths",
+    'decision: "block"',
+  ]) {
+    if (!runtime.includes(fragment)) fail(`scripts/odai-hook.mjs: missing hook boundary: ${fragment}`);
+  }
+
+  const builder = readFileSync(builderFile, "utf8");
+  for (const host of ["codex", "claude", "copilot", "gemini", "grok", "kimi"]) {
+    if (!builder.includes(`"${host}"`)) fail(`scripts/build-hooks.mjs: missing host adapter: ${host}`);
+  }
+  if (!builder.includes('host === "grok" ? ["pre-tool"]')) {
+    fail("scripts/build-hooks.mjs: Grok adapter must not claim blocking stop validation");
+  }
 }
 
 function unquote(value) {

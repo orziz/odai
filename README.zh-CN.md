@@ -184,6 +184,29 @@ npx skills add https://github.com/orziz/odai#old
 
 canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh) 安装流程；本仓库不再维护各平台镜像产物。当前 source、验证、冻结与发布口径见 [MAINTAINING.md](MAINTAINING.md)，已冻结架构变更见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 可选 Hooks 增强
+
+skill 负责判断，Hooks 只把项目已经明确的边界变成机械护栏。它们默认不安装、不启用，也不改变 `odai` 的主流程；只有项目创建 `.odai/hooks.json` 后，才会保护显式只读路径，并在收口时运行显式声明且与当前变更相关的验收命令。没有策略文件时完全静默。
+
+仓库维护一份无依赖运行时，按需生成宿主原生适配，不常驻六套平台镜像：
+
+```bash
+node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
+```
+
+也可以把 `all` 换成 `codex`、`claude`、`copilot`、`gemini`、`grok` 或 `kimi`。每个输出目录里的 `ADAPTER.json` 会说明安装形态；策略从 [`skills/odai/assets/hooks-policy.example.json`](skills/odai/assets/hooks-policy.example.json) 起步，按项目事实改好后放到项目根 `.odai/hooks.json`。
+
+| 宿主 | 写前只读路径保护 | 收口前显式验收 |
+|---|---:|---:|
+| Codex | `PreToolUse` | `Stop` |
+| Claude Code | `PreToolUse` | `Stop` |
+| GitHub Copilot | `preToolUse` | `agentStop` |
+| Gemini CLI | `BeforeTool` | `AfterAgent` |
+| Grok Build | `PreToolUse` | — |
+| Kimi Code CLI | `PreToolUse` | `Stop` |
+
+Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会伪造 Stop 验收。Hooks 只检查结构化写工具和项目明确配置的命令，不解析任意 shell 写入，也不推断用户意图、目标文件或测试方案；它们是权限、沙箱和人工确认之外的轻量保险丝，不是完整安全边界。启用前应审查生成配置与 `.odai/hooks.json`。
+
 ## 评测
 
 当前评测结果（2026-07-22）包含 12 条全量现实委托和 8 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中，覆盖用户给错根因、给出有害修法、需求模糊、长任务恢复与生产边界。

@@ -184,6 +184,29 @@ Use `old` only if you still depend on the previous standalone skill layout or ar
 
 Canonical source lives in `skills/`. Distribution is handled through the [skills.sh](https://skills.sh) install flow; this repository no longer keeps per-platform mirror outputs. See [MAINTAINING.md](MAINTAINING.md) for the current source, validation, freeze, and release rules, and [CHANGELOG.md](CHANGELOG.md) for frozen architecture changes.
 
+## Optional Hook Guardrails
+
+The skill supplies judgment; hooks only turn already-explicit project boundaries into mechanical guardrails. They are not installed or enabled by default and do not change odai's main flow. Once a project defines `.odai/hooks.json`, they can protect explicit read-only paths and run explicitly declared acceptance commands that match the current change. With no policy file, they are silent no-ops.
+
+The repository keeps one dependency-free runtime and generates native host adapters on demand instead of maintaining six platform mirrors:
+
+```bash
+node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
+```
+
+Replace `all` with `codex`, `claude`, `copilot`, `gemini`, `grok`, or `kimi` when only one adapter is needed. Each output contains an `ADAPTER.json` describing its install form. Start from [`skills/odai/assets/hooks-policy.example.json`](skills/odai/assets/hooks-policy.example.json), adapt it to project evidence, and place the result at `<project>/.odai/hooks.json`.
+
+| Host | Pre-write read-only protection | Declared acceptance before closure |
+|---|---:|---:|
+| Codex | `PreToolUse` | `Stop` |
+| Claude Code | `PreToolUse` | `Stop` |
+| GitHub Copilot | `preToolUse` | `agentStop` |
+| Gemini CLI | `BeforeTool` | `AfterAgent` |
+| Grok Build | `PreToolUse` | — |
+| Kimi Code CLI | `PreToolUse` | `Stop` |
+
+Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapter does not pretend that Stop validation is enforceable. The runtime checks structured write tools and project-declared commands only. It does not parse arbitrary shell writes or infer user intent, target files, or test strategy. Hooks are a lightweight fuse alongside host permissions, sandboxing, and human confirmation—not a complete security boundary. Review the generated adapter and `.odai/hooks.json` before enabling them.
+
 ## Evaluation
 
 The current results (2026-07-22) contain 12 realistic full-plan tasks and an 8-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. This includes user-supplied wrong causes, harmful fixes, ambiguous requirements, long-task recovery, and production boundaries.

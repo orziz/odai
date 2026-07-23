@@ -21,7 +21,12 @@ jobs:
         run: |
           node --check scripts/validate-odai-skill.mjs
           node --check scripts/odai-canary-harness.mjs
+          node --check scripts/test-odai-hooks.mjs
+          node --check skills/odai/scripts/odai-hook.mjs
+          node --check skills/odai/scripts/build-hooks.mjs
           node --check cli/scripts/package-skill-bundle.mjs
+      - name: Test optional hook adapters
+        run: node scripts/test-odai-hooks.mjs
       - name: Build frozen full and A/B fixtures
         run: |
           node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --out /tmp/odai-full-dry-run
