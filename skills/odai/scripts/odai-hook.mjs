@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -279,6 +279,9 @@ function normalizeProjectPath(candidate, cwd, projectRoot) {
   if (!candidate || candidate.includes("\0")) return null;
   const absolute = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(cwd, candidate);
   if (!isInside(projectRoot, absolute)) return null;
+  let real = absolute;
+  try { real = realpathSync(absolute); } catch { /* path may not exist yet — skip symlink resolution */ }
+  if (!isInside(projectRoot, real)) return null;
   return normalizeSlashes(path.relative(projectRoot, absolute));
 }
 
@@ -329,12 +332,15 @@ function globToRegExp(pattern) {
     }
   }
   source += "$";
-  return new RegExp(source);
+  return new RegExp(source); // nosemgrep: detect-non-literal-regexp
 }
 
 function validatePattern(pattern, label) {
   if (path.isAbsolute(pattern) || normalizeSlashes(pattern).split("/").includes("..")) {
     throw new Error(`${label} 只能使用项目内相对 glob：${pattern}`);
+  }
+  if (pattern.length > 256) {
+    throw new Error(`${label} glob 长度不得超过 256 个字符：${pattern}`);
   }
   globToRegExp(pattern);
 }
