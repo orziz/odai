@@ -33,6 +33,14 @@ export function loadPolicy(projectRoot) {
   return { policy: value, policyPath };
 }
 
+function symlinkEscapes(candidate, cwd, projectRoot) {
+  if (!candidate || candidate.includes("\0")) return false;
+  const absolute = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(cwd, candidate);
+  if (!isInside(projectRoot, absolute)) return false;
+  const real = resolveRealOrNearest(absolute);
+  return !isInside(projectRoot, real);
+}
+
 export function evaluatePreTool(payload, policy, projectRoot) {
   if (!policy) return { blocked: false };
 
@@ -41,7 +49,18 @@ export function evaluatePreTool(payload, policy, projectRoot) {
   if (!WRITE_TOOLS.has(toolName) && !looksLikePatch(toolInput)) return { blocked: false };
 
   const cwd = resolveSessionCwd(payload.cwd, projectRoot);
-  const candidates = extractPaths(toolInput)
+  const rawPaths = extractPaths(toolInput);
+
+  for (const raw of rawPaths) {
+    if (symlinkEscapes(raw, cwd, projectRoot)) {
+      return {
+        blocked: true,
+        reason: `odai hook：${raw} 经由符号链接指向项目根目录之外，写入被拒绝。`,
+      };
+    }
+  }
+
+  const candidates = rawPaths
     .map((candidate) => normalizeProjectPath(candidate, cwd, projectRoot))
     .filter(Boolean);
 
@@ -275,14 +294,29 @@ function looksLikePatch(value) {
   return Object.values(value).some((item) => typeof item === "string" && item.includes("*** Begin Patch"));
 }
 
+function resolveRealOrNearest(absolute) {
+  let dir = absolute;
+  const trailing = [];
+  while (true) {
+    try {
+      const real = realpathSync(dir);
+      return path.join(real, ...trailing.reverse());
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return absolute;
+      trailing.push(path.basename(dir));
+      dir = parent;
+    }
+  }
+}
+
 function normalizeProjectPath(candidate, cwd, projectRoot) {
   if (!candidate || candidate.includes("\0")) return null;
   const absolute = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(cwd, candidate);
   if (!isInside(projectRoot, absolute)) return null;
-  let real = absolute;
-  try { real = realpathSync(absolute); } catch { /* path may not exist yet — skip symlink resolution */ }
+  const real = resolveRealOrNearest(absolute);
   if (!isInside(projectRoot, real)) return null;
-  return normalizeSlashes(path.relative(projectRoot, absolute));
+  return normalizeSlashes(path.relative(projectRoot, real));
 }
 
 function resolveSessionCwd(cwd, projectRoot) {

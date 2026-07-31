@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -73,6 +73,28 @@ writeFileSync(checkScript, "process.exit(0);\n", "utf8");
 const passedStop = runHook("stop", "codex", { cwd: project, stop_hook_active: false });
 assert.equal(passedStop.status, 0, "passing declared check must allow stop");
 assert.equal(passedStop.stdout, "");
+
+// Symlink regression tests (V-002)
+
+// Test 1: new file write through a symlink pointing outside the project must be blocked
+const externalDir = mkdtempSync(path.join(os.tmpdir(), "odai-external-"));
+symlinkSync(externalDir, path.join(project, "outside-link"));
+writePolicy({ version: 1, protectedPaths: [], blockUnresolvedWrites: false, checks: [] });
+const externalSymlinkWrite = runHook("pre-tool", "claude", editPayload("outside-link/new-file.js"));
+assert.equal(externalSymlinkWrite.status, 2, "new file write through external symlink must be blocked");
+
+// Test 2: write to an existing protected file through an internal symlink must be blocked
+mkdirSync(path.join(project, "examples", "reference"), { recursive: true });
+writeFileSync(path.join(project, "examples", "reference", "demo.js"), "// fixture\n", "utf8");
+symlinkSync(path.join(project, "examples", "reference"), path.join(project, "link-to-ref"));
+writePolicy({ version: 1, protectedPaths: ["examples/reference/**"], blockUnresolvedWrites: false, checks: [] });
+const internalSymlinkProtected = runHook("pre-tool", "codex", editPayload("link-to-ref/demo.js"));
+assert.equal(internalSymlinkProtected.status, 2, "protected file accessed through internal symlink must be blocked");
+assert.match(internalSymlinkProtected.stderr, /命中项目只读路径/);
+
+// Test 3: new protected file through an internal symlink must also be blocked
+const internalSymlinkNewProtected = runHook("pre-tool", "codex", editPayload("link-to-ref/brand-new.js"));
+assert.equal(internalSymlinkNewProtected.status, 2, "new protected file through internal symlink must be blocked");
 
 const generatedRoot = mkdtempSync(path.join(os.tmpdir(), "odai-hook-adapters-"));
 const build = run(process.execPath, [builder, "--host", "all", "--out", generatedRoot]);
