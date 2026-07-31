@@ -96,6 +96,19 @@ assert.match(internalSymlinkProtected.stderr, /命中项目只读路径/);
 const internalSymlinkNewProtected = runHook("pre-tool", "codex", editPayload("link-to-ref/brand-new.js"));
 assert.equal(internalSymlinkNewProtected.status, 2, "new protected file through internal symlink must be blocked");
 
+// Test 4: write to an existing file through a symlink whose alias path is protected (but canonical target is not)
+mkdirSync(path.join(project, "src"), { recursive: true });
+writeFileSync(path.join(project, "src", "real.js"), "// fixture\n", "utf8");
+symlinkSync(path.join(project, "src"), path.join(project, "protected-alias"));
+writePolicy({ version: 1, protectedPaths: ["protected-alias/**"], blockUnresolvedWrites: false, checks: [] });
+const aliasProtectedExisting = runHook("pre-tool", "codex", editPayload("protected-alias/real.js"));
+assert.equal(aliasProtectedExisting.status, 2, "write through alias-protected symlink to existing file must be blocked");
+assert.match(aliasProtectedExisting.stderr, /命中项目只读路径/);
+
+// Test 5: write to a new file through a symlink whose alias path is protected (but canonical target is not)
+const aliasProtectedNew = runHook("pre-tool", "codex", editPayload("protected-alias/new.js"));
+assert.equal(aliasProtectedNew.status, 2, "write through alias-protected symlink to new file must be blocked");
+
 const generatedRoot = mkdtempSync(path.join(os.tmpdir(), "odai-hook-adapters-"));
 const build = run(process.execPath, [builder, "--host", "all", "--out", generatedRoot]);
 assert.equal(build.status, 0, build.stderr);

@@ -61,8 +61,7 @@ export function evaluatePreTool(payload, policy, projectRoot) {
   }
 
   const candidates = rawPaths
-    .map((candidate) => normalizeProjectPath(candidate, cwd, projectRoot))
-    .filter(Boolean);
+    .flatMap((candidate) => normalizeProjectPath(candidate, cwd, projectRoot) ?? []);
 
   const protectedPath = candidates.find((candidate) =>
     policy.protectedPaths.some((pattern) => matchGlob(candidate, pattern)),
@@ -316,7 +315,9 @@ function normalizeProjectPath(candidate, cwd, projectRoot) {
   if (!isInside(projectRoot, absolute)) return null;
   const real = resolveRealOrNearest(absolute);
   if (!isInside(projectRoot, real)) return null;
-  return normalizeSlashes(path.relative(projectRoot, real));
+  const lexical = normalizeSlashes(path.relative(projectRoot, absolute));
+  const canonical = normalizeSlashes(path.relative(projectRoot, real));
+  return lexical === canonical ? [canonical] : [canonical, lexical];
 }
 
 function resolveSessionCwd(cwd, projectRoot) {
