@@ -65,12 +65,31 @@ const persistenceModule: {
   PersistenceCoordinator: { prototype: PersistenceCoordinatorInstance };
   SessionFormatUnsupportedError: new (...arguments_: unknown[]) => Error;
 } = await import(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-session-persistence")).href);
+interface AgentPresetProjectionDefinition {
+  init(header: DshSessionHeader): unknown;
+  apply(state: unknown, event: DshEvent): unknown;
+  wire: { view(state: unknown): unknown };
+}
 const presetModule: {
-  resolveSessionPreset(input: { header: DshSessionHeader; events: readonly DshEvent[] }): string;
+  resolveSessionPreset?(input: { header: DshSessionHeader; events: readonly DshEvent[] }): string;
+  agentPresetProjectionDefinition?: AgentPresetProjectionDefinition;
 } = await import(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-agent-presets")).href);
 const { JsonlSessionPersistence } = jsonlModule;
 const { PersistenceCoordinator, SessionFormatUnsupportedError } = persistenceModule;
-const { resolveSessionPreset } = presetModule;
+
+function resolvedSessionPreset(input: { header: DshSessionHeader; events: readonly DshEvent[] }): string {
+  if (typeof presetModule.resolveSessionPreset === "function") return presetModule.resolveSessionPreset(input);
+  const projection = presetModule.agentPresetProjectionDefinition;
+  if (!projection || typeof projection.init !== "function" || typeof projection.apply !== "function"
+    || typeof projection.wire?.view !== "function") {
+    throw new Error("DSH Agent preset package exposes neither the legacy resolver nor the projection contract");
+  }
+  let state = projection.init(input.header);
+  for (const event of input.events) state = projection.apply(state, event);
+  const selected = projection.wire.view(state);
+  if (typeof selected !== "string" || selected === "") throw new Error("DSH Agent preset projection did not resolve a preset");
+  return selected;
+}
 
 const scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-session-compat-"));
 const sessionRoot = resolve(scratch, "sessions");
@@ -172,7 +191,7 @@ try {
     assert.equal(stored.events.find((event) => event.type === "request/context")?.ignorable, undefined);
     assert.equal(stored.events.find((event) => event.type === "odai/route-decided")?.ignorable, true);
     assert.equal(
-      resolveSessionPreset({ header: stored.meta, events: stored.events }),
+      resolvedSessionPreset({ header: stored.meta, events: stored.events }),
       fixture.selectedPreset ?? fixture.agentPreset,
     );
     const path = backend.locate(stored.meta).path;

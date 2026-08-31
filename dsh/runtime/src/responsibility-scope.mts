@@ -2,14 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type { DshEvent, DshMessage, ModelRoute, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
 import type { RouteDecision } from "./router.mjs";
-import type { RouteCard } from "./route-card.mjs";
 
-export type InPlaceResponsibility = "researcher" | "planner" | "reviewer" | "executor" | "frontend";
+export type InPlaceResponsibility = "researcher" | "planner" | "reviewer" | "frontend";
 export type ResponsibilityContinuationPolicy = "read-only-tool-chain" | "bounded-work-tool-chain";
 export type ResponsibilityScopeState = "pending" | "active";
 
 const SHORT_SCOPE_ROLES = new Set<InPlaceResponsibility>(["researcher", "planner", "reviewer"]);
-const WORK_SCOPE_ROLES = new Set<InPlaceResponsibility>(["executor", "frontend"]);
+const WORK_SCOPE_ROLES = new Set<InPlaceResponsibility>(["frontend"]);
 
 export interface ResponsibilityScope {
   readonly id: string;
@@ -23,7 +22,6 @@ export interface ResponsibilityScope {
   readonly continuationPolicy: ResponsibilityContinuationPolicy;
   readonly stopPolicy: "terminal-response-or-ownership-boundary";
   readonly routeValidated: boolean;
-  readonly cardId?: string;
   readonly resumeOfScopeId?: string;
   readonly claimedStep?: number;
   readonly baseRoute?: Readonly<ModelRoute>;
@@ -39,7 +37,6 @@ export interface CreateResponsibilityScopeOptions {
   source?: string;
   decision?: RouteDecision;
   routeValidated?: boolean;
-  cardId?: string;
   resumeOfScopeId?: string;
 }
 
@@ -47,7 +44,6 @@ export type ResponsibilityInterruption = RuntimeEventData & {
   scopeId: string;
   responsibility: InPlaceResponsibility;
   reason: string;
-  routeCard?: UnknownRecord & RouteCard;
 };
 
 export interface ResponsibilityScopeRestoration extends RuntimeEventData {
@@ -81,7 +77,7 @@ function rolePolicy(role: InPlaceResponsibility): ResponsibilityContinuationPoli
 }
 
 export function createResponsibilityScope(options: CreateResponsibilityScopeOptions): Readonly<ResponsibilityScope> {
-  const { turn, startStep, role, route, source, decision, routeValidated = false, cardId, resumeOfScopeId } = options;
+  const { turn, startStep, role, route, source, decision, routeValidated = false, resumeOfScopeId } = options;
   if (!Number.isSafeInteger(turn) || turn < 1) throw new TypeError("scope turn must be a positive integer");
   if (!Number.isSafeInteger(startStep) || startStep < 1) throw new TypeError("scope startStep must be a positive integer");
   const requestedRoute = routeSnapshot(route);
@@ -101,7 +97,6 @@ export function createResponsibilityScope(options: CreateResponsibilityScopeOpti
     continuationPolicy: rolePolicy(role),
     stopPolicy: "terminal-response-or-ownership-boundary",
     routeValidated: routeValidated === true,
-    ...(cardId ? { cardId } : {}),
     ...(resumeOfScopeId ? { resumeOfScopeId } : {}),
   });
 }
@@ -165,8 +160,6 @@ export function responsibilityScopeStopReason(
     return "terminal-response";
   }
   if (event.type === "turn/end" && event.data?.turn === scope.turn) return "turn-ended";
-  if (scope.cardId && event.type === "odai/route-card-cleared" && event.data?.cardId === scope.cardId) return "route-card-cleared";
-  if (scope.cardId && event.type === "odai/route-card-claim-released" && event.data?.cardId === scope.cardId) return "route-card-released";
   return undefined;
 }
 
@@ -180,7 +173,6 @@ function scopeEventData(scope: ResponsibilityScope): Readonly<UnknownRecord> {
     continuationPolicy: scope.continuationPolicy,
     stopPolicy: scope.stopPolicy,
     ...(scope.source ? { routeSource: scope.source } : {}),
-    ...(scope.cardId ? { routeCardId: scope.cardId } : {}),
     ...(scope.resumeOfScopeId ? { resumeOfScopeId: scope.resumeOfScopeId } : {}),
     ...(scope.baseRoute ? { baseRoute: scope.baseRoute } : {}),
     ...(scope.temporaryRoute ? { temporaryRoute: scope.temporaryRoute } : {}),
@@ -231,27 +223,13 @@ export function latestStoppedResponsibilityScope(events: readonly DshEvent[] | u
 }
 
 function isInPlaceResponsibility(value: unknown): value is InPlaceResponsibility {
-  return value === "researcher" || value === "planner" || value === "reviewer" || value === "executor" || value === "frontend";
-}
-
-function isRouteCard(value: unknown): value is RouteCard {
-  if (value === null || typeof value !== "object") return false;
-  return "id" in value && typeof value.id === "string"
-    && "frozen" in value && value.frozen === true
-    && "observableBenefit" in value && value.observableBenefit === true
-    && "authorization" in value && value.authorization !== null && typeof value.authorization === "object"
-    && "target" in value && typeof value.target === "string"
-    && "evidence" in value && Array.isArray(value.evidence)
-    && "scope" in value && Array.isArray(value.scope)
-    && "accept" in value && Array.isArray(value.accept)
-    && "stop" in value && typeof value.stop === "string";
+  return value === "researcher" || value === "planner" || value === "reviewer" || value === "frontend";
 }
 
 function isResponsibilityInterruption(data: RuntimeEventData): data is ResponsibilityInterruption {
   return typeof data.scopeId === "string"
     && isInPlaceResponsibility(data.responsibility)
-    && typeof data.reason === "string"
-    && (data.routeCard === undefined || isRouteCard(data.routeCard));
+    && typeof data.reason === "string";
 }
 
 export function pendingResponsibilityInterruption(events: readonly DshEvent[] | undefined): ResponsibilityInterruption | undefined {

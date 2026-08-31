@@ -9,9 +9,30 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const CASE_ROW_RE = /^\|\s*(\d{1,2})(\s*★)?\s*\|/;
+const DEFAULT_SUITE = "full";
+const STRICT_SUITES = new Set(["intent", "verification"]);
+const CANONICAL_SUITES = Object.freeze({
+  full: Object.freeze(Array.from({ length: 19 }, (_, index) => index + 1)),
+  ab: Object.freeze([1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 17, 18, 19]),
+  routing: Object.freeze([20]),
+  ideation: Object.freeze([21, 22]),
+  defensive: Object.freeze([23, 24]),
+  intent: Object.freeze([25, 26, 27, 28, 29, 30, 31]),
+  verification: Object.freeze([32, 33, 34]),
+  all: Object.freeze(Array.from({ length: 34 }, (_, index) => index + 1)),
+});
+const CANONICAL_SUITE_WEIGHTS = Object.freeze({
+  full: 36,
+  ab: 24,
+  routing: 3,
+  ideation: 4,
+  defensive: 3,
+  intent: 13,
+  verification: 4,
+  all: 63,
+});
 const HARNESS_STATUS_PATHS = new Set([
   "diff.patch",
-  "planner-preplan.log",
   "planner-plan.txt",
   "grok-runner.json",
   "judge.json",
@@ -339,11 +360,13 @@ function parseArgs(argv) {
     plan: "plans/odai-canary.md",
     out: "",
     smoke: false,
+    suite: "",
     cases: "",
     run: false,
     stopOnFail: false,
     stopBelowScore: 0,
     passScore: 3,
+    passScoreExplicit: false,
     noJudge: false,
     deferJudge: false,
     skillMode: "on",
@@ -364,24 +387,24 @@ function parseArgs(argv) {
     rejudgeFrom: [],
     codexRoutingTelemetry: false,
     codexRoutingPlannerModel: "",
-    codexRoutingExecutorModel: "",
     codexRoutingReviewerModel: "",
     codexRoutingPlannerEffort: "",
-    codexRoutingExecutorEffort: "",
     codexRoutingReviewerEffort: "",
-    codexRoutingPlanningPolicy: "auto",
-    codexRoutingHostPreplan: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--plan") args.plan = argv[++i];
     else if (arg === "--out") args.out = argv[++i];
     else if (arg === "--smoke") args.smoke = true;
+    else if (arg === "--suite") args.suite = argv[++i];
     else if (arg === "--cases") args.cases = argv[++i];
     else if (arg === "--run") args.run = true;
     else if (arg === "--stop-on-fail") args.stopOnFail = true;
     else if (arg === "--stop-below-score") args.stopBelowScore = Number(argv[++i]);
-    else if (arg === "--pass-score") args.passScore = Number(argv[++i]);
+    else if (arg === "--pass-score") {
+      args.passScore = Number(argv[++i]);
+      args.passScoreExplicit = true;
+    }
     else if (arg === "--no-judge") args.noJudge = true;
     else if (arg === "--defer-judge") args.deferJudge = true;
     else if (arg === "--skill-mode") args.skillMode = argv[++i];
@@ -402,13 +425,9 @@ function parseArgs(argv) {
     else if (arg === "--rejudge-from") args.rejudgeFrom.push(argv[++i]);
     else if (arg === "--codex-routing-telemetry") args.codexRoutingTelemetry = true;
     else if (arg === "--codex-routing-planner-model") args.codexRoutingPlannerModel = argv[++i];
-    else if (arg === "--codex-routing-executor-model") args.codexRoutingExecutorModel = argv[++i];
     else if (arg === "--codex-routing-reviewer-model") args.codexRoutingReviewerModel = argv[++i];
     else if (arg === "--codex-routing-planner-effort") args.codexRoutingPlannerEffort = argv[++i];
-    else if (arg === "--codex-routing-executor-effort") args.codexRoutingExecutorEffort = argv[++i];
     else if (arg === "--codex-routing-reviewer-effort") args.codexRoutingReviewerEffort = argv[++i];
-    else if (arg === "--codex-routing-planning-policy") args.codexRoutingPlanningPolicy = argv[++i];
-    else if (arg === "--codex-routing-host-preplan") args.codexRoutingHostPreplan = true;
     else if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
@@ -440,20 +459,18 @@ function parseArgs(argv) {
   if (args.codexRoutingPlannerModel && args.skillMode !== "on") {
     throw new Error("Codex routing installation is part of the treatment arm and requires --skill-mode on");
   }
-  if ((args.codexRoutingExecutorModel || args.codexRoutingReviewerModel
-    || args.codexRoutingPlannerEffort || args.codexRoutingExecutorEffort
-    || args.codexRoutingReviewerEffort
-    || args.codexRoutingPlanningPolicy !== "auto")
+  if ((args.codexRoutingReviewerModel || args.codexRoutingPlannerEffort || args.codexRoutingReviewerEffort)
     && !args.codexRoutingPlannerModel) {
     throw new Error("Codex routing role overrides require --codex-routing-planner-model");
   }
-  if (!new Set(["auto", "stage"]).has(args.codexRoutingPlanningPolicy)) {
-    throw new Error("--codex-routing-planning-policy must be auto or stage");
+  if (args.suite && !Object.hasOwn(CANONICAL_SUITES, args.suite)) {
+    throw new Error(`--suite must be one of ${Object.keys(CANONICAL_SUITES).join(", ")}; got: ${args.suite}`);
   }
-  if (args.codexRoutingHostPreplan
-    && (!args.codexRoutingPlannerModel || !args.codexRoutingTelemetry
-      || args.codexRoutingPlanningPolicy !== "stage")) {
-    throw new Error("--codex-routing-host-preplan is an explicit maintenance path and requires stage");
+  if (STRICT_SUITES.has(args.suite)) {
+    if (args.passScoreExplicit && args.passScore !== 4) {
+      throw new Error(`--suite ${args.suite} requires --pass-score 4`);
+    }
+    args.passScore = 4;
   }
   if (!Number.isInteger(args.stopBelowScore) || args.stopBelowScore < 0 || args.stopBelowScore > 4) {
     throw new Error("--stop-below-score must be an integer from 0 to 4");
@@ -477,6 +494,8 @@ Options:
   --plan PATH        Canary markdown path (default: plans/odai-canary.md)
   --out DIR         Output directory (default: temp dir)
   --smoke           Select only star-marked cases
+  --suite NAME      Select full, ab, routing, ideation, defensive, intent, verification, or all
+                    (default: full unless --cases is explicit)
   --cases LIST      Case ids/ranges, e.g. 1,5,20-22
   --run             Invoke the runner
   --stop-on-fail    Stop after the first non-pass result (run mode only)
@@ -505,14 +524,10 @@ Options:
   --rejudge-from DIR          Reuse frozen runner evidence from a prior output directory and run only the current judge;
                               repeat to draw different cases from multiple compatible outputs
   --codex-routing-telemetry   Enable Codex multi-agent JSON events and record per-thread actual model and token usage
-  --codex-routing-planner-model MODEL  Strongest planning and routing role; enables the current odai project router
-  --codex-routing-executor-model MODEL Default frozen-plan executor (default: runner model)
+  --codex-routing-planner-model MODEL  Planning role model; enables the current odai project router
   --codex-routing-reviewer-model MODEL Acceptance-review role model (default: runner model)
   --codex-routing-planner-effort VALUE Planner role reasoning effort
-  --codex-routing-executor-effort VALUE Default executor reasoning effort
   --codex-routing-reviewer-effort VALUE Reviewer role reasoning effort
-  --codex-routing-planning-policy VALUE  auto (default) or stage
-  --codex-routing-host-preplan  Run the installed stage entry as an explicit maintenance experiment
 `);
 }
 
@@ -521,17 +536,23 @@ function parseCanary(planPath) {
   for (const line of readText(planPath).split(/\r?\n/)) {
     if (!CASE_ROW_RE.test(line)) continue;
     const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-    if (cells.length < 4) continue;
+    if (cells.length < 6) continue;
     const match = /^(\d{1,2})(\s*★)?$/.exec(cells[0]);
     if (!match) continue;
+    const hasSuiteColumn = cells.length >= 7;
+    const offset = hasSuiteColumn ? 1 : 0;
+    const suites = hasSuiteColumn
+      ? cells[1].split(",").map((suite) => suite.trim()).filter(Boolean)
+      : [];
     cases.push({
       id: Number(match[1]),
       smoke: cells[0].includes("★"),
-      prompt: cells[1],
-      must: cells[2],
-      forbid: cells[3],
-      band: cells[4] || "standard",
-      weight: Number(cells[5] || 1),
+      suites,
+      prompt: cells[1 + offset],
+      must: cells[2 + offset],
+      forbid: cells[3 + offset],
+      band: cells[4 + offset] || "standard",
+      weight: Number(cells[5 + offset] || 1),
     });
   }
   if (cases.some((item) => !Number.isInteger(item.weight) || item.weight < 1 || item.weight > 3)) {
@@ -540,29 +561,35 @@ function parseCanary(planPath) {
   return cases;
 }
 
-function assertAbCanonicalAlignment(root) {
-  const canonicalCases = parseCanary(path.join(root, "plans", "odai-canary.md"));
-  if (new Set(canonicalCases.map((item) => item.id)).size !== canonicalCases.length) {
-    throw new Error("full-plan self-test failed: duplicate case ID");
+function assertCanonicalCatalog(root) {
+  const planPath = path.join(root, "plans", "odai-canary.md");
+  const cases = parseCanary(planPath);
+  if (new Set(cases.map((item) => item.id)).size !== cases.length) {
+    throw new Error("canonical catalog self-test failed: duplicate case ID");
   }
-  if (canonicalCases.some((item, index) => item.id !== index + 1)) {
-    throw new Error("full-plan self-test failed: case IDs must be continuous from C01");
+  if (cases.length !== CANONICAL_SUITES.all.length || cases.some((item, index) => item.id !== index + 1)) {
+    throw new Error("canonical catalog self-test failed: case IDs must be continuous from C01 through C34");
   }
-  const canonical = new Map(canonicalCases.map((item) => [item.id, item]));
-  const abCases = parseCanary(path.join(root, "plans", "odai-ab-smoke.md"));
-  if (new Set(abCases.map((item) => item.id)).size !== abCases.length) {
-    throw new Error("A/B alignment self-test failed: duplicate case ID");
-  }
-  for (const abCase of abCases) {
-    const id = abCase.id;
-    const canonicalCase = canonical.get(id);
-    if (!canonicalCase) {
-      throw new Error(`A/B alignment self-test failed: C${id} is missing from the full plan`);
+  const assignableSuites = Object.keys(CANONICAL_SUITES).filter((suite) => suite !== "all");
+  for (const testCase of cases) {
+    if (new Set(testCase.suites).size !== testCase.suites.length) {
+      throw new Error(`canonical catalog self-test failed: C${testCase.id} has duplicate suite labels`);
     }
-    for (const field of ["prompt", "must", "forbid", "band", "weight"]) {
-      if (canonicalCase[field] !== abCase[field]) {
-        throw new Error(`A/B alignment self-test failed: C${id} ${field} differs from full canary`);
-      }
+    const unknown = testCase.suites.filter((suite) => !assignableSuites.includes(suite));
+    if (unknown.length > 0) {
+      throw new Error(`canonical catalog self-test failed: C${testCase.id} has unknown suites: ${unknown.join(", ")}`);
+    }
+  }
+  for (const [suite, expectedIds] of Object.entries(CANONICAL_SUITES)) {
+    const actual = suite === "all"
+      ? cases
+      : cases.filter((testCase) => testCase.suites.includes(suite));
+    if (actual.map((item) => item.id).join(",") !== expectedIds.join(",")) {
+      throw new Error(`canonical catalog self-test failed: ${suite} suite membership drifted`);
+    }
+    const weight = actual.reduce((sum, item) => sum + item.weight, 0);
+    if (weight !== CANONICAL_SUITE_WEIGHTS[suite]) {
+      throw new Error(`canonical catalog self-test failed: ${suite} weight is ${weight}, expected ${CANONICAL_SUITE_WEIGHTS[suite]}`);
     }
   }
 }
@@ -585,7 +612,12 @@ function parseCaseIds(spec) {
 
 function selectCases(cases, args) {
   const ids = parseCaseIds(args.cases);
-  return cases.filter((item) => (!args.smoke || item.smoke) && (!ids || ids.has(item.id)));
+  const hasSuiteMetadata = cases.some((item) => item.suites.length > 0);
+  const suite = args.suite || (!ids && hasSuiteMetadata ? DEFAULT_SUITE : "");
+  const suiteIds = suite ? new Set(CANONICAL_SUITES[suite]) : null;
+  return cases.filter((item) => (!args.smoke || item.smoke)
+    && (!suiteIds || suiteIds.has(item.id))
+    && (!ids || ids.has(item.id)));
 }
 
 function replacePlaceholders(testCase) {
@@ -818,7 +850,6 @@ function installCodexRoutingForFixture(workdir, args) {
   if (!controllerModel) throw new Error("Codex routing installation requires an explicit runner model");
   const controllerEffort = resolvedRunnerEffort(args);
   const plannerModel = args.codexRoutingPlannerModel;
-  const executorModel = args.codexRoutingExecutorModel || controllerModel;
   const reviewerModel = args.codexRoutingReviewerModel || controllerModel;
   const installer = path.join(workdir, "skills", "odai", "scripts", "install-routing.mjs");
   const command = [
@@ -829,14 +860,11 @@ function installCodexRoutingForFixture(workdir, args) {
     "--target", workdir,
     "--controller-model", controllerModel,
     "--planner-model", plannerModel,
-    "--executor-model", executorModel,
     "--reviewer-model", reviewerModel,
-    "--planning-policy", args.codexRoutingPlanningPolicy,
     "--yes",
   ];
   if (controllerEffort && controllerEffort !== "inherit") command.push("--controller-effort", controllerEffort);
   if (args.codexRoutingPlannerEffort) command.push("--planner-effort", args.codexRoutingPlannerEffort);
-  if (args.codexRoutingExecutorEffort || controllerEffort) command.push("--executor-effort", args.codexRoutingExecutorEffort || controllerEffort);
   if (args.codexRoutingReviewerEffort) command.push("--reviewer-effort", args.codexRoutingReviewerEffort);
   const installed = run(command, { cwd: workdir, timeoutSeconds: 30 });
   if (installed.status !== 0) {
@@ -3257,7 +3285,7 @@ function readManagedRoutingContract(project) {
   }
 }
 
-function assessManagedRoutingCompliance(contract, threads, hostPreplan = null) {
+function assessManagedRoutingCompliance(contract, threads) {
   if (!contract) return "unmanaged";
   const observed = new Map(threads
     .filter((thread) => thread.agent_role && thread.host_managed !== true)
@@ -3268,16 +3296,6 @@ function assessManagedRoutingCompliance(contract, threads, hostPreplan = null) {
       || (expected.reasoning_effort && String(thread.reasoning_effort || "") !== String(expected.reasoning_effort))) {
       return "role-mismatch";
     }
-  }
-  const policy = contract.routingPolicy?.mode || "conditional";
-  if (policy === "stage") {
-    if (!hostPreplan?.verified) return "stage-entry-missing";
-    const expected = contract.mapping?.controller;
-    if (!expected || hostPreplan.model !== expected.model
-      || (expected.reasoning_effort && hostPreplan.reasoning_effort !== expected.reasoning_effort)) {
-      return "stage-controller-mismatch";
-    }
-    return "stage-thread-observed";
   }
   return observed.size > 0 ? "observed" : "not-triggered";
 }
@@ -3327,7 +3345,7 @@ function summarizeThreadUsage(threads) {
 }
 
 function collectCodexRoutingTelemetry(rawTranscript, stateDb, requestedModel, requestedEffort,
-  finalMessage = "", project = process.cwd(), startedAt = 0, hostPreplan = null, codexHome = "") {
+  finalMessage = "", project = process.cwd(), startedAt = 0, codexHome = "") {
   const parentThreadId = parseCodexParentThreadId(rawTranscript);
   const parentTokens = parseCodexParentTokens(rawTranscript);
   const rawSpawns = parseCodexSpawnEvents(rawTranscript);
@@ -3369,19 +3387,6 @@ function collectCodexRoutingTelemetry(rawTranscript, stateDb, requestedModel, re
     reasoning_output_tokens: Number(thread.reasoning_output_tokens) || 0,
     purpose: spawnByThread.get(thread.thread_id)?.prompt || "",
   }));
-  if (hostPreplan?.verified) {
-    threads.unshift({
-      thread_id: hostPreplan.thread_id,
-      parent_thread_id: null,
-      depth: -1,
-      agent_role: "odai_planner",
-      model: hostPreplan.model,
-      reasoning_effort: hostPreplan.reasoning_effort,
-      tokens: hostPreplan.tokens,
-      purpose: "host-owned required preplan",
-      host_managed: true,
-    });
-  }
   const observedIds = new Set(threads.map((thread) => thread.thread_id));
   if (!parentThreadId || spawns.some((spawn) => !observedIds.has(spawn.thread_id))) status = "partial";
   const usage = summarizeThreadUsage(threads);
@@ -3392,17 +3397,14 @@ function collectCodexRoutingTelemetry(rawTranscript, stateDb, requestedModel, re
     status,
     parent_thread_id: parentThreadId,
     spawn_count: spawns.length,
-    host_preplan_count: hostPreplan?.verified ? 1 : 0,
-    route_observation: hostPreplan?.verified
-      ? (spawns.length > 0 ? "host-preplan-and-spawned" : "host-preplan")
-      : spawns.length > 0
-        ? "spawned"
+    route_observation: spawns.length > 0
+      ? "spawned"
       : routingDegradationDisclosureObserved(finalMessage)
         ? "declared-degraded"
         : "no-spawn-observed",
     route_policy: managedContract?.routingPolicy?.mode || (managedContract ? "conditional" : "unmanaged"),
     route_trigger_assessment: "not-assessed",
-    route_compliance_assessment: assessManagedRoutingCompliance(managedContract, threads, hostPreplan),
+    route_compliance_assessment: assessManagedRoutingCompliance(managedContract, threads),
     host_context: {
       ...hostContext,
       managed_adapter_status: managedContract ? "installed" : "absent",
@@ -3485,18 +3487,6 @@ function assertCodexRoutingTelemetryParsing() {
     agent_role: "odai_planner", model: "other", reasoning_effort: "high",
   }]) !== "role-mismatch") {
     throw new Error("Codex routing telemetry self-test failed: mapped role mismatch was not detected");
-  }
-  const staged = {
-    routingPolicy: { mode: "stage" },
-    mapping: { controller: { model: "controller", reasoning_effort: "high" } },
-  };
-  if (assessManagedRoutingCompliance(staged, [], null) !== "stage-entry-missing") {
-    throw new Error("Codex routing telemetry self-test failed: stage without a verified entry must fail closed");
-  }
-  if (assessManagedRoutingCompliance(staged, [], {
-    verified: true, model: "controller", reasoning_effort: "high",
-  }) !== "stage-thread-observed") {
-    throw new Error("Codex routing telemetry self-test failed: verified stage controller was not recognized");
   }
 }
 
@@ -3692,89 +3682,6 @@ function defaultRunner(workdir, lastMessage, args) {
     lastMessage,
     "-",
   ];
-}
-
-function deterministicRoutingRunner(workdir, lastMessage, evidenceDir, args) {
-  const entry = path.join(workdir, ".codex", "odai-run-routing.mjs");
-  if (!existsSync(entry)) throw new Error(`deterministic routing entry is missing: ${entry}`);
-  return [
-    process.execPath,
-    entry,
-    "--cwd", workdir,
-    "--output", lastMessage,
-    "--evidence-dir", evidenceDir,
-    "--codex-bin", resolveCodexBin(),
-    "--sandbox", args.runnerSandbox,
-  ];
-}
-
-function usageTokenTotal(usage) {
-  if (!usage || typeof usage !== "object") return 0;
-  const explicit = Number(usage.total_tokens ?? usage.totalTokens);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  const input = Number(usage.input_tokens ?? usage.inputTokens) || 0;
-  const output = Number(usage.output_tokens ?? usage.outputTokens) || 0;
-  return input + output;
-}
-
-function readDeterministicRoutingTelemetry(evidenceDir, project) {
-  const summaryPath = path.join(evidenceDir, "routing-run.json");
-  if (!existsSync(summaryPath)) return null;
-  const summary = JSON.parse(readText(summaryPath));
-  const threads = (summary.roles || []).map((entry, index) => {
-    const observed = entry.observed || {};
-    const requested = entry.requested || {};
-    return {
-      thread_id: observed.thread_id || `managed-${index + 1}`,
-      parent_thread_id: null,
-      depth: index,
-      agent_role: `odai_${String(entry.role || "unknown").replace(/-.*/, "")}`,
-      model: observed.models?.[0] || requested.model || "unknown",
-      reasoning_effort: observed.reasoning_efforts?.[0] || requested.reasoning_effort || "unknown",
-      tokens: usageTokenTotal(observed.usage),
-      input_tokens: Number(observed.usage?.input_tokens ?? observed.usage?.inputTokens) || 0,
-      cached_input_tokens: Number(observed.usage?.cached_input_tokens ?? observed.usage?.cachedInputTokens) || 0,
-      cache_write_input_tokens: Number(observed.usage?.cache_write_input_tokens ?? observed.usage?.cacheWriteInputTokens) || 0,
-      output_tokens: Number(observed.usage?.output_tokens ?? observed.usage?.outputTokens) || 0,
-      reasoning_output_tokens: Number(observed.usage?.reasoning_output_tokens ?? observed.usage?.reasoningOutputTokens) || 0,
-      purpose: entry.role || "",
-      host_managed: true,
-      provider: observed.provider || requested.provider || "codex",
-      duration_ms: Number(observed.duration_ms) || 0,
-    };
-  });
-  const usage = summarizeThreadUsage(threads);
-  const totalTokens = threads.reduce((sum, item) => sum + item.tokens, 0);
-  const executionTokens = threads
-    .filter((item) => String(item.purpose || "").startsWith(String(summary.execute || "")))
-    .reduce((sum, item) => sum + item.tokens, 0);
-  return {
-    status: "complete",
-    parent_thread_id: null,
-    spawn_count: threads.length,
-    host_preplan_count: threads.some((item) => item.agent_role === "odai_planner") ? 1 : 0,
-    route_observation: "deterministic-entry",
-    route_policy: summary.mode || "stage",
-    route_trigger_assessment: "host-enforced",
-    route_compliance_assessment: "deterministic-entry-observed",
-    host_context: {
-      status: "observed",
-      multi_agent_mode: "host-managed",
-      multi_agent_version: summary.mode === "stage"
-        ? "odai-routing-v4-same-thread-stage"
-        : "odai-routing-v3-direct-or-planned",
-      collaboration_tool_instruction_observed: false,
-      delegation_policy_text: "",
-      managed_adapter_status: readManagedRoutingContract(project) ? "installed" : "absent",
-    },
-    thread_count: threads.length,
-    total_tokens: totalTokens,
-    primary_tokens: executionTokens,
-    subagent_tokens: totalTokens - executionTokens,
-    duration_ms: Number(summary.duration_ms) || 0,
-    ...usage,
-    threads,
-  };
 }
 
 function defaultJudge(workdir, schema, judgeOutput, args) {
@@ -3985,12 +3892,6 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const pipelineStartedAt = Date.now();
   const codexStateRoot = path.join(outRoot, ".codex-routing-state");
   mkdirSync(codexStateRoot, { recursive: true });
-  const deterministicRouting = Boolean(args.run && args.codexRoutingHostPreplan);
-  // Routing evidence belongs to the harness run, not to the project under test.
-  // Keeping it beside the fixture would make git status misclassify host-owned
-  // telemetry as a runner-created project artifact.
-  const routingEvidenceDir = path.join(outRoot, "routing-evidence", path.basename(caseDir));
-  const hostPreplan = null;
   const promptFile = path.join(outRoot, "prompts", `C${String(testCase.id).padStart(2, "0")}.md`);
   writeText(promptFile, prompt);
 
@@ -4071,9 +3972,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const lastMessage = path.join(caseDir, "last_message.txt");
   const runner = args.runnerCmd
     ? formatTemplate(args.runnerCmd, { workdir: caseDir, prompt_file: promptFile, last_message: lastMessage, case_id: testCase.id })
-    : deterministicRouting
-      ? deterministicRoutingRunner(caseDir, lastMessage, routingEvidenceDir, args)
-      : defaultRunner(caseDir, lastMessage, args);
+    : defaultRunner(caseDir, lastMessage, args);
   const runnerAdapter = args.runnerCmd ? adapterFromCommand(args.runnerCmd, "runner") : "codex";
   if (!runnerAdapter) {
     throw new Error("canary infrastructure unavailable: custom runner has no verified isolation adapter");
@@ -4083,7 +3982,6 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   const runnerEnv = {
     ...runnerIsolation.env,
     CODEX_SQLITE_HOME: codexStateRoot,
-    ODAI_ROUTE_EVIDENCE_DIR: routingEvidenceDir,
   };
   const runnerResult = Array.isArray(runner)
     ? run(runner, { cwd: caseDir, input: prompt, timeoutSeconds: args.timeout, env: runnerEnv })
@@ -4101,8 +3999,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
   result.metrics.runner_raw_transcript_token_estimate = estimateTokens(rawTranscript);
   result.metrics.runner_transcript_chars = transcript.length;
   result.metrics.runner_transcript_token_estimate = estimateTokens(transcript);
-  const managedRoutingTelemetry = readDeterministicRoutingTelemetry(routingEvidenceDir, caseDir);
-  const gatewayRoutingTelemetry = args.codexRoutingTelemetry && !deterministicRouting
+  const routingTelemetry = args.codexRoutingTelemetry
     ? collectCodexRoutingTelemetry(
       rawTranscript,
       path.join(codexStateRoot, "state_5.sqlite"),
@@ -4111,13 +4008,9 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
       lastMessageText,
       caseDir,
       runnerStartedAt,
-      hostPreplan,
       runnerIsolation.codexHome,
     )
     : null;
-  const routingTelemetry = deterministicRouting
-    ? managedRoutingTelemetry
-    : gatewayRoutingTelemetry;
   if (routingTelemetry) {
     writeText(path.join(caseDir, "routing.json"), JSON.stringify(routingTelemetry, null, 2));
     result.metrics.runner_cli_reported_tokens = routingTelemetry.total_tokens || parseCliReportedTokens(rawTranscript);
@@ -4150,7 +4043,7 @@ function runCase(root, outRoot, schemaPath, testCase, args, skillFiles) {
       /skills[\\/]ribao[\\/]/i,
       /\.odai[\\/]local\.md/i,
       /ODAI_ROUTING_ACTIVE/,
-      /odai[_-](?:controller|planner|executor|reviewer|frontend)/i,
+      /odai[_-](?:controller|planner|reviewer|frontend)/i,
       /事由人定，路由实证/,
       /成事而不妄为/,
     ].filter((pattern) => pattern.test(rawTranscript)).map((pattern) => pattern.source);
@@ -4494,7 +4387,7 @@ function main() {
   assertPassScorePolicy();
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
-  assertAbCanonicalAlignment(root);
+  assertCanonicalCatalog(root);
   const planPath = path.resolve(root, args.plan);
   const allCases = parseCanary(planPath);
   const selected = selectCases(allCases, args);
@@ -4535,6 +4428,7 @@ function main() {
     JSON.stringify(
       {
         plan: planPath,
+        suite: args.suite || (args.cases ? null : (allCases.some((item) => item.suites.length > 0) ? DEFAULT_SUITE : null)),
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         stop_on_fail: args.stopOnFail,
@@ -4544,7 +4438,6 @@ function main() {
         deferred_judge: args.deferJudge,
         reused_runner: reuseSources.length > 0,
         codex_routing_telemetry: args.codexRoutingTelemetry,
-        codex_routing_host_preplan: args.codexRoutingHostPreplan,
         codex_routing_mapping: args.codexRoutingPlannerModel ? {
           controller: {
             model: resolvedRunnerModel(args),
@@ -4553,10 +4446,6 @@ function main() {
           planner: {
             model: args.codexRoutingPlannerModel,
             reasoning_effort: args.codexRoutingPlannerEffort || null,
-          },
-          executor: {
-            model: args.codexRoutingExecutorModel || resolvedRunnerModel(args),
-            reasoning_effort: args.codexRoutingExecutorEffort || resolvedRunnerEffort(args) || null,
           },
           reviewer: {
             model: args.codexRoutingReviewerModel || resolvedRunnerModel(args),

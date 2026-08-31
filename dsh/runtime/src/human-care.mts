@@ -1,7 +1,5 @@
 import type { DshAgent, RuntimeTool } from "./runtime-types.mjs";
 
-export const HUMAN_CARE_REFERENCE_PATH = "references/care.md";
-
 export interface HumanCareToolOptions {
   contractFor(agent: DshAgent): string;
   isChild?(agent: DshAgent): boolean;

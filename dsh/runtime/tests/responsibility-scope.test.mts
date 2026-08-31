@@ -26,7 +26,7 @@ const decision: Readonly<RouteDecision> = Object.freeze({
 const baseRoute = Object.freeze({ provider: "openai", model: "controller", reasoningEffort: "high", maxTokens: 500 });
 const roleRoute = Object.freeze({ provider: "openai", model: "planner", reasoningEffort: "xhigh" });
 
-function pendingScope(role: InPlaceResponsibility = "planner", cardId?: string) {
+function pendingScope(role: InPlaceResponsibility = "planner") {
   return createResponsibilityScope({
     turn: 1,
     startStep: 2,
@@ -34,7 +34,6 @@ function pendingScope(role: InPlaceResponsibility = "planner", cardId?: string) 
     route: roleRoute,
     source: "persisted-mapping",
     decision,
-    ...(cardId ? { cardId } : {}),
   });
 }
 
@@ -58,7 +57,7 @@ test("responsibility scope claims one explicit route chain", () => {
 });
 
 test("all in-place responsibilities share terminal, direct-user, and turn ownership boundaries", () => {
-  for (const role of ["planner", "reviewer", "executor", "frontend"] as const) {
+  for (const role of ["planner", "reviewer", "frontend"] as const) {
     const scope = claimResponsibilityScope(pendingScope(role), {
       step: 2,
       baseRoute,
@@ -86,7 +85,7 @@ test("all in-place responsibilities share terminal, direct-user, and turn owners
 });
 
 test("scope continues only for tool chains and stops at ownership boundaries", () => {
-  const scope = claimResponsibilityScope(pendingScope("executor", "card-1"), {
+  const scope = claimResponsibilityScope(pendingScope("frontend"), {
     step: 2,
     baseRoute,
     temporaryRoute: roleRoute,
@@ -109,14 +108,6 @@ test("scope continues only for tool chains and stops at ownership boundaries", (
     type: "agent/inbox/spliced",
     data: { inserted: [{ role: "user", source: { kind: "tool" }, content: [] }] },
   }), undefined);
-  assert.equal(responsibilityScopeStopReason(scope, {
-    type: "odai/route-card-consumed",
-    data: { cardId: "card-1" },
-  }), undefined);
-  assert.equal(responsibilityScopeStopReason(scope, {
-    type: "odai/route-card-claim-released",
-    data: { cardId: "card-1" },
-  }), "route-card-released");
   assert.equal(responsibilityScopeStopReason(scope, {
     type: "turn/end",
     data: { turn: 1 },

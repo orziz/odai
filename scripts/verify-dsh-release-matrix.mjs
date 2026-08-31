@@ -54,13 +54,18 @@ try {
     if (packages.length !== release.expectedDshPackages) {
       throw new Error(`DSH ${release.version} graph has ${packages.length} packages, expected ${release.expectedDshPackages}`);
     }
-    const standardPath = resolve(root, "node_modules/@deepseek-ai/dsh/config/agent-presets/standard/agent.cordis.yml");
+    const standardPath = resolve(root, "node_modules", release.standardCompositionPath);
     const standardDigest = createHash("sha256").update(await readFile(standardPath)).digest("hex");
     if (standardDigest !== release.standardCompositionSha256) {
       throw new Error(`DSH ${release.version} Standard digest ${standardDigest} does not match ${release.standardCompositionSha256}`);
     }
 
-    const env = { ...process.env, DSH_BIN: dshBin, DSH_PACKAGE_ROOT: resolve(root, "node_modules/@deepseek-ai/dsh") };
+    const env = {
+      ...process.env,
+      DSH_BIN: dshBin,
+      DSH_PACKAGE_ROOT: resolve(root, "node_modules/@deepseek-ai/dsh"),
+      DSH_STANDARD_COMPOSITION: standardPath,
+    };
     if (options.pluginTgz) {
       const packageEnv = {
         ...env,
@@ -114,6 +119,9 @@ function validateRelease(release) {
     || typeof release.publishedBefore !== "string"
     || !Number.isSafeInteger(release.expectedDshPackages)
     || release.expectedDshPackages <= 0
+    || typeof release.standardCompositionPath !== "string"
+    || release.standardCompositionPath.startsWith("/")
+    || release.standardCompositionPath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
     || !/^[a-f0-9]{64}$/u.test(release.standardCompositionSha256)) {
     throw new Error(`invalid DSH release contract ${JSON.stringify(release)}`);
   }

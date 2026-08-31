@@ -92,11 +92,7 @@ export interface RuntimeEventData extends UnknownRecord {
   routeSource?: string;
   resumeOfScopeId?: string;
   resumedScopeId?: string;
-  routeCardId?: string;
   header?: { config?: ModelRoute };
-  cardId?: string;
-  card?: UnknownRecord;
-  routeCard?: UnknownRecord;
   receiptStatus?: string;
 }
 

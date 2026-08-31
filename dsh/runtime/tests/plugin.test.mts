@@ -17,7 +17,6 @@ import {
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
 import type { Responsibility } from "../src/responsibility-gap.mjs";
-import type { RouteCard } from "../src/route-card.mjs";
 import type {
   DshContentBlock,
   DshEvent,
@@ -116,7 +115,10 @@ interface TestToolResult extends UnknownRecord {
   proposalPhrase: string;
   sha256: string;
   contract: string;
-  card: RouteCard;
+  digest: string;
+  reference: string;
+  runtimeContract: number;
+  skillVersion: string;
   latestRoute: TestLatestRoute;
   responsibilityBudgets: Readonly<Record<string, number>>;
   signals: string[];
@@ -309,7 +311,7 @@ function responsibilityGapEvent(
   responsibility: Responsibility,
   overrides: Partial<RuntimeEventData> = {},
 ): DshEvent {
-  const markers: Record<Responsibility, string> = { researcher: "a", planner: "b", executor: "c", reviewer: "d", frontend: "e", user: "f" };
+  const markers: Record<Responsibility, string> = { researcher: "a", planner: "b", reviewer: "c", frontend: "d", user: "e" };
   const marker = markers[responsibility];
   return {
     type: "odai/responsibility-gap",
@@ -357,7 +359,6 @@ test("config is strict at governance boundaries", () => {
   assert.throws(() => resolveConfig({ routing: { roles: { planner: { provider: "openai" } } } }), /planner\.model/u);
   assert.throws(() => resolveConfig({ routing: { roles: { critic: {} } } }), /unknown roles: critic/u);
   assert.throws(() => resolveConfig({ routing: { dispatch: { critic: "child" } } }), /dispatch has unknown roles: critic/u);
-  assert.throws(() => resolveConfig({ routing: { dispatch: { executor: "child" } } }), /executor must be same-turn/u);
   assert.throws(() => resolveConfig({ routing: { configPath: "" } }), /configPath must be a non-empty string/u);
   assert.throws(() => resolveConfig({ governance: { skillSource: "latest" } }), /skillSource must be bundled, auto, or user/u);
   assert.throws(() => resolveConfig({ governance: { skillConfigPath: "" } }), /skillConfigPath must be a non-empty string/u);
@@ -384,12 +385,10 @@ test("config is strict at governance boundaries", () => {
   assert.equal(defaults.routing.mode, "auto");
   assert.equal(defaults.routing.roles.researcher, undefined);
   assert.equal(defaults.routing.roles.planner, undefined);
-  assert.equal(defaults.routing.roles.executor, undefined);
   assert.equal(defaults.routing.roles.reviewer, undefined);
   assert.equal(defaults.routing.roles.frontend, undefined);
   assert.equal(defaults.routing.dispatch.researcher, undefined);
   assert.equal(defaults.routing.dispatch.planner, undefined);
-  assert.equal(defaults.routing.dispatch.executor, undefined);
   assert.equal(defaults.routing.dispatch.reviewer, undefined);
   assert.equal(defaults.routing.dispatch.frontend, undefined);
   assert.equal(defaults.routing.configPath, resolve(testDshHome, "odai/routing.json"));
@@ -415,7 +414,6 @@ test("config is strict at governance boundaries", () => {
       },
       dispatch: {
         planner: "child",
-        executor: "same-turn",
       },
     },
   });
@@ -425,7 +423,6 @@ test("config is strict at governance boundaries", () => {
     reasoningEffort: "high",
   });
   assert.equal(config.routing.dispatch.planner, "child");
-  assert.equal(config.routing.dispatch.executor, "same-turn");
 });
 
 test("compaction cache retention honors config over the deployment environment", () => {
@@ -1728,7 +1725,7 @@ test("adaptive tool exposure reconciles prebuilt prompt schemas with the scoped 
   assert.equal(restrictions[1].deny.includes("odai_human_care"), false);
   assert.ok(restrictions[1].deny.includes("odai_human_safety"));
   const selected = events.filter((event) => event.type === "odai/tool-exposure-selected");
-  assert.deepEqual(last(selected).data.activeTools, ["odai_context_capability", "odai_responsibility_gap", "odai_human_care"]);
+  assert.deepEqual(last(selected).data.activeTools, ["odai_context_capability", "odai_responsibility_gap", "odai_reference", "odai_human_care"]);
 });
 
 test("cold first steps expose only executable core tools before gateway activation", async () => {
@@ -1758,7 +1755,7 @@ test("cold first steps expose only executable core tools before gateway activati
   assert.equal(coldRestrictionAtSnapshot.deny.includes("odai_context_capability"), false);
   assert.deepEqual(
     [...coldResult.tools.map((tool: TestToolSchema) => tool.name).filter((name: string) => name.startsWith("odai_")).sort()],
-    ["odai_context_capability", "odai_responsibility_gap"],
+    ["odai_context_capability", "odai_reference", "odai_responsibility_gap"],
   );
 
   agent.session.append("user/message", userMessage("你能启动欧黛模式吗？"));
@@ -1776,7 +1773,7 @@ test("cold first steps expose only executable core tools before gateway activati
   assert.equal(activatedRestrictionAtSnapshot.deny.includes("odai_human_care"), false);
   assert.deepEqual(
     [...activatedResult.tools.map((tool: TestToolSchema) => tool.name).filter((name: string) => name.startsWith("odai_")).sort()],
-    ["odai_context_capability", "odai_human_care", "odai_responsibility_gap"],
+    ["odai_context_capability", "odai_human_care", "odai_reference", "odai_responsibility_gap"],
   );
 });
 
@@ -1834,7 +1831,7 @@ test("every gateway capability is executable when its next-step schema is snapsh
 });
 
 test("outer runtime refreshes executable schemas after downstream restriction changes", async () => {
-  const visible = new Set(["odai_context_capability", "odai_responsibility_gap"]);
+  const visible = new Set(["odai_context_capability", "odai_reference", "odai_responsibility_gap"]);
   const ctx = fakeContext({
     toolSchemas(captured) {
       return captured.tools
@@ -1929,7 +1926,6 @@ test("implementation turns activate craft within the contextual prompt budget", 
   assert.match(section("odai:canonical-craft"), /只改解决目标所需的最小完整部分/u);
   assert.equal(section("odai:routing-configuration"), "");
   assert.equal(section("odai:human-safety-continuity"), "");
-  assert.equal(section("odai:route-card"), "");
   assert.equal(section("odai:skill-source-configuration"), "");
   assert.equal(section("odai:compaction-model-configuration"), "");
   assert.equal(section("odai:semantic-memory"), "");
@@ -1938,7 +1934,7 @@ test("implementation turns activate craft within the contextual prompt budget", 
   const activeTools = ctx.captured.tools.filter((tool: TestToolSchema) => activeNames.has(tool.name));
   const systemTokens = estimateContextTokens(systemText) + 4;
   const toolTokens = estimateToolSchemaTokens(activeTools);
-  assert.ok(systemTokens <= 2_000, `implementation Odai system budget ${systemTokens} exceeds 2000`);
+  assert.ok(systemTokens <= 1_950, `implementation Odai system budget ${systemTokens} exceeds 1950`);
   assert.ok(toolTokens <= 600, `implementation Odai tool budget ${toolTokens} exceeds 600`);
   assert.ok(systemTokens + toolTokens <= 2_400, `implementation Odai budget ${systemTokens + toolTokens} exceeds 2400`);
   assert.ok(systemTokens + toolTokens < 6_194 * 0.4, "contextual implementation should remove at least 60% of measured Odai overhead");
@@ -1982,7 +1978,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "observe" } });
 
-  assert.equal(ctx.captured.sections.length, 10);
+  assert.equal(ctx.captured.sections.length, 9);
   assert.match(ctx.captured.sections[0].text, /odai canonical governance/u);
   assert.match(ctx.captured.sections[0].text, /already loaded by this runtime; do not call the skill tool/u);
   assert.equal(ctx.captured.sections[1].text, "");
@@ -1991,26 +1987,22 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   assert.match(ctx.captured.sections[3].text, /user-controlled human-safety continuity/iu);
   assert.match(ctx.captured.sections[3].text, /Never infer or automatically save a current mood/u);
   assert.match(ctx.captured.sections[4].text, /Users provide goals, constraints, materials, and acceptance/u);
-  assert.match(ctx.captured.sections[5].text, /frozen route cards/u);
-  assert.match(ctx.captured.sections[5].text, /canonical executor reassessment proves observable net benefit/u);
-  assert.doesNotMatch(ctx.captured.sections[5].text, /earlier direct-routing choice expires/u);
-  assert.doesNotMatch(ctx.captured.sections[5].text, /task size alone never justifies delegation/u);
-  assert.match(ctx.captured.sections[6].text, /explicitly asks to inspect, set, or reset that source/u);
-  assert.equal(ctx.captured.sections[7].text, "");
-  assert.match(ctx.captured.sections[8].text, /compaction model configuration/u);
-  assert.match(ctx.captured.sections[8].text, /Never infer or silently choose/u);
-  assert.match(ctx.captured.sections[8].text, /controller, researcher, planner, executor, reviewer, frontend/u);
-  assert.match(ctx.captured.sections[9].text, /long-term semantic memory/u);
-  assert.match(ctx.captured.sections[9].text, /no hidden provider, model, embedding, subagent, or compaction call/u);
+  assert.match(ctx.captured.sections[5].text, /explicitly asks to inspect, set, or reset that source/u);
+  assert.equal(ctx.captured.sections[6].text, "");
+  assert.match(ctx.captured.sections[7].text, /compaction model configuration/u);
+  assert.match(ctx.captured.sections[7].text, /Never infer or silently choose/u);
+  assert.match(ctx.captured.sections[7].text, /controller, researcher, planner, reviewer, frontend/u);
+  assert.match(ctx.captured.sections[8].text, /long-term semantic memory/u);
+  assert.match(ctx.captured.sections[8].text, /no hidden provider, model, embedding, subagent, or compaction call/u);
   const tools = new RequiredMap(ctx.captured.tools.map((tool: TestTool) => [tool.name, tool] as const));
   assert.deepEqual([...tools.keys()], [
     "odai_context_capability",
+    "odai_reference",
     "odai_routing_config",
     "odai_human_care",
     "odai_human_safety",
     "odai_responsibility_gap",
     "odai_responsibility_return",
-    "odai_route_card",
     "odai_skill_source_config",
     "odai_skill_evolution",
     "odai_output_config",
@@ -2042,6 +2034,12 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
       },
     },
   };
+  const planning = await tools.get("odai_reference").execute({ reference: "planning" }, { agent });
+  assert.equal(planning.reference, "planning");
+  assert.equal(planning.skillVersion, "0.3.7");
+  assert.equal(planning.runtimeContract, 6);
+  assert.match(planning.digest, /^[a-f0-9]{64}$/u);
+  assert.match(planning.contract, /工程实施计划/u);
   const care = await tools.get("odai_human_care").execute({}, { agent });
   assert.match(care.contract, /日常关怀与交互风格/u);
   const safety = await tools.get("odai_human_safety").execute({}, { agent });
@@ -2740,17 +2738,13 @@ test("reviewer same-turn findings return to the controller for continued process
   ), controllerRoute);
 });
 
-test("planner handback chains to executor and restores the original controller route", async () => {
+test("planner handback restores the original controller route", async () => {
   const plannerRoute = { provider: "openai", model: "planner-inline", reasoningEffort: "high" };
-  const executorRoute = { provider: "openai", model: "executor-inline", reasoningEffort: "xhigh" };
   const controllerRoute = { provider: "openai", model: "controller", reasoningEffort: "max" };
   const ctx = fakeContext();
   apply(ctx, {
     skillPath,
-    routing: {
-      roles: { planner: plannerRoute, executor: executorRoute },
-      dispatch: { planner: "same-turn", executor: "same-turn" },
-    },
+    routing: { roles: { planner: plannerRoute }, dispatch: { planner: "same-turn" } },
   });
   const original = userMessage("请修复并验证当前路由问题");
   const events: DshEvent[] = [
@@ -2763,8 +2757,7 @@ test("planner handback chains to executor and restores the original controller r
   const agent = {
     phase: { turn: 1, step: 1 },
     session: {
-      header: {},
-      events,
+      header: {}, events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
@@ -2781,65 +2774,31 @@ test("planner handback chains to executor and restores the original controller r
   assert.deepEqual(plannerRequest, plannerRoute);
   actualHeader = { config: plannerRequest };
   ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "request/header",
-    data: { turn: 1, step: 1, header: actualHeader },
+    type: "request/header", data: { turn: 1, step: 1, header: actualHeader },
   });
 
-  const routeCardTool = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_route_card");
-  const frozen = await routeCardTool.execute({
-    action: "freeze",
-    observableBenefit: true,
-    target: "Implement the bounded dispatch fix",
-    evidence: ["planner verified the affected runtime path"],
-    scope: ["dsh/runtime only"],
-    accept: ["focused dispatch and handback tests pass"],
-    stop: "Stop on public contract mismatch",
-  }, { agent });
-  assert.equal(frozen.card.authorization.status, "authorized");
-  const frozenEventCard = findLastEvent(events, (event) => event.type === "odai/route-card-frozen").data.card;
-  assert.ok(isUnknownRecord(frozenEventCard));
-  assert.equal(frozenEventCard.id, frozen.card.id);
   const returnTool = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_responsibility_return");
   const returned = await returnTool.execute({
-    target: "executor",
-    summary: "The authorized implementation contract is frozen and ready.",
-    evidenceRefs: [`route-card:${frozen.card.id}`, "planner-readonly-evidence"],
+    target: "controller",
+    summary: "The bounded plan is ready for controller implementation.",
+    evidenceRefs: ["planner-readonly-evidence"],
   }, { agent });
-  assert.equal(returned.target, "executor");
-  assert.equal(returned.routeCardId, frozen.card.id);
-  assert.equal(findLastEvent(events, (event) => event.type === "odai/responsibility-returned").data.target, "executor");
+  assert.equal(returned.target, "controller");
+  assert.equal(findLastEvent(events, (event) => event.type === "odai/responsibility-returned").data.target, "controller");
 
   agent.phase.step = 2;
-  await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 1, step: 2, signal },
-    async () => ({ kind: "enter", messages: [original] }),
-  );
-  const executorRequest = await ctx.captured.handlers.get("agent/request")(
+  const restored = await ctx.captured.handlers.get("agent/request")(
     { agent, turn: 1, step: 2, signal },
     async () => plannerRequest,
   );
-  assert.deepEqual(executorRequest, executorRoute);
-  const chained = findLastEvent(events, (event) => event.type === "odai/responsibility-scope-restored");
-  assert.equal(chained.data.status, "chained");
-  assert.deepEqual(chained.data.baseRoute, controllerRoute);
-  const executorScope = findLastEvent(events, (event) => event.type === "odai/responsibility-scope-claimed");
-  assert.equal(executorScope.data.role, "executor");
-  assert.deepEqual(executorScope.data.baseRoute, controllerRoute);
-
-  actualHeader = { config: executorRequest };
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "request/header",
-    data: { turn: 1, step: 2, header: actualHeader },
-  });
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "assistant/message",
-    data: { turn: 1, step: 2, message: { content: [{ type: "text", text: "implemented and verified" }] } },
-  });
-  const restored = await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 1, step: 3, signal },
-    async () => executorRequest,
-  );
   assert.deepEqual(restored, controllerRoute);
+  actualHeader = { config: restored };
+  ctx.captured.handlers.get("session/event")(agent.session, {
+    type: "request/header", data: { turn: 1, step: 2, header: actualHeader },
+  });
+  const restoration = findLastEvent(events, (event) => event.type === "odai/responsibility-scope-restored");
+  assert.equal(restoration.data.status, "applied");
+  assert.deepEqual(restoration.data.actualRoute, controllerRoute);
 });
 
 test("same-turn read-only terminal output is recovered to the controller when handback is missing", async () => {
@@ -2887,7 +2846,7 @@ test("same-turn read-only terminal output is recovered to the controller when ha
 test("resume restores every in-place responsibility's base route without reviving ownership", async () => {
   const base = { provider: "openai", model: "controller", reasoningEffort: "high", maxTokens: 500 };
   const signal = new AbortController().signal;
-  for (const role of ["planner", "reviewer", "executor", "frontend"]) {
+  for (const role of ["planner", "reviewer", "frontend"]) {
     const ctx = fakeContext();
     apply(ctx, { skillPath });
     const temporary = { provider: "openai", model: role, reasoningEffort: "xhigh", maxTokens: 500 };
@@ -3169,358 +3128,6 @@ test("a provider failure after route preflight retries the original controller o
   assert.equal(events.filter((event) => event.type === "odai/route-applied").length, 0);
   assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).roles.planner, target);
   assert.equal(events.filter((event) => event.type === "odai/route-fallback").length, 1);
-});
-
-test("an authorized planner card and executor gap continue automatically without another user prompt", async () => {
-  const ctx = fakeContext();
-  apply(ctx, {
-    skillPath,
-    routing: { roles: { executor: { provider: "openai", model: "executor-model", reasoningEffort: "high", maxTokens: 8_192 } } },
-  });
-  const original = userMessage("请修复并验证当前路由问题");
-  const events: DshEvent[] = [
-    { type: "turn/start", seq: 1, data: { turn: 1 } },
-    { type: "user/message", seq: 2, data: original },
-    { type: "step/start", seq: 3, data: { step: 1 } },
-  ];
-  let actualHeader: UnknownRecord | undefined;
-  const restrictions = new RequiredArray<TestRestriction>();
-  const agent = {
-    phase: { turn: 1, step: 1 },
-    ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
-    session: {
-      header: {},
-      events,
-      requestHeader() { return actualHeader; },
-      append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
-    },
-  };
-  const routeCardTool = ctx.captured.tools.find((tool: TestToolSchema) => tool.name === "odai_route_card");
-  const frozen = await routeCardTool.execute({
-    action: "freeze",
-    observableBenefit: true,
-    target: "Implement the bounded routing fix",
-    evidence: ["planner verified the bounded target"],
-    scope: ["dsh/runtime only"],
-    accept: ["A1: focused runtime tests pass"],
-    stop: "Stop if the public DSH contract changes",
-  }, { agent });
-  assert.equal(frozen.card.authorization.status, "authorized");
-  assert.equal(frozen.card.authorization.userMessageId, original.id);
-
-  const gapTool = ctx.captured.tools.find((tool: TestToolSchema) => tool.name === "odai_responsibility_gap");
-  await gapTool.execute({
-    responsibility: "executor",
-    gap: "The authorized bounded implementation is frozen and ready.",
-    evidenceRefs: [`route-card:${frozen.card.id}`, `user-message:${original.id}`],
-    expectedChange: "Implement the frozen scope and run its acceptance checks.",
-  }, { agent });
-  const executorGap = findLastEvent(events, (event) => event.type === "odai/responsibility-gap").data;
-  assert.equal(executorGap.taskMessageId, original.id);
-  assert.match(String(executorGap.stateDigest), /^[a-f0-9]{64}$/u);
-
-  agent.phase.step = 2;
-  const signal = new AbortController().signal;
-  const routed = await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 1, step: 2, signal },
-    async () => ({ kind: "enter", messages: [original] }),
-  );
-  assert.match(routed.messages[1].content[0].text, /target responsibility: executor/u);
-  assert.equal(events.filter((event) => event.type === "odai/route-card-claimed").length, 1);
-  const executorRequest = await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 1, step: 2, signal },
-    async () => ({ provider: "base", model: "controller" }),
-  );
-  assert.deepEqual(executorRequest, {
-    provider: "openai",
-    model: "executor-model",
-    reasoningEffort: "high",
-    maxTokens: 8_192,
-  });
-  assert.deepEqual(findEvent(events, (event) => event.type === "odai/output-budget-overridden").data, {
-    turn: 1,
-    step: 2,
-    responsibility: "executor",
-    responsibilityMaxTokens: 8_192,
-    effectiveMaxTokens: 8_192,
-    budgetSource: "responsibility-override",
-    semantics: "explicit-responsibility-override",
-  });
-  actualHeader = { config: executorRequest };
-  ctx.captured.handlers.get("session/event")(agent.session, { type: "request/header", data: { turn: 1, step: 2, header: actualHeader } });
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 1);
-  const interruptedScope = findEvent(events, (event) => event.type === "odai/responsibility-scope-started").data;
-  assert.equal(findEvent(events, (event) => event.type === "odai/route-applied").data.routeCardId, frozen.card.id);
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "assistant/chunk",
-    data: { turn: 1, step: 2, chunk: { type: "usage", usage: { inputTokens: 500, outputTokens: 8_192 } } },
-  });
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "assistant/message",
-    data: {
-      turn: 1,
-      step: 2,
-      usage: { inputTokens: 500, outputTokens: 8_192 },
-      message: { content: [{ type: "text", text: "truncated executor result" }] },
-    },
-  });
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "turn/end",
-    data: { turn: 1, reason: { kind: "max-tokens" } },
-  });
-  const interruption = findEvent(events, (event) => event.type === "odai/responsibility-interrupted").data;
-  assert.equal(interruption.scopeId, interruptedScope.scopeId);
-  assert.equal(interruption.responsibility, "executor");
-  assert.equal(interruption.routeCardId, frozen.card.id);
-  assert.ok(interruption.routeCard);
-  assert.equal(interruption.routeCard.id, frozen.card.id);
-
-  const continuation = { ...userMessage("继续"), id: "executor-continuation" };
-  events.push(
-    { type: "turn/start", seq: 100, data: { turn: 2 } },
-    { type: "user/message", seq: 101, data: continuation },
-  );
-  agent.phase = { turn: 2, step: 0 };
-  const fullResumedAssembly = {
-    sections: ctx.captured.sections,
-    tools: ctx.captured.tools
-      .filter(({ name }) => ["odai_context_capability", "odai_responsibility_gap"].includes(name))
-      .map(({ name }: { name: string }) => ({ name })),
-  };
-  const resumedAssembly = await ctx.captured.handlers.get("system-prompt/assemble")(
-    fullResumedAssembly,
-    { agent, signal },
-    async () => fullResumedAssembly,
-  );
-  assert.match(resumedAssembly.sections.find((section: TestPromptSection) => section.name === "odai:route-card").text, /route card/u);
-  assert.equal(resumedAssembly.tools.some((tool: TestToolSchema) => tool.name === "odai_route_card"), true);
-  assert.equal(last(restrictions).deny.includes("odai_route_card"), false);
-  agent.phase.step = 1;
-  const resumed = await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 2, step: 1, signal },
-    async () => ({ kind: "enter", messages: [continuation] }),
-  );
-  assert.match(resumed.messages[1].content[0].text, /RESPONSIBILITY_OUTPUT_LIMIT_CONTINUATION/u);
-  assert.match(resumed.messages[1].content[0].text, new RegExp(frozen.card.id, "u"));
-  const resumedScope = findLastEvent(events, (event) => event.type === "odai/responsibility-scope-started").data;
-  assert.equal(resumedScope.resumeOfScopeId, interruptedScope.scopeId);
-  assert.equal(events.filter((event) => event.type === "odai/route-card-claimed").length, 2);
-  assert.equal(findLastEvent(events, (event) => event.type === "odai/route-card-claimed").data.reason, "output-limit-continuation");
-  const resumedRequest = await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 2, step: 1, signal },
-    async () => ({ provider: "base", model: "controller" }),
-  );
-  assert.deepEqual(resumedRequest, executorRequest);
-  actualHeader = { config: resumedRequest };
-  ctx.captured.handlers.get("session/event")(agent.session, { type: "request/header", data: { turn: 2, step: 1, header: actualHeader } });
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 2);
-  assert.equal(findEvent(events, (event) => event.type === "odai/responsibility-interruption-consumed").data.resumedScopeId, resumedScope.scopeId);
-});
-
-test("a frozen route card is claimed before executor routing and consumed only by an applied receipt", async () => {
-  let starts = 0;
-  const ctx = fakeContext({
-    subagents: {
-      async start() { starts += 1; throw new Error("executor must remain in the controller turn"); },
-    },
-  });
-  apply(ctx, {
-    skillPath,
-    routing: {
-      roles: {
-        executor: { provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "high" },
-      },
-    },
-  });
-  const events: DshEvent[] = [];
-  let actualHeader: UnknownRecord | undefined;
-  const agent = {
-    session: {
-      header: {},
-      events,
-      requestHeader() { return actualHeader; },
-      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
-    },
-  };
-  const routeCard = ctx.captured.tools.find((tool: TestToolSchema) => tool.name === "odai_route_card");
-  const frozen = await routeCard.execute({
-    action: "freeze",
-    observableBenefit: true,
-    target: "Implement the bounded routing change",
-    evidence: ["planner verified the target"],
-    scope: ["dsh/runtime only"],
-    accept: ["A1: focused tests pass"],
-    stop: "Stop if the DSH tool contract changes",
-  }, { agent });
-
-  const signal = new AbortController().signal;
-  await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 1, step: 1, signal },
-    async () => ({ kind: "enter", messages: [userMessage("开始处理另一个问题：修复登录页错位")] }),
-  );
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 0);
-  assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 1, step: 1 },
-    async () => ({ provider: "base", model: "controller", reasoningEffort: "max" }),
-  ), { provider: "base", model: "controller", reasoningEffort: "max" });
-
-  const result = await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 2, step: 1, signal },
-    async () => ({ kind: "enter", messages: [userMessage("继续执行这个方案")] }),
-  );
-  assert.equal(starts, 0);
-  assert.match(messageText(result.messages[1]), /target responsibility: executor/u);
-  assert.match(messageText(result.messages[1]), new RegExp(frozen.card.id, "u"));
-  assert.equal(events.filter((event) => event.type === "odai/route-card-claimed").length, 1);
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 0);
-  const executorRequest = await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 2, step: 1 },
-    async () => ({ provider: "base", model: "controller", reasoningEffort: "max" }),
-  );
-  assert.deepEqual(executorRequest, {
-    provider: "openai",
-    model: "gpt-5.6-luna",
-    reasoningEffort: "high",
-  });
-  actualHeader = { config: executorRequest };
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "request/header",
-    data: { turn: 2, step: 1, header: actualHeader },
-  });
-  const executorReceipt = findEvent(events, (event) => event.type === "odai/route-applied").data;
-  assert.equal(executorReceipt.status, "applied");
-  assert.equal(executorReceipt.responsibility, "executor");
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 1);
-  assert.equal((await routeCard.execute({ action: "clear", cardId: frozen.card.id }, { agent })).status, "absent");
-
-  await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 3, step: 1, signal },
-    async () => ({ kind: "enter", messages: [userMessage("继续执行这个方案")] }),
-  );
-  assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 3, step: 1 },
-    async () => ({ provider: "base", model: "controller", reasoningEffort: "max" }),
-  ), { provider: "base", model: "controller", reasoningEffort: "max" });
-});
-
-test("an executor provider failure after an applied receipt releases the route card for retry", async () => {
-  const ctx = fakeContext();
-  apply(ctx, {
-    skillPath,
-    routing: { roles: { executor: { provider: "openai", model: "executor-model", reasoningEffort: "high" } } },
-  });
-  const events: DshEvent[] = [];
-  let actualHeader: UnknownRecord | undefined;
-  const agent = {
-    session: {
-      header: {},
-      events,
-      requestHeader() { return actualHeader; },
-      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
-    },
-  };
-  const routeCard = ctx.captured.tools.find((tool: TestToolSchema) => tool.name === "odai_route_card");
-  const frozen = await routeCard.execute({
-    action: "freeze",
-    observableBenefit: true,
-    target: "Implement the bounded retry change",
-    evidence: ["planner verified the target"],
-    scope: ["dsh/runtime only"],
-    accept: ["A1: focused tests pass"],
-    stop: "Stop if the provider contract changes",
-  }, { agent });
-
-  const signal = new AbortController().signal;
-  await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 2, step: 1, signal },
-    async () => ({ kind: "enter", messages: [userMessage("继续执行这个方案")] }),
-  );
-  assert.throws(() => routeCard.execute({
-    action: "freeze",
-    observableBenefit: true,
-    target: "Do not replace the in-flight card",
-    evidence: ["a separate target appeared"],
-    scope: ["another file"],
-    accept: ["A2: another check passes"],
-    stop: "Stop while the first card is claimed",
-  }, { agent }), /already active or claimed/u);
-  const executorRequest = await ctx.captured.handlers.get("agent/request")(
-    { agent, turn: 2, step: 1, signal },
-    async () => ({ provider: "base", model: "controller" }),
-  );
-  actualHeader = { config: executorRequest };
-  ctx.captured.handlers.get("session/event")(agent.session, {
-    type: "request/header",
-    data: { turn: 2, step: 1, header: actualHeader },
-  });
-  assert.equal(events.filter((event) => event.type === "odai/route-card-consumed").length, 1);
-
-  assert.deepEqual(await ctx.captured.handlers.get("agent/request-error")({
-    agent,
-    turn: 2,
-    step: 1,
-    provider: "openai",
-    failure: { code: "RATE_LIMIT", message: "busy" },
-    signal,
-  }, async () => ({ kind: "failed" })), { kind: "retry" });
-  assert.equal(events.filter((event) => event.type === "odai/route-card-claim-released").length, 1);
-  const failedScope = findEvent(events, (event) => event.type === "odai/responsibility-scope-started").data;
-  const failedReceipt = findLastEvent(events, (event) => event.type === "odai/route-fallback").data;
-  assert.equal(failedReceipt.responsibilityScopeId, failedScope.scopeId);
-  assert.equal(failedReceipt.routeCardId, frozen.card.id);
-  assert.equal((await routeCard.execute({ action: "clear", cardId: frozen.card.id }, { agent })).status, "cleared");
-});
-
-test("a new or revised direct user task supersedes an older executor route card", async () => {
-  for (const [replacementText, replacementId] of [
-    ["先不要实施旧目标；现在只讨论新的方向。", "new-task"],
-    ["继续这个计划，但改成只处理文档。", "revised-task"],
-  ]) {
-    const ctx = fakeContext();
-    apply(ctx, { skillPath });
-    const original = { ...userMessage("请实现并验证旧目标"), id: `old-${replacementId}` };
-    const events: DshEvent[] = [
-      { type: "turn/start", seq: 1, data: { turn: 1 } },
-      { type: "user/message", seq: 2, data: original },
-      { type: "step/start", seq: 3, data: { step: 1 } },
-    ];
-    const agent = {
-      phase: { turn: 1, step: 1 },
-      session: {
-        header: {},
-        events,
-        append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
-      },
-    };
-    const routeCard = ctx.captured.tools.find((tool: TestToolSchema) => tool.name === "odai_route_card");
-    const frozen = await routeCard.execute({
-      action: "freeze",
-      observableBenefit: true,
-      target: "Implement the old target",
-      evidence: ["old task evidence"],
-      scope: ["old target only"],
-      accept: ["old target passes"],
-      stop: "Stop on scope change",
-    }, { agent });
-    assert.equal(frozen.card.authorization.userMessageId, original.id);
-
-    const replacement = { ...userMessage(replacementText), id: replacementId };
-    events.push(
-      { type: "turn/start", seq: 20, data: { turn: 2 } },
-      { type: "user/message", seq: 21, data: replacement },
-    );
-    agent.phase.turn = 2;
-    agent.phase.step = 1;
-    await ctx.captured.handlers.get("agent/pre-step")(
-      { agent, turn: 2, step: 1, signal: new AbortController().signal },
-      async () => ({ kind: "enter", messages: [replacement] }),
-    );
-
-    assert.equal((await routeCard.execute({ action: "clear" }, { agent })).status, "absent");
-    const superseded = findLastEvent(events, (event) => event.type === "odai/route-card-cleared").data;
-    assert.equal(superseded.cardId, frozen.card.id);
-    assert.equal(superseded.reason, "SUPERSEDED_BY_DIRECT_USER_TASK");
-  }
 });
 
 test("reviewer starts a child only from a complete hash-addressed evidence packet", async () => {
@@ -4314,7 +3921,6 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
       configPath: routingConfigPath,
       roles: {
         planner: { provider: "provider-planner", model: "model-planner", reasoningEffort: "high" },
-        executor: { provider: "provider-executor", model: "model-executor", reasoningEffort: "high" },
         frontend: { provider: "provider-frontend", model: "model-frontend", reasoningEffort: "max" },
       },
     },
@@ -4354,12 +3960,10 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
   };
   assert.deepEqual(shownRouting.responsibilityBudgets, {
     planner: inheritedBudget,
-    executor: inheritedBudget,
     frontend: inheritedBudget,
   });
   const renderedRouting = blockText(routingTool.output.render({}, shownRouting)[0]);
   assert.match(renderedRouting, /Warning: planner has no explicit maxTokens and inherits the controller ceiling/u);
-  assert.match(renderedRouting, /Warning: executor has no explicit maxTokens and inherits the controller ceiling/u);
   assert.match(renderedRouting, /Warning: frontend has no explicit maxTokens and inherits the controller ceiling/u);
   const configuredRouting = await routingTool.execute({
     action: "set",
@@ -5052,7 +4656,6 @@ test("the model can persist every user-specified responsibility mapping", async 
   const mappings = {
     researcher: { provider: "provider-r", model: "model-research", reasoningEffort: "low", maxTokens: 512 },
     planner: { provider: "provider-a", model: "model-plan", reasoningEffort: "high", maxTokens: 2_048 },
-    executor: { provider: "provider-b", model: "model-execute", reasoningEffort: "medium" },
     reviewer: { provider: "provider-c", model: "model-review", reasoningEffort: "max" },
     frontend: { provider: "provider-frontend", model: "model-frontend", reasoningEffort: "max", maxTokens: 4_096 },
   };
@@ -5066,7 +4669,6 @@ test("the model can persist every user-specified responsibility mapping", async 
   assert.deepEqual(shown.roles, mappings);
   assert.deepEqual(shown.responsibilityBudgets, {
     planner: { source: "responsibility-override", maxTokens: 2_048 },
-    executor: { source: "unbounded-by-odai" },
     frontend: { source: "responsibility-override", maxTokens: 4_096 },
   });
   assert.equal(shown.requiresNextTurn, false);
@@ -5075,7 +4677,7 @@ test("the model can persist every user-specified responsibility mapping", async 
   assert.match(rendered, /planner: provider-a\/model-plan \(reasoningEffort=high, maxTokens=2048\)/u);
   assert.match(rendered, /frontend: provider-frontend\/model-frontend \(reasoningEffort=max, maxTokens=4096\)/u);
   assert.match(rendered, /Researcher routing is task-gated but not price-aware[^\n]*does not guarantee lower cost/u);
-  assert.equal(events.filter((event) => event.type === "odai/routing-configured").length, 5);
+  assert.equal(events.filter((event) => event.type === "odai/routing-configured").length, 4);
 
   const preStep = secondRuntimeCtx.captured.handlers.get("agent/pre-step");
   await preStep({
@@ -5096,7 +4698,6 @@ test("the model can persist every user-specified responsibility mapping", async 
   const dispatch = {
     researcher: "same-turn",
     planner: "child",
-    executor: "same-turn",
     reviewer: "same-turn",
     frontend: "child",
   } as const;
@@ -5112,13 +4713,13 @@ test("the model can persist every user-specified responsibility mapping", async 
   ));
   assert.match(blockText(tool.output.render({}, shownDispatch)[0]), /planner: child \[persisted-config\]/u);
 
-  const removed = await tool.execute({ action: "remove", responsibility: "executor" }, execution);
-  assert.equal(removed.roles.executor, undefined);
+  const removed = await tool.execute({ action: "remove", responsibility: "reviewer" }, execution);
+  assert.equal(removed.roles.reviewer, undefined);
   assert.ok(isUnknownRecord(removed.dispatch));
-  assert.equal(removed.dispatch.executor, "same-turn");
-  const resetDispatch = await tool.execute({ action: "reset-dispatch", responsibility: "executor" }, execution);
+  assert.equal(removed.dispatch.reviewer, "same-turn");
+  const resetDispatch = await tool.execute({ action: "reset-dispatch", responsibility: "reviewer" }, execution);
   assert.ok(isUnknownRecord(resetDispatch.dispatch));
-  assert.equal(resetDispatch.dispatch.executor, undefined);
+  assert.equal(resetDispatch.dispatch.reviewer, undefined);
   assert.throws(
     () => tool.execute({
       action: "set",

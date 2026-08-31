@@ -55,10 +55,6 @@ test("responsibility mappings are probed before persistence and invalidated with
     assert.deepEqual(readRoutingStore(path).roles.planner, route);
     assert.equal(readRoutingStore(path).schemaVersion, 2);
     assert.equal(readRoutingStore(path).dispatch.planner, "child");
-    assert.throws(
-      () => tool.execute({ action: "set-dispatch", responsibility: "executor", dispatch: "child" }, execution),
-      /executor must be same-turn/u,
-    );
     assert.equal(invalidatePersistedRoleRoute(path, "planner", { ...route, model: "other" }).invalidated, false);
     const invalidated = invalidatePersistedRoleRoute(path, "planner", route);
     assert.equal(invalidated.invalidated, true);
@@ -84,6 +80,36 @@ test("schema 1 routing stores remain readable and upgrade without losing model m
       schemaVersion: 2,
       roles: { planner },
       dispatch: { planner: "child" },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("retired executor mappings preserve active routes and disappear on the next write", async () => {
+  const root = mkdtempSync(resolve(tmpdir(), "odai-routing-retired-role-"));
+  try {
+    const path = resolve(root, "routing.json");
+    const planner = { provider: "openai", model: "planner" };
+    const reviewer = { provider: "openai", model: "reviewer" };
+    const executor = { provider: "openai", model: "retired-executor" };
+    writeFileSync(path, `${JSON.stringify({
+      schemaVersion: 2,
+      roles: { planner, executor, reviewer },
+      dispatch: { planner: "child", executor: "child" },
+    })}\n`, "utf8");
+    assert.deepEqual(readRoutingStore(path), {
+      schemaVersion: 2,
+      roles: { planner, reviewer },
+      dispatch: { planner: "child" },
+    });
+
+    const tool = createRoutingConfigTool(path);
+    await tool.execute({ action: "set-dispatch", responsibility: "reviewer", dispatch: "child" }, execution);
+    assert.deepEqual(readRoutingStore(path), {
+      schemaVersion: 2,
+      roles: { planner, reviewer },
+      dispatch: { planner: "child", reviewer: "child" },
     });
   } finally {
     rmSync(root, { recursive: true, force: true });

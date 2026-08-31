@@ -120,7 +120,7 @@ test("execution continuation rejects target or scope revisions", () => {
 });
 
 test("verified output-limit interruptions restore each in-place responsibility", () => {
-  for (const responsibility of ["planner", "executor", "frontend"]) {
+  for (const responsibility of ["planner", "frontend"]) {
     const decision = decideRoute({
       text: "继续\n\nReferenced earlier task context that is not itself a pure continuation.",
       interruption: { responsibility, continuationText: "继续" },
@@ -330,7 +330,7 @@ test("high-impact observe and route failure notices require a read-only decision
 });
 
 test("every missing responsibility asks for a natural-language model choice", () => {
-  for (const role of ["planner", "executor", "reviewer"] as const) {
+  for (const role of ["planner", "reviewer"] as const) {
     const notice = renderMissingRouteConfigNotice({
       role,
       mode: "delegate",
@@ -351,7 +351,7 @@ test("every missing responsibility asks for a natural-language model choice", ()
   }), "auto");
   assert.match(protectedNotice, /High-impact fail-closed protection is active/u);
 
-  for (const role of ["executor", "reviewer"] as const) {
+  for (const role of ["reviewer"] as const) {
     assert.match(renderMissingRouteConfigNotice({
       role,
       mode: "delegate",
@@ -376,59 +376,18 @@ test("contextual signals do not delegate unless the complete planner gap exists"
   }
 });
 
-test("executor requires a frozen card and observable benefit plus user continuation or authorized task state", () => {
-  assert.equal(decideRoute({
-    text: "请执行这个方案",
-    routeCard: { frozen: true, observableBenefit: false },
-  }).action, "direct");
-  assert.equal(decideRoute({
-    text: "介绍一下刚才的方案",
-    routeCard: { frozen: true, observableBenefit: true },
-  }).action, "direct");
-  for (const text of [
-    "开始处理另一个问题：修复登录页错位",
-    "另外一个任务：修复登录页错位",
-    "执行登录页修复",
-    "implement a new task: fix the login page",
-    "another task: fix the login page",
-  ]) {
-    assert.equal(decideRoute({
-      text,
-      routeCard: { frozen: true, observableBenefit: true },
-    }).action, "direct", text);
+test("implementation continuation stays with the controller", () => {
+  for (const text of ["请执行这个方案", "按上述计划", "继续执行这个方案", "implement the plan"]) {
+    const decision = decideRoute({ text });
+    assert.equal(decision.role, "controller", text);
+    assert.equal(decision.targetRole, undefined, text);
+    assert.equal(decision.reasonCode, "DIRECT_DEFAULT_NO_INDEPENDENT_GAP", text);
   }
-  for (const text of [
-    "请执行这个方案",
-    "按上述计划",
-    "另外，继续按刚才的方案实施",
-    "implement the plan",
-    "Another thing, go ahead with the plan",
-  ]) {
-    assert.equal(decideRoute({
-      text,
-      routeCard: { frozen: true, observableBenefit: true },
-    }).targetRole, "executor", text);
-  }
-
-  assert.equal(decideRoute({
-    text: "修复并验证当前问题",
-    routeCard: { frozen: true, observableBenefit: true, authorization: { status: "authorized" } },
-    proposal: gap("executor", { gap: "The original task already authorizes bounded implementation." }),
-  }).targetRole, "executor");
-  assert.equal(decideRoute({
-    text: "只给我规划，不要实施",
-    routeCard: { frozen: true, observableBenefit: true, authorization: { status: "plan-only" } },
-    proposal: gap("executor", { gap: "An executor could implement the plan." }),
-  }).action, "direct");
-
-  const decision = decideRoute({
-    text: "继续执行这个方案",
-    routeCard: { frozen: true, observableBenefit: true },
+  const planned = decideRoute({
+    text: "开始处理另一个问题：修复登录页错位",
+    proposal: gap("planner", { gap: "A separate plan can change the login fix." }),
   });
-  assert.equal(decision.role, "controller");
-  assert.equal(decision.action, "upgrade");
-  assert.equal(decision.targetRole, "executor");
-  assert.equal(decision.reasonCode, "EXECUTOR_FROZEN_ROUTE_NET_BENEFIT");
+  assert.equal(planned.targetRole, "planner");
 });
 
 test("substantial frontend work upgrades in place while narrow fixes stay direct", () => {

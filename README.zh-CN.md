@@ -88,13 +88,13 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-Plugin 安装命令要求 `pnpm` 已在 `PATH` 中；当前 Plugin 与 Agent 版本都只严格支持 `dsh@0.1.1-rc.2`。两个包都已经包含 canonical Odai skill 与共享 DSH runtime，既有安装继续默认使用各自包内的 bundled skill。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 无需另装 skill 或 Agent；Agent 也无需另装 skill 或 Plugin。需要 profile-wide 行为就选 Plugin，需要可选择的专用 preset 就选 Agent。两者同时安装通常是重复的，只适合刻意组合这两种作用域。现有 provider-neutral `odai-cli` 继续作为独立产品。
+Plugin 安装命令要求 `pnpm` 已在 `PATH` 中；当前 `0.2.15` Plugin 与 Agent 候选严格支持 `dsh@0.1.1-rc.2` 与 `dsh@0.1.2-alpha.2`；已发布的 `0.2.13` 仍只支持 rc.2。两个包都已经包含 canonical Odai skill 与共享 DSH runtime，既有安装继续默认使用各自包内的 bundled skill。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 无需另装 skill 或 Agent；Agent 也无需另装 skill 或 Plugin。需要 profile-wide 行为就选 Plugin，需要可选择的专用 preset 就选 Agent。两者同时安装通常是重复的，只适合刻意组合这两种作用域。现有 provider-neutral `odai-cli` 继续作为独立产品。
 
 两个 DSH 包都默认使用**软精简**输出。用户可以显式切换到正常模式，或启用可选的**经济模式**：它在软精简基础上增加可调的 provider 输出 ceiling；用户只说“经济模式”而未给其他值时默认使用 `500`。该 ceiling 不会影响子代理、compaction、checkpoint 或内部上下文预算，provider 仍可能超过或忽略它。完整三档契约见 [`dsh/README.md`](dsh/README.md#install-and-use)。
 
 完整、独立安装的 Odai skill 可以比两个 DSH 包更快更新，但不会自行改变默认来源。只有用户明确要求，Odai 才会把 skill source 切换为 `auto` 或 `user`：`auto` 可以选择兼容的项目 `.dsh` / `.agents` bundle 与较新的用户安装，`user` 则忽略项目根；部署显式路径始终优先。Plugin 与 Agent 刻意共存时按 agent / turn 共用同一份快照，prompt 治理与路由 role contract 不会选到不同 bundle。
 
-两个 DSH 包都不会自行选择 planner、executor 或 reviewer 模型。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，原任务已授权实施时规划会自动续接执行。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
+两个 DSH 包都不会自行选择 researcher、planner、reviewer 或 frontend 模型。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
 
 DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用户明确要求，controller-only 工具才会把用户原文中的照护偏好、希望留意的信号、有效支持方式或自写安全计划保存到独立本地记录；用户可查看、导出、更正、逐条删除或物理清空，记录默认保留到用户执行删除。新会话只把它当历史照护偏好，不当成当前风险、诊断或隐藏评分，child agent 也拿不到这份记录。
 
@@ -104,11 +104,11 @@ DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用
 
 用户只在首次设置时说明“谁负责什么”，或让 odai 按宿主真实能力目录推荐映射。确认并安装后，项目持久保存这份映射；之后任何对话和操作仍只用 `/odai` 或自然语言交任务，不再声明模型、角色、规划模式或路由命令，也不需要观看内部交接。模型变化时原地更新一次映射即可。
 
-总控是持续持有目标、全局状态、修正回路与最终交付的任务线程，不是每轮额外启动的一名角色。判断、实施与验收是内部责任，不是用户工作流：同一能力足够就一把做完；映射确实提供不同责任能力时，宿主自动取得所需判断、实施或验收，再把唯一结果送回当前对话。可靠的无工具回答保持直答；后续对话自动承接最近交付和未决项，不要求用户重述。
+总控是持续持有目标、全局状态、修正回路与最终交付的任务线程，不是每轮额外启动的一名角色。判断与验收是可选内部责任，不是用户工作流；实施始终由总控持有。同一能力足够就一把做完；其他映射责任确实能改变结果时，宿主取得该项有界贡献，再把唯一结果送回当前对话。可靠的无工具回答保持直答；后续对话自动承接最近交付和未决项，不要求用户重述。
 
 这项路由受宿主能力约束，单靠 Skill 文本不能机械保证。宿主不能核实换档或委派时，odai 使用单一充分总控继续完成安全可做的部分，不虚构升档或下放。路由器不是普通使用的前置步骤；只有用户要求托管能力路由时才安装。
 
-托管能力路由与下文项目护栏 Hooks 是两套机制。路由只注册宿主角色；实验性 `stage` 只提供从任务起点显式运行的 runner，不注入隐藏的每轮 Hook。项目护栏只执行项目明确声明的只读路径和验收命令，不负责模型路由。
+托管能力路由与下文项目护栏 Hooks 是两套机制。路由只注册宿主角色，不安装任务 runner 或隐藏的每轮 Hook；项目护栏只执行项目明确声明的只读路径和验收命令，不负责模型路由。
 
 受支持宿主的用户需要托管角色路由时，不用找路径、填写模型或手工合并配置；安装 skill 后直接说：
 
@@ -116,11 +116,9 @@ DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用
 /odai 为当前项目安装并验证能力路由。
 ```
 
-odai 会从当前宿主的真实能力目录选择四项责任映射，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由单一总控直接闭环，planner、executor、reviewer 仍只在独立判断或有界交接能改变结果时按宿主真实能力调用，不增加隐藏的每轮前置流程。只有用户明确选择且真实任务证明净收益时，才安装实验性 Codex `stage`；它必须从任务边界开始，让规划和执行共用一条证据链。可靠直答和只读查询不为展示路由调用其他角色。
+odai 会从当前宿主的真实能力目录配置一个 controller 与 planner、reviewer，并可选配置 researcher、frontend，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由单一总控实施并闭环，可选责任只在独立工作能改变结果时调用，不增加隐藏的每轮前置流程或 stage runner。可靠直答和只读查询不为展示路由调用其他角色。
 
-不再使用时可以说“用 odai 卸载当前项目的能力路由”。安装器会合并既有宿主设置，记录原始 Codex 总控配置以便精确恢复，只删除清单中仍未被外部修改的托管文件，并保留无关设置；安装、更新或实际卸载后须开启新会话。默认只影响当前项目。自动安装器可为 Codex、Claude Code 与 GitHub Copilot CLI 生成托管角色配置；只有明确启用的 Codex `stage` 额外提供从任务起点执行的 runner 和实际模型核验，另外两个宿主尚未取得等价证据时不能宣称同等程度的自动路由。
-
-只有明确启用 `stage` 时，`.codex/odai-run-routing.mjs` 才作为显式实验与维护测试面安装；它不是日常透明入口。默认 `auto` 不安装它；两种策略都不安装路由 Hook。
+不再使用时可以说“用 odai 卸载当前项目的能力路由”。安装器会合并既有宿主设置，记录原始 Codex 总控配置以便精确恢复，只删除清单中仍未被外部修改的托管文件，并保留无关设置；安装、更新或实际卸载后须开启新会话。默认只影响当前项目。自动安装器可为 Codex、Claude Code 与 GitHub Copilot CLI 生成托管角色配置；Codex 另有原生角色核验，另外两个宿主尚未取得等价证据时不能宣称同等程度的运行时路由。
 
 ## 它怎么判断
 

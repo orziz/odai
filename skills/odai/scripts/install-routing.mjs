@@ -19,7 +19,7 @@ process.on("uncaughtException", (error) => {
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const builder = path.join(scriptDir, "build-routing.mjs");
 const manifestName = "odai-routing.json";
-const requiredRoles = ["controller", "planner", "executor", "reviewer"];
+const requiredRoles = ["controller", "planner", "reviewer"];
 const configurableRoles = [...requiredRoles, "researcher", "frontend"];
 const args = parseArgs(process.argv.slice(2));
 const roles = Object.freeze([
@@ -29,13 +29,13 @@ const roles = Object.freeze([
 ]);
 const retiredByHost = {
   codex: [
-    "hooks.json", "odai-route-hook.mjs",
-    "odai-run-provider-role.mjs", "agents/odai-advisor.toml", "agents/odai-implementer.toml", "agents/odai-worker.toml",
+    "hooks.json", "odai-route-hook.mjs", "odai-run-routing.mjs",
+    "odai-run-provider-role.mjs", "agents/odai-advisor.toml", "agents/odai-implementer.toml", "agents/odai-worker.toml", "agents/odai-executor.toml", "role-contracts/odai-executor.md",
     "provider-roles/odai-controller.md", "provider-roles/odai-planner.md", "provider-roles/odai-executor.md",
     "provider-roles/odai-advisor.md", "provider-roles/odai-implementer.md", "provider-roles/odai-worker.md", "provider-roles/odai-reviewer.md",
   ],
-  claude: ["agents/odai-advisor.md", "agents/odai-implementer.md", "agents/odai-worker.md"],
-  copilot: ["agents/odai-advisor.agent.md", "agents/odai-implementer.agent.md", "agents/odai-worker.agent.md"],
+  claude: ["agents/odai-advisor.md", "agents/odai-implementer.md", "agents/odai-worker.md", "agents/odai-executor.md"],
+  copilot: ["agents/odai-advisor.agent.md", "agents/odai-implementer.agent.md", "agents/odai-worker.agent.md", "agents/odai-executor.agent.md"],
 };
 
 if (args.help) { printHelp(); process.exit(0); }
@@ -45,7 +45,7 @@ if (!args.yes) fail("安装、更新或卸载会持久化宿主配置；取得�
 
 const targetRoot = resolveTarget(args.host, args.scope, args.target);
 const configRoot = resolveConfigRoot(args.host, args.scope, targetRoot);
-const layout = hostLayout(args.host, args.scope, args.planningPolicy || "auto");
+const layout = hostLayout(args.host, args.scope);
 layout.retiredFiles = retiredByHost[args.host];
 const manifestPath = path.join(configRoot, manifestName);
 const previous = loadManifest(manifestPath);
@@ -78,7 +78,7 @@ try {
   if (settings) atomicWrite(path.join(configRoot, settings.file), Buffer.from(`${JSON.stringify(settings.value, null, 2)}\n`));
   removeObsolete(configRoot, previous, files);
   const manifest = {
-    version: 12,
+    version: 13,
     id: "odai-routing-installation",
     host: args.host,
     scope: args.scope,
@@ -112,7 +112,6 @@ function buildAdapter(outputRoot, root) {
     command.push(`--${role}-model`, args[`${role}Model`]);
     if (args[`${role}Effort`]) command.push(`--${role}-effort`, args[`${role}Effort`]);
   }
-  if (args.planningPolicy) command.push("--planning-policy", args.planningPolicy);
   if (args.host === "codex") command.push("--verifier-command", `node ${JSON.stringify(path.join(root, "odai-verify-routing.mjs"))}`);
   const result = spawnSync(process.execPath, command, { encoding: "utf8", windowsHide: true });
   if (result.status !== 0) fail(result.stderr.trim() || "路由生成失败");
@@ -151,7 +150,7 @@ function originalFileRecord(file) {
 }
 
 function mergeCodexConfig(original, generated) {
-  if (/^\s*\[agents\.odai_(?:planner|executor|reviewer|frontend)\]\s*$/m.test(original)) {
+  if (/^\s*\[agents\.odai_(?:researcher|planner|executor|reviewer|frontend)\]\s*$/m.test(original)) {
     fail("既有 Codex 配置已声明 odai 角色但不受当前安装清单管理");
   }
   const generatedFeatures = generated.search(/^\s*\[features\]\s*$/m);
@@ -221,7 +220,7 @@ function setFeatureFlag(source, name, value) {
   return lines.join("\n");
 }
 
-function hostLayout(host, scope, policy) {
+function hostLayout(host, scope) {
   if (host === "codex") {
     const researcherFiles = [
       [".codex/agents/odai-researcher.toml", "agents/odai-researcher.toml"],
@@ -236,20 +235,17 @@ function hostLayout(host, scope, policy) {
     const common = [
       [".codex/config.toml", "config.toml"],
       [".codex/odai-run-role.mjs", "odai-run-role.mjs"], [".codex/odai-verify-routing.mjs", "odai-verify-routing.mjs"],
-      [".codex/agents/odai-planner.toml", "agents/odai-planner.toml"], [".codex/agents/odai-executor.toml", "agents/odai-executor.toml"],
+      [".codex/agents/odai-planner.toml", "agents/odai-planner.toml"],
       [".codex/agents/odai-reviewer.toml", "agents/odai-reviewer.toml"],
       [".codex/role-contracts/odai-controller.md", "role-contracts/odai-controller.md"],
       [".codex/role-contracts/odai-planner.md", "role-contracts/odai-planner.md"],
-      [".codex/role-contracts/odai-executor.md", "role-contracts/odai-executor.md"],
       [".codex/role-contracts/odai-reviewer.md", "role-contracts/odai-reviewer.md"],
       ...researcher,
       ...frontend,
     ];
-    const staged = [[".codex/odai-run-routing.mjs", "odai-run-routing.mjs"]];
-    const all = [...common, ...staged];
-    const generatedFiles = policy === "stage" ? all : common;
+    const generatedFiles = common;
     return {
-      knownFiles: [...new Set([...all, ...researcherFiles, ...frontendFiles].map(([, target]) => target)), "hooks.json", "odai-route-hook.mjs"],
+      knownFiles: [...new Set([...common, ...researcherFiles, ...frontendFiles].map(([, target]) => target)), "hooks.json", "odai-route-hook.mjs", "odai-run-routing.mjs", "agents/odai-executor.toml", "role-contracts/odai-executor.md"],
       managedFiles: generatedFiles.map(([, target]) => target),
       generatedFiles,
       settings: null,
@@ -364,9 +360,9 @@ function resolveTarget(host, scope, supplied) {
 function resolveConfigRoot(host, scope, target) { if (scope === "user") return target; if (host === "codex") return path.join(target, ".codex"); if (host === "claude") return path.join(target, ".claude"); return path.join(target, ".github"); }
 
 function parseArgs(values) {
-  const result = { host: "", scope: "project", target: "", planningPolicy: "", uninstall: false, yes: false, help: false };
+  const result = { host: "", scope: "project", target: "", uninstall: false, yes: false, help: false };
   for (const role of configurableRoles) { result[`${role}Model`] = ""; result[`${role}Effort`] = ""; }
-  const fields = new Map([["--host", "host"], ["--scope", "scope"], ["--target", "target"], ["--planning-policy", "planningPolicy"]]);
+  const fields = new Map([["--host", "host"], ["--scope", "scope"], ["--target", "target"]]);
   for (const role of configurableRoles) { fields.set(`--${role}-model`, `${role}Model`); fields.set(`--${role}-effort`, `${role}Effort`); }
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -379,18 +375,18 @@ function parseArgs(values) {
   return result;
 }
 
-function hasMappingArgs(value) { return Boolean(configurableRoles.some((role) => value[`${role}Model`] || value[`${role}Effort`]) || value.planningPolicy); }
+function hasMappingArgs(value) { return configurableRoles.some((role) => value[`${role}Model`] || value[`${role}Effort`]); }
 function printHelp() {
   console.log(`由 odai 在取得用户授权后安装、更新或卸载宿主路由。
 
 Usage:
   node skills/odai/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] \\
-    --controller-model <model> --planner-model <model> --executor-model <model> --reviewer-model <model> \\
-    [--researcher-model <model>] [--frontend-model <model>] [--planning-policy <auto|stage>] [--<role>-effort <effort>] --yes
+    --controller-model <model> --planner-model <model> --reviewer-model <model> \\
+    [--researcher-model <model>] [--frontend-model <model>] [--<role>-effort <effort>] --yes
 
   node skills/odai/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] --uninstall --yes
 
-安装后用户只需正常使用 odai。总控是唯一持续任务线程；planner、executor、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker 和跨 provider runner 托管文件。`);
+安装后用户只需正常使用 odai。总控是唯一持续任务线程并持有实施；planner、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker、executor 和 stage runner 托管文件。`);
 }
 
 function returnResult(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); process.exit(0); }

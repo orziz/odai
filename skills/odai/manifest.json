@@ -1,8 +1,25 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "odai",
-  "skillVersion": "0.3.5",
-  "runtimeContract": 3,
+  "skillVersion": "0.3.7",
+  "runtimeContract": 6,
+  "roleFiles": {
+    "controller": "assets/routing-roles/controller.md",
+    "researcher": "assets/routing-roles/researcher.md",
+    "planner": "assets/routing-roles/planner.md",
+    "reviewer": "assets/routing-roles/reviewer.md",
+    "frontend": "assets/routing-roles/frontend.md"
+  },
+  "referenceFiles": {
+    "dao": "references/dao.md",
+    "planning": "references/planning.md",
+    "craft": "references/craft.md",
+    "verification": "references/verification.md",
+    "support": "references/support.md",
+    "leverage": "references/leverage.md",
+    "care": "references/care.md",
+    "human-safety": "references/human-safety.md"
+  },
   "requiredFiles": [
     "SKILL.md",
     "agents/openai.yaml",
@@ -12,7 +29,6 @@
     "assets/copilot-agents/agent.md",
     "assets/hooks-policy.example.json",
     "assets/routing-roles/controller.md",
-    "assets/routing-roles/executor.md",
     "assets/routing-roles/frontend.md",
     "assets/routing-roles/planner.md",
     "assets/routing-roles/researcher.md",
@@ -31,7 +47,6 @@
     "scripts/install-routing.mjs",
     "scripts/odai-hook.mjs",
     "scripts/run-role.mjs",
-    "scripts/run-routing.mjs",
     "scripts/verify-routing.mjs"
   ]
 }

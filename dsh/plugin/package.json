@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-plugin",
-  "version": "0.2.13",
+  "version": "0.2.15",
   "description": "Profile-wide odai governance and routing bundle for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -51,13 +51,13 @@
     "prepack": "npm run verify:version && node ../../scripts/validate-odai-skill.mjs",
     "postpack": "npm run clean:artifact",
     "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean runtime --clean skills -- --dry-run",
-    "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ../runtime/tests/*.test.mts ./tests/*.test.mts",
+    "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ../runtime/tests/*.test.mts ./tests/*.test.mts ../../scripts/dsh-web-rpc.test.mjs",
     "verify:dsh": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/verify-session-compat.mts && npm --prefix ../.. exec -- tsx ./tests/verify-dsh-load.mts",
     "smoke:live": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/live-routing-smoke.mts",
     "smoke:compaction-cache": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/live-compaction-cache-smoke.mts"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.1.1-rc.2"
+    "@deepseek-ai/dsh": "0.1.1-rc.2 || 0.1.2-alpha.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {

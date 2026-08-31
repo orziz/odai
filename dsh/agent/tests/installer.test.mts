@@ -28,10 +28,18 @@ function jsonRecord(text: string): Record<string, unknown> {
 }
 
 test("Agent composition targets only the supported DSH Standard contract", async () => {
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2"]);
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-alpha.2"]);
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.1-rc.2"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.2"), normalizedSource);
+  const legacy = renderAgentCompositionForDsh(source, "0.1.1-rc.2");
+  assert.doesNotMatch(legacy, /command-goal|modelSelectionSettings/u);
+  assert.match(legacy, /fetch: false/u);
+  assert.match(legacy, /id: tool-goal/u);
+  assert.throws(
+    () => renderAgentCompositionForDsh(source.replace("    fetch: true", "    fetch: false"), "0.1.1-rc.2"),
+    /missing alpha\.2 web fetch setting/u,
+  );
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.0-rc.7"), /unsupported DSH version/u);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.1"), /unsupported DSH version/u);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.0-rc.6"), /unsupported DSH version/u);

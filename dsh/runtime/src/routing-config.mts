@@ -22,7 +22,7 @@ import type { DshAgent, ModelRoute, ResponsibilityDispatch, RuntimeTool, Unknown
 import { isUnknownRecord } from "./runtime-types.mjs";
 import { acquireOwnedStoreLock } from "./store-lock.mjs";
 
-export const CONFIGURABLE_ROLES = Object.freeze(["researcher", "planner", "executor", "reviewer", "frontend"] as const);
+export const CONFIGURABLE_ROLES = Object.freeze(["researcher", "planner", "reviewer", "frontend"] as const);
 export type ConfigurableRole = (typeof CONFIGURABLE_ROLES)[number];
 export type RoleRoutes = Partial<Record<ConfigurableRole, ModelRoute>>;
 export type RoleRouteSources = Partial<Record<ConfigurableRole, "persisted-mapping" | "deployment-config">>;
@@ -47,7 +47,6 @@ export interface LatestRouteReceipt {
   step?: number;
   responsibility?: ConfigurableRole;
   responsibilityScopeId?: string;
-  routeCardId?: string;
   status?: "applied" | "mismatch" | "unverified" | "fallback";
   taskStatus?: "completed" | "fallback";
   routeMode?: "inline" | "same-turn" | "child";
@@ -63,10 +62,10 @@ export interface LatestRouteReceipt {
 
 export const ROUTING_CONFIG_PROMPT = [
   "## Odai responsibility model configuration",
-  "When the user naturally asks to inspect, set, change, or remove the research/investigation, planning/planner, execution/executor, review/acceptance/reviewer, or frontend design/implementation model, use odai_routing_config.",
+  "When the user naturally asks to inspect, set, change, or remove the research/investigation, planning/planner, review/acceptance/reviewer, or frontend design/implementation model, use odai_routing_config.",
   "Translate the user's natural responsibility wording into the tool's responsibility field. Do not require internal routing terms or a special prompt form.",
   "For a model set, call the tool only after the user explicitly supplies both provider and model. Pass reasoningEffort or maxTokens only when the user supplies them; otherwise omit them.",
-  "A user may independently set or reset one responsibility's dispatch. researcher, planner, reviewer, and frontend accept same-turn or child; executor accepts same-turn only. Do not require provider/model again for a dispatch-only change.",
+  "A user may independently set or reset one responsibility's dispatch. researcher, planner, reviewer, and frontend accept same-turn or child. Do not require provider/model again for a dispatch-only change.",
   "Never infer, recommend as chosen, or silently select any provider, model, effort, token limit, dispatch, or price. Ask a concise clarification when a requested value is ambiguous.",
   "Researcher routing is task-gated but not price-aware. A researcher mapping enables the narrow trigger but does not guarantee lower cost; compare actual provider prices and measured usage without inventing either.",
   "A generic subagent is not proof that a configured responsibility ran. When a real responsibility gap emerges after initial routing and manual delegation is necessary, begin the subagent label with `odai-<responsibility>` followed by a space or colon; otherwise keep it generic and do not claim the responsibility mapping was used.",
@@ -75,6 +74,7 @@ export const ROUTING_CONFIG_PROMPT = [
 ].join("\n");
 
 const ROLE_ROUTE_FIELDS = new Set<string>(["provider", "model", "reasoningEffort", "maxTokens"]);
+const RETIRED_STORE_ROLES = new Set(["executor"]);
 const STORE_SCHEMA_VERSION = 2;
 const SUPPORTED_STORE_SCHEMA_VERSIONS = new Set([1, STORE_SCHEMA_VERSION]);
 const DISPATCH_VALUES = new Set<ResponsibilityDispatch>(["same-turn", "child"]);
@@ -119,9 +119,6 @@ export function resolveRoleDispatch(value: unknown, role: unknown): Responsibili
   if (!isConfigurableRole(role)) throw new TypeError(`unknown odai routing responsibility: ${String(role)}`);
   if (typeof value !== "string" || !DISPATCH_VALUES.has(value as ResponsibilityDispatch)) {
     throw new TypeError(`routing dispatch ${role} must be same-turn or child`);
-  }
-  if (role === "executor" && value === "child") {
-    throw new TypeError("routing dispatch executor must be same-turn; child executors cannot satisfy the controller-owned write boundary");
   }
   return value as ResponsibilityDispatch;
 }
@@ -171,8 +168,10 @@ export function readRoutingStore(configPath: string): Readonly<RoutingStore> {
       : isUnknownRecord(parsed.dispatch)
         ? parsed.dispatch
         : (() => { throw new TypeError(`odai routing config ${configPath}.dispatch must be an object`); })();
-  const unknownRoles = Object.keys(rawRoles).filter((role) => !isConfigurableRole(role));
-  const unknownDispatchRoles = Object.keys(rawDispatch).filter((role) => !isConfigurableRole(role));
+  const unknownRoles = Object.keys(rawRoles)
+    .filter((role) => !isConfigurableRole(role) && !RETIRED_STORE_ROLES.has(role));
+  const unknownDispatchRoles = Object.keys(rawDispatch)
+    .filter((role) => !isConfigurableRole(role) && !RETIRED_STORE_ROLES.has(role));
   if (unknownRoles.length > 0) {
     throw new TypeError(`odai routing config ${configPath} has unknown roles: ${unknownRoles.join(", ")}`);
   }
@@ -363,12 +362,12 @@ export function createRoutingConfigTool(
   return {
     name: "odai_routing_config",
     description: [
-      "Inspect effective Odai model mappings, per-responsibility dispatch overrides, and the latest current-session route receipt; set/remove mappings or set/reset dispatch for researcher, planner, executor, reviewer, and frontend responsibilities.",
+      "Inspect effective Odai model mappings, per-responsibility dispatch overrides, and the latest current-session route receipt; set/remove mappings or set/reset dispatch for researcher, planner, reviewer, and frontend responsibilities.",
       "Use this only when the user naturally and explicitly asks to inspect/remove a mapping, names the provider/model to set, or explicitly chooses same-turn/child dispatch.",
       "Never choose a provider, model, reasoning effort, token limit, or price on the user's behalf. Never choose a dispatch mode on the user's behalf.",
       "Researcher routing is task-gated but not price-aware; its mapping does not guarantee lower cost.",
       "For every configuration change, handle one responsibility per call. Persisted model mappings and dispatch overrides are shared by the Odai DSH Plugin and Agent and apply from the next user turn.",
-      "Results expose configured in-place responsibility ceilings and warn when planner, executor, or frontend mappings without maxTokens inherit the controller ceiling; never invent an override.",
+      "Results expose configured in-place responsibility ceilings and warn when planner or frontend mappings without maxTokens inherit the controller ceiling; never invent an override.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -380,8 +379,8 @@ export function createRoutingConfigTool(
         provider: { type: "string", description: "Provider id explicitly supplied by the user; required for set." },
         model: { type: "string", description: "Model id explicitly supplied by the user; required for set." },
         reasoningEffort: { type: "string", description: "Optional reasoning effort explicitly supplied by the user." },
-        maxTokens: { type: "integer", description: "Optional positive output limit explicitly supplied by the user. It limits routed child requests and explicitly overrides the global controller ceiling only inside the same planner, executor, or frontend responsibility scope when that responsibility runs in-place." },
-        dispatch: { type: "string", enum: ["same-turn", "child"], description: "Required for set-dispatch. executor accepts same-turn only; all other responsibilities accept same-turn or child." },
+        maxTokens: { type: "integer", description: "Optional positive output limit explicitly supplied by the user. It limits routed child requests and explicitly overrides the global controller ceiling only inside the same planner or frontend responsibility scope when that responsibility runs in-place." },
+        dispatch: { type: "string", enum: ["same-turn", "child"], description: "Required for set-dispatch. Every responsibility accepts same-turn or child." },
       },
     },
     output: {
@@ -419,7 +418,7 @@ export function createRoutingConfigTool(
             required: ["turn", "step", "responsibility", "status", "routeSource", "fallbackUsed"],
             properties: {
               turn: { type: "integer" }, step: { type: "integer" }, responsibility: { type: "string", enum: [...CONFIGURABLE_ROLES] },
-              responsibilityScopeId: { type: "string" }, routeCardId: { type: "string" },
+              responsibilityScopeId: { type: "string" },
               status: { type: "string", enum: ["applied", "mismatch", "unverified", "fallback"] },
               taskStatus: { type: "string", enum: ["completed", "fallback"] }, routeMode: { type: "string", enum: ["inline", "same-turn", "child"] },
               routeSource: { type: "string", enum: ["persisted-mapping", "deployment-config"] }, fallbackUsed: { type: "boolean" },
@@ -458,7 +457,6 @@ export function createRoutingConfigTool(
               `responsibility=${value.latestRoute.responsibility} status=${value.latestRoute.status} mode=${value.latestRoute.routeMode ?? "unknown"}`,
               `routeSource=${value.latestRoute.routeSource} fallbackUsed=${String(value.latestRoute.fallbackUsed)}`,
               ...(value.latestRoute.responsibilityScopeId ? [`responsibilityScope=${value.latestRoute.responsibilityScopeId}`] : []),
-              ...(value.latestRoute.routeCardId ? [`routeCard=${value.latestRoute.routeCardId}`] : []),
               ...(value.latestRoute.taskStatus ? [`taskStatus=${value.latestRoute.taskStatus}`] : []),
               ...(value.latestRoute.taskStopReason ? [`taskStopReason=${value.latestRoute.taskStopReason}`] : []),
               ...(value.latestRoute.error ? [`routeError=${value.latestRoute.error}`] : []),
@@ -513,7 +511,7 @@ export function createRoutingConfigTool(
         ));
       }
       if (!isConfigurableRole(arguments_.responsibility)) {
-        throw new TypeError("responsibility must be researcher, planner, executor, reviewer, or frontend for configuration changes");
+        throw new TypeError("responsibility must be researcher, planner, reviewer, or frontend for configuration changes");
       }
       const responsibility = arguments_.responsibility;
       const proposedRoute = routingAction === "set" ? resolveRoleRoute({

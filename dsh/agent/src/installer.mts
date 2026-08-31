@@ -94,9 +94,12 @@ export const SUPPORTED_DSH_VERSIONS = Object.freeze(
 if (SUPPORTED_DSH_VERSIONS.length === 0 || SUPPORTED_DSH_VERSIONS.some((version) => !DSH_VERSION_PATTERN.test(version))) {
   throw new Error("odai-dsh-agent peer dependency must list exact supported DSH versions");
 }
-const SOURCE_DSH_VERSION = "0.1.1-rc.2";
-if (SUPPORTED_DSH_VERSIONS.length !== 1 || SUPPORTED_DSH_VERSIONS[0] !== SOURCE_DSH_VERSION) {
-  throw new Error(`Odai Agent peer must target only source composition ${SOURCE_DSH_VERSION}`);
+const SOURCE_DSH_VERSION = "0.1.2-alpha.2";
+const LEGACY_DSH_VERSION = "0.1.1-rc.2";
+if (!SUPPORTED_DSH_VERSIONS.includes(SOURCE_DSH_VERSION)
+  || !SUPPORTED_DSH_VERSIONS.includes(LEGACY_DSH_VERSION)
+  || SUPPORTED_DSH_VERSIONS.length !== 2) {
+  throw new Error(`Odai Agent peer must target exactly ${LEGACY_DSH_VERSION} and source composition ${SOURCE_DSH_VERSION}`);
 }
 export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 const requiredFiles = Object.freeze([
@@ -114,6 +117,11 @@ const requiredFiles = Object.freeze([
   "skills/odai/manifest.json",
 ]);
 
+function replaceRequired(value: string, oldString: string, newString: string, label: string): string {
+  if (!value.includes(oldString)) throw new Error(`agent source composition is missing ${label}`);
+  return value.replace(oldString, newString);
+}
+
 export function renderAgentCompositionForDsh(composition: string, dshVersion = SUPPORTED_DSH_VERSION): string {
   if (typeof composition !== "string" || composition.trim() === "") {
     throw new TypeError("agent composition must be a non-empty string");
@@ -121,7 +129,32 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
   if (!SUPPORTED_DSH_VERSIONS.includes(dshVersion)) {
     throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected one of ${SUPPORTED_DSH_VERSIONS.join(", ")}`);
   }
-  return composition.replace(/\r\n/gu, "\n");
+  let rendered = composition.replace(/\r\n/gu, "\n");
+  if (dshVersion === SOURCE_DSH_VERSION) return rendered;
+
+  rendered = replaceRequired(rendered, [
+    "# The goal service and session driver stay on the host plane, where the Gateway",
+    "# can resolve them. The human command and model-facing tool register into this",
+    "# preset's scoped layers.",
+    "- id: command-goal",
+    "  name: '@deepseek-ai/dsh-command-goal'",
+  ].join("\n") + "\n\n", [
+    "# Only the model-facing tool. The goal SERVICE, its session driver, and the",
+    "# `/goal` command stay on the host plane: the Gateway serves the goal domain as",
+    "# Remote endpoints whose receiver comes from a generated descriptor, so it",
+    "# resolves `goals` on the host and an entry-local realm here would hide it. The",
+    "# registry is keyed by session anyway, so one host instance serves every",
+    "# session. What a preset chooses is whether its agent can call the goal tool.",
+  ].join("\n") + "\n", "alpha.2 goal command block");
+  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.2 spawn model selection setting");
+  rendered = replaceRequired(rendered, [
+    "    # Fork omits model selection so provider/model stay equal to the parent and",
+    "    # the inherited history remains eligible for KV Cache reuse. This preset",
+    "    # keeps fork continuable and accepts its child-scoped `report` additions invalidating",
+    "    # that prefix; issue #2124 tracks cache-preserving continuable fork.",
+  ].join("\n") + "\n", "", "alpha.2 fork cache guidance");
+  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.2 web fetch setting");
+  return rendered;
 }
 
 export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = process.env): string {

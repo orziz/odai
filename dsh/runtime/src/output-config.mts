@@ -137,7 +137,7 @@ export function effectiveOutputPolicy(configPath: string): Readonly<OutputPolicy
   });
 }
 
-export const IN_PLACE_OUTPUT_RESPONSIBILITIES = Object.freeze(["planner", "executor", "frontend"] as const);
+export const IN_PLACE_OUTPUT_RESPONSIBILITIES = Object.freeze(["planner", "frontend"] as const);
 export type InPlaceOutputResponsibility = (typeof IN_PLACE_OUTPUT_RESPONSIBILITIES)[number];
 export type OutputBudgetSource = "responsibility-override" | "controller-policy" | "unbounded-by-odai";
 
@@ -243,7 +243,7 @@ export function renderOutputPolicyPrompt(policy: OutputPolicy): string {
     ...(policy.maxTokens === undefined ? [] : [
       `Each controller model request carries a provider output ceiling request of ${policy.maxTokens} tokens, which may include reasoning. Provider enforcement is not guaranteed; prioritize completion and finish before the requested ceiling.`,
     ]),
-    "This policy applies only to controller requests and the final user-facing response. It never reduces child-agent, compaction, checkpoint, or other internal context budgets. A user-configured in-place responsibility maxTokens explicitly overrides this ceiling only inside that routed planner, executor, or frontend scope; the runtime records that exception.",
+    "This policy applies only to controller requests and the final user-facing response. It never reduces child-agent, compaction, checkpoint, or other internal context budgets. A user-configured in-place responsibility maxTokens explicitly overrides this ceiling only inside that routed planner or frontend scope; the runtime records that exception.",
     "The policy changes presentation and the requested controller budget only; it never permits omitting required results, evidence, risks, blockers, or verification.",
   ].join("\n");
 }

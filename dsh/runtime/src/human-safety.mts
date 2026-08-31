@@ -1,7 +1,5 @@
 import type { DshAgent, RuntimeTool } from "./runtime-types.mjs";
 
-export const HUMAN_SAFETY_REFERENCE_PATH = "references/human-safety.md";
-
 export interface HumanSafetyToolOptions {
   contractFor(agent: DshAgent): string;
   isChild?(agent: DshAgent): boolean;

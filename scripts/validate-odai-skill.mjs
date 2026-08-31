@@ -14,6 +14,19 @@ const failures = [];
 const warnings = [];
 
 const files = listFiles(skillRoot);
+const manifestPath = path.join(skillRoot, "manifest.json");
+let canonicalManifest;
+try {
+  canonicalManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+} catch (error) {
+  fail(`manifest.json: invalid JSON: ${error.message}`);
+}
+const ownerFiles = canonicalManifest && typeof canonicalManifest === "object" && !Array.isArray(canonicalManifest)
+  ? [
+      ...Object.values(canonicalManifest.roleFiles ?? {}),
+      ...Object.values(canonicalManifest.referenceFiles ?? {}),
+    ].filter((file) => typeof file === "string")
+  : [];
 const allowedFiles = new Set([
   "SKILL.md",
   "manifest.json",
@@ -22,29 +35,15 @@ const allowedFiles = new Set([
   "assets/codex-agents/role.toml",
   "assets/claude-agents/agent.md",
   "assets/copilot-agents/agent.md",
-  "assets/routing-roles/controller.md",
-  "assets/routing-roles/planner.md",
-  "assets/routing-roles/researcher.md",
-  "assets/routing-roles/executor.md",
-  "assets/routing-roles/reviewer.md",
-  "assets/routing-roles/frontend.md",
   "assets/hooks-policy.example.json",
   "assets/task-state.md",
-  "references/dao.md",
-  "references/care.md",
-  "references/human-safety.md",
-  "references/craft.md",
-  "references/planning.md",
-  "references/leverage.md",
-  "references/support.md",
-  "references/verification.md",
   "scripts/build-hooks.mjs",
   "scripts/build-routing.mjs",
   "scripts/install-routing.mjs",
   "scripts/run-role.mjs",
-  "scripts/run-routing.mjs",
   "scripts/verify-routing.mjs",
   "scripts/odai-hook.mjs",
+  ...ownerFiles,
 ]);
 
 for (const relativePath of allowedFiles) {
@@ -67,7 +66,6 @@ validateRoutingSources();
 await validateSkillManifest();
 validateEvaluationIsolation();
 validateReferences();
-await validatePlanningIntegration();
 warnRepeatedRules();
 validateRibaoSkill();
 
@@ -100,6 +98,16 @@ if (failures.length > 0) {
   );
 }
 
+function roleFile(name) {
+  const value = canonicalManifest?.roleFiles?.[name];
+  return typeof value === "string" ? value : `__missing-role-owner__/${name}`;
+}
+
+function referenceFile(name) {
+  const value = canonicalManifest?.referenceFiles?.[name];
+  return typeof value === "string" ? value : `__missing-reference-owner__/${name}`;
+}
+
 function validateFrontmatter(text) {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) return fail("SKILL.md: missing or invalid YAML frontmatter");
@@ -128,21 +136,16 @@ function validateFrontmatter(text) {
 
 function validateConstitution(text) {
   const section = text.match(/^## 精神内核\r?\n([\s\S]*?)(?=^## )/m)?.[1] || "";
-  for (const fragment of [
-    "**事由人定，路由实证；法随势变，成由验定；止于边界，成事而不妄为。**",
-    "用户定义目标、价值取舍和不可接受结果",
-    "模型核实事实、纠正关键前提",
-    "成事是实现用户真正所求",
-    "不曲事实、不越权、不造事",
-    "谋有攻守",
-    "止于探索和有据建议",
-    "相邻发现只建议",
-    "只有它是当前结果成立的必要条件或另获授权，才实施",
-    "即时生命与人身安全高于任务进度",
-    "提前预警、及时干预、主动引导",
-    "任何干预都不得造成二次伤害",
-  ]) {
-    if (!section.includes(fragment)) fail(`SKILL.md: spiritual core missing: ${fragment}`);
+  const contracts = [
+    /\*\*事由人定，路由实证；法随势变，成由验定；止于边界，成事而不妄为。\*\*/,
+    /用户定义目标、价值取舍和不可接受结果[^。\n]*模型核实事实、纠正关键前提/,
+    /成事是实现用户真正所求[^。\n]*不曲事实、不越权、不造事/,
+    /证据变化就改判/,
+    /相邻发现[^。\n]*有据建议[^。\n]*必要条件或另获授权[^。\n]*才实施/,
+    /即时生命与人身安全高于任务进度[^。\n]*提前预警、及时干预、主动引导[^。\n]*防止二次伤害/,
+  ];
+  for (const contract of contracts) {
+    if (!contract.test(section)) fail(`SKILL.md: spiritual core missing contract: ${contract}`);
   }
 }
 
@@ -154,26 +157,22 @@ function validateStructure() {
       anchors: [
         "`事｜实｜法｜成｜界`",
         "行动前须有充分且唯一的意图证据",
-        "方向性改进有多个合理交付物时",
-        "实施或提交授权在目标唯一后才生效，不能让目标变唯一",
-        "低成本或可撤回不能替代对齐",
+        "不能让目标变唯一",
         "**自主完成**",
-        "意图证据充分且唯一",
         "**探索构想**",
-        "候选无需决策或实施级证据",
         "讨论不授权写入或实施",
         "探索、决定与实施不自动切换",
         "**证据纠偏**",
         "**结构化支撑**",
         "**风险保护**",
-        "references/care.md",
-        "references/human-safety.md",
-        "references/dao.md",
-        "references/craft.md",
-        "references/planning.md",
-        "references/leverage.md",
-        "references/support.md",
-        "references/verification.md",
+        referenceFile("care"),
+        referenceFile("human-safety"),
+        referenceFile("dao"),
+        referenceFile("craft"),
+        referenceFile("planning"),
+        referenceFile("leverage"),
+        referenceFile("support"),
+        referenceFile("verification"),
         ".odai/local.md",
       ],
     },
@@ -183,40 +182,40 @@ function validateStructure() {
       anchors: ["用户当前主要语言"],
     },
     {
-      path: "references/dao.md",
+      path: referenceFile("dao"),
       headings: ["合作与决定", "目标、参考与写入", "高影响动作"],
     },
     {
-      path: "references/care.md",
+      path: referenceFile("care"),
       headings: ["回应原则", "同一总控内的交互风格", "自然与透明"],
-      anchors: ["references/human-safety.md", "阿岱与欧黛"],
+      anchors: [referenceFile("human-safety"), "阿岱与欧黛"],
     },
     {
-      path: "references/human-safety.md",
+      path: referenceFile("human-safety"),
       headings: ["优先级与边界", "主动识别与确认", "分级回应", "即时危险", "透明干预与防止二次伤害", "跨会话安全连续性", "隐私与现实支持"],
-      anchors: ["references/care.md", "明显低落、绝望或难以支撑", "自伤、轻生或自杀信号"],
+      anchors: [referenceFile("care"), "明显低落、绝望或难以支撑", "自伤、轻生或自杀信号"],
     },
     {
-      path: "references/craft.md",
+      path: referenceFile("craft"),
       headings: ["制作前定形", "实施", "设计", "界面与实时交互", "写作与文档", "审查"],
-      anchors: ["references/planning.md", "references/leverage.md"],
+      anchors: [referenceFile("planning"), referenceFile("leverage")],
     },
     {
-      path: "references/planning.md",
+      path: referenceFile("planning"),
       headings: ["适用与授权", "事实基线", "计划缩放", "合同与工作包", "验证、状态与续作", "最小交付结构"],
-      anchors: ["assets/task-state.md", "references/craft.md", "references/leverage.md"],
+      anchors: ["assets/task-state.md", referenceFile("craft"), referenceFile("leverage")],
     },
     {
-      path: "references/support.md",
-      headings: ["按表现升降", "状态与记忆", "独立复核与连续审查"],
-      anchors: ["assets/task-state.md"],
+      path: referenceFile("support"),
+      headings: ["按表现升降", "连续性与记忆"],
+      anchors: ["assets/task-state.md", referenceFile("planning"), referenceFile("leverage"), referenceFile("verification")],
     },
     {
-      path: "references/leverage.md",
-      headings: ["唯一总控与六责任", "宿主能力与降级", "安装宿主路由", "使用、安装与创建其他能力", "组合与下放"],
+      path: referenceFile("leverage"),
+      headings: ["唯一总控与四项可选责任", "宿主能力与降级", "安装宿主路由", "使用、安装与创建其他能力", "组合与下放"],
     },
     {
-      path: "references/verification.md",
+      path: referenceFile("verification"),
       headings: ["建立验收", "判断完成"],
     },
   ];
@@ -242,46 +241,36 @@ function validateBehavior() {
       path: "SKILL.md",
       label: "adaptive support",
       patterns: [
-        /宿主已证能力/,
+        /宿主已证能力[^。\n]*实际表现[^。\n]*最低充分能力/,
         /已暴露不再问，未暴露不猜/,
-        /使用最低充分能力/,
-        /总控是持有[^。\n]*任务线程/,
-        /单一线程足够就直接完成/,
+        /总控持有目标、状态、实施、修正与交付/,
         /独立责任只有能改变结果且净收益已证时才用/,
-        /不按角色齐全、领域、复杂度或价格分工/,
-        /能力不可得时[^。\n]*安全降级/,
-        /只阻断依赖项/,
-        /不假装成功/,
-        /回交自报不算验收/,
-        /主流程核对原始证据/,
-        /自主完成[\s\S]{0,180}不额外写计划、清单或状态/,
-        /只答不写[^。\n]*单一权威来源[^。\n]*命中即停/,
-        /用户纠正、工具或测试失败、证据冲突/,
+        /自主完成[\s\S]{0,160}直接闭环[^。\n]*不额外制造计划、清单或状态/,
+        /结构化支撑[\s\S]{0,180}稳定后撤回/,
         /支撑只能补当前缺口[^。\n]*不能降低目标、删减验收/,
-        /日常关怀[\s\S]{0,180}普通负面情绪只触发低负担支持，不自动判为危机/,
-        /危机保护[\s\S]{0,180}references\/human-safety\.md/,
-        /阿岱与欧黛[^。\n]*不自动选模型/,
-        /任何干预都不得造成二次伤害/,
+        /危机保护[\s\S]{0,260}明确自残、轻生或即时危险时任务让位/,
       ],
     },
     {
       path: "SKILL.md",
       label: "shared boundaries",
       patterns: [
-        /明确点名局部结果[^。\n]*只改完成该结果所必需的对象/,
-        /既有契约要求本次改动不新增破坏[^。\n]*不授权顺手修复与当前结果独立的既存违约/,
-        /背景、约束、样式、示例和参考实现默认只读/,
-        /名称、字段或输出相似不证明用途相同/,
-        /用户给出的根因和手段[^。\n]*不自动成为事实或无条件目标/,
+        /新动作[^。\n]*事实依据、必要性和授权/,
+        /用户点名局部结果[^。\n]*只改完成它所需对象/,
+        /背景、约束、样式、示例和参考实现默认只读[^。\n]*不产生写入授权/,
+        /根因和手段先作为待验证输入/,
+        /方向性改进有多个合理交付物[^。\n]*完整呈现[^。\n]*范围分歧[^。\n]*真实结果、非目标与不可接受退化/,
+        /低成本或可撤回不能替代对齐/,
+        /状态依事实与事件改变[^。\n]*未结束原位更新[^。\n]*叙述不算迁移/,
         /修改共享对象或既有契约[^。\n]*保持默认行为/,
         /“严格、完整、增强”提高证据、反证、保持项和验收强度/,
+        /用户确认只补授权、不补事实/,
         /未读、未做、未跑、未验证或未调用(?:都)?如实说明/,
-        /明确要求须有结果或标明未决，不因内部取舍静默丢失/,
-        /任务列表、计划、状态更新、委派说明与回交默认使用用户当前主要语言/,
+        /明确要求须有结果或标明未决/,
       ],
     },
     {
-      path: "references/dao.md",
+      path: referenceFile("dao"),
       label: "authority and risk",
       patterns: [
         /事实判断由证据校准[^。\n]*价值冲突由用户决定/,
@@ -300,7 +289,7 @@ function validateBehavior() {
       ],
     },
     {
-      path: "references/care.md",
+      path: referenceFile("care"),
       label: "non-crisis care and interaction style",
       patterns: [
         /低负担的日常支持/,
@@ -321,7 +310,7 @@ function validateBehavior() {
       ],
     },
     {
-      path: "references/human-safety.md",
+      path: referenceFile("human-safety"),
       label: "human safety and crisis care",
       patterns: [
         /任务、路由、成本和交付节奏均不得压过本文件/,
@@ -353,105 +342,62 @@ function validateBehavior() {
       ],
     },
     {
-      path: "references/craft.md",
+      path: referenceFile("craft"),
       label: "built-in craft",
       patterns: [
         /首次写入前确认预期结果、写入对象、必须保持的行为和完成证据/,
-        /数值候选先说明它服务的决定、依据、计算、敏感性、极值和验证方式/,
         /只改解决目标所需的最小完整部分/,
-        /补丁同时包含已证必要改动和替代、相邻或“保险”改动[^。\n]*先移除后者再验证/,
-        /外来内容进入会执行、查询、解释或改变权限与数据的处理点前/,
         /不把未受信内容直接拼入可执行上下文/,
-        /大改动按可独立验证的完整切片推进/,
-        /普通任务不强制套用 TDD、SDD、BDD 或其他仪式/,
         /不靠放宽断言或吞错造绿/,
-        /旧状态已被证实会重现问题[^\n]*不把“恢复原样”冒充安全回退/,
-        /检查每个过渡状态与新旧版本并存组合/,
-        /区分可复用基线、实现偏差和真正缺口/,
-        /游戏、仿真和实时系统同时说明循环、输入、状态变化、反馈、资源、失败与恢复/,
-        /只有多个使用方共享同一需求时才扩展公共能力/,
         /正文完成不冒充已发布/,
-        /证据不足不判为缺陷/,
       ],
     },
     {
-      path: "references/planning.md",
+      path: referenceFile("planning"),
       label: "scaled implementation planning",
       patterns: [
         /仅仅“任务复杂”不自动触发计划文档/,
-        /聊天中的计划不自动授权写文件/,
         /计划完成只表示路线、边界与验收已达到可执行标准，不表示实现已经完成/,
-        /调查深度只到足以区分当前行为、目标缺口、可行路线和主要风险/,
         /按后续执行真正需要的结构选择最小层级/,
-        /独立工作包可以并行/,
-        /无法稳定红测时使用另一种能区分路线的 Oracle/,
         /同一任务只保留一个主状态/,
-        /计划文档承担主状态时不另建独立账本/,
-        /独立账本承担主状态时[^。\n]*不复制当前工作包、完成项或下一动作/,
         /非主载体不能维护另一份进度/,
         /聊天摘要和执行者自报不能替代主状态或原始证据/,
-        /下一执行者无需重新决定目标、边界和验收/,
       ],
     },
     {
-      path: "references/support.md",
-      label: "weak-model support",
+      path: referenceFile("support"),
+      label: "adaptive continuity support",
       patterns: [
         /同一路线没有新证据却继续尝试/,
-        /计划、TODO、状态标题与内容使用用户当前主要语言/,
         /把下一步缩成能独立验证的动作/,
-        /触发支撑的缺口已闭合[^。\n]*先撤掉对应额外结构再继续/,
-        /极复杂或真实并行任务[^。\n]*稳定标识、依赖、负责人、范围、产物与验收/,
-        /没有维护授权不自动修改技能或项目规则/,
+        /触发支撑的缺口已闭合[^。\n]*撤掉对应额外结构/,
+        /主状态、字段、唯一 owner 与续作统一遵循 `references\/planning\.md`/,
+        /本文件只判断是否需要外化[^。\n]*不维护第二份进度或并行责任账本/,
         /只有稳定、跨任务有用且可复核的信息才保存/,
-        /\.odai\/local\.md[^。\n]*项目叠加层/,
-        /每轮都检查当前状态[\s\S]{0,100}重新计数/,
-        /审查者保持只读[^。\n]*未经主流程验证不能关闭问题/,
+        /没有维护授权不自动修改技能或项目规则/,
       ],
     },
     {
-      path: "references/leverage.md",
+      path: referenceFile("leverage"),
       label: "external leverage",
       patterns: [
         /odai 是唯一用户入口和最终交付 owner/,
-        /调查、规划、执行、前端制作与验收是可分离责任，不是必走阶段/,
+        /实施始终由总控负责/,
         /researcher[^。\n]*只补多源事实获取与原始上下文压缩缺口/,
-        /有界来源账本能直接补足该决定缺口/,
-        /单一权威来源、普通仓库查看、实现期调试[^。\n]*都不触发/,
-        /researcher 运行时只判任务适配，不感知模型价格/,
-        /映射只是用户显式启用窄触发，不证明或保证降本/,
         /planner[^。\n]*只补独立判断缺口/,
-        /executor[^。\n]*决定已冻结、实施有界且可独立验证/,
-        /原任务已授权实施[^。\n]*自动续接 executor 或总控实施[^。\n]*不再等待用户说“继续”/,
         /reviewer[^。\n]*独立判断能改变尚未放行的具体属性/,
-        /frontend[^。\n]*不是领域资料包[^。\n]*不构成按数据库、安全等领域名称追加平行责任/,
-        /agent 启动默认选择新鲜独立上下文/,
-        /既往交互本身就是决定性证据[^。\n]*净收益明确大于[^。\n]*才继承既有会话/,
-        /任务标题、委派说明与回交都使用该语言/,
-        /不得复制完整总控会话/,
-        /净收益明确大于输入、缓存失效、上下文压缩和延迟成本/,
-        /宿主未暴露继承范围或用量时不使用 fork/,
+        /frontend[^。\n]*不是领域资料包/,
         /高后果只提高证据、授权和验收强度，不自动制造角色调用/,
-        /能力目录只认宿主已提供的系统说明、工具定义、已加载配置和实际调用结果/,
-        /未暴露的能力不猜/,
         /路由是否成立看实际调用，不看配置或自报/,
         /不能取得所需能力时，继续当前能力可安全推进的部分/,
-        /默认安装 `auto`/,
-        /真实任务证明净收益时，才安装 `stage`/,
         /未安装路由器时，odai 仍完整可用/,
-        /外部能力只有在正确性、兼容性、可验证性、真实交付或重复成本上的改善/,
-        /无法核实时只描述所需能力，不编造具体名称/,
         /安装或启用前征得用户同意/,
-        /两次以上实例证明它会改变结果/,
-        /已有 owner 原位更新，不建平行 skill/,
         /单一能力已能完整解决就不组合/,
-        /写入下放前外显同版读前门/,
-        /多个写入者使用同一 baseline、精确允许路径和独立验收/,
         /review 只读/,
       ],
     },
     {
-      path: "references/verification.md",
+      path: referenceFile("verification"),
       label: "honest completion",
       patterns: [
         /映射成可观察证据/,
@@ -461,6 +407,8 @@ function validateBehavior() {
         /唯一组合状态[^。\n]*共享契约[^。\n]*完整验收/,
         /冲突解决或兼容性编辑[^。\n]*新的获授权写入/,
         /明确区分已实施、已验证与未验证/,
+        /前一状态未实际结束时更新同一状态[^。\n]*不创建后继值或把当前候选写成历史/,
+        /权威载体与用户文档指向同一当前值/,
         /证据足够就停止/,
       ],
     },
@@ -540,16 +488,13 @@ function validateRoutingSources() {
   const codexRoleFile = path.join(codexRoot, "role.toml");
   const claudeTemplateFile = path.join(skillRoot, "assets", "claude-agents", "agent.md");
   const copilotTemplateFile = path.join(skillRoot, "assets", "copilot-agents", "agent.md");
-  const roleRoot = path.join(skillRoot, "assets", "routing-roles");
   const builderFile = path.join(skillRoot, "scripts", "build-routing.mjs");
   const installerFile = path.join(skillRoot, "scripts", "install-routing.mjs");
   const roleRunnerFile = path.join(skillRoot, "scripts", "run-role.mjs");
-  const runnerFile = path.join(skillRoot, "scripts", "run-routing.mjs");
   const verifierFile = path.join(skillRoot, "scripts", "verify-routing.mjs");
-  const harnessFile = path.join(repoRoot, "scripts", "odai-canary-harness.mjs");
-  const roleFiles = ["controller", "researcher", "planner", "executor", "reviewer", "frontend"]
-    .map((role) => path.join(roleRoot, `${role}.md`));
-  if (![configFile, codexRoleFile, claudeTemplateFile, copilotTemplateFile, ...roleFiles, builderFile, installerFile, roleRunnerFile, runnerFile, verifierFile].every(existsSync)) return;
+  const roleFiles = ["controller", "researcher", "planner", "reviewer", "frontend"]
+    .map((role) => path.join(skillRoot, roleFile(role)));
+  if (![configFile, codexRoleFile, claudeTemplateFile, copilotTemplateFile, ...roleFiles, builderFile, installerFile, roleRunnerFile, verifierFile].every(existsSync)) return;
 
   const config = readFileSync(configFile, "utf8");
   for (const fragment of [
@@ -564,12 +509,11 @@ function validateRoutingSources() {
     if (!codexRole.includes(fragment)) fail(`assets/codex-agents/role.toml: missing host wrapper field: ${fragment}`);
   }
   const roleSources = [
-    ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "实施有界且分离执行有可验净收益", "独立判断能改变放行结果", "实施失败但路线仍成立", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
+    ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施、修正回路与最终交付", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "总控在当前上下文做最小修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
     ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", "不宣称节省成本"]],
-    ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "mode: direct", "mode: planned", "target", "evidence", "scope", "decision", "execute: executor", "review: none", "accept", "stop", "steps", "增量重规划", "researcher 来源账本"]],
-    ["executor", readFileSync(roleFiles[3], "utf8"), ["唯一 executor", "只接收冻结方案与证据指针", "不重新盘点仓库", "不重新盘点仓库、论证目标或另选路线", "验证需求不自动授权改测试", "必要验证只运行一次", "新证据推翻决定、范围或验收", "<odai_closeout>", "不得自行批准最终交付"]],
-    ["reviewer", readFileSync(roleFiles[4], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整 `accept`", "`pass`、`fail` 或 `unresolved`", "route: execution", "route: planning", "route: user", "route: blocked", "不得制造额外流程"]],
-    ["frontend", readFileSync(roleFiles[5], "utf8"), ["frontend 专业责任", "不是第二个总控", "允许与禁止范围", "总控或 planner", "当前任务线程", "有界独立上下文", "references/craft.md", "局部修复保持最小", "不写入本通用责任合同"]],
+    ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "mode: direct", "mode: planned", "target", "evidence", "scope", "decision", "交回总控", "review: none", "accept", "stop", "steps", "增量重规划", "researcher 来源账本"]],
+    ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整 `accept`", "`pass`、`fail` 或 `unresolved`", "route: execution", "route: planning", "route: user", "route: blocked", "不得制造额外流程"]],
+    ["frontend", readFileSync(roleFiles[4], "utf8"), ["frontend 专业责任", "不是第二个总控", "允许与禁止范围", "总控或 planner", "当前任务线程", "有界独立上下文", referenceFile("craft"), "局部修复保持最小", "不写入本通用责任合同"]],
   ];
   for (const [label, text, fragments] of roleSources) {
     if (!text.includes("跟随用户当前的主要语言")) {
@@ -595,9 +539,9 @@ function validateRoutingSources() {
 
   const builder = readFileSync(builderFile, "utf8");
   for (const fragment of [
-    "--host", "--out", "--controller-model", "--researcher-model", "--planner-model", "--executor-model", "--reviewer-model", "--frontend-model",
-    "--verifier-command", "single-controller-conditional-routing", "single-controller-stage-routing", "Canonical 制作工艺",
-    "routing-roles", "roleBody", "codexAgentSections", "odai-researcher", "odai-planner", "odai-executor", "odai-reviewer", "odai-frontend", "ADAPTER.json", '"codex"', '"claude"', '"copilot"',
+    "--host", "--out", "--controller-model", "--researcher-model", "--planner-model", "--reviewer-model", "--frontend-model",
+    "--verifier-command", "single-controller-conditional-routing", "controller_owns_implementation", "Canonical 制作工艺",
+    "ownerFilePath", "requiredFiles", "realpathSync", "roleBody", "codexAgentSections", "odai-researcher", "odai-planner", "odai-reviewer", "odai-frontend", "ADAPTER.json", '"codex"', '"claude"', '"copilot"',
   ]) {
     if (!builder.includes(fragment)) fail(`scripts/build-routing.mjs: missing adapter behavior: ${fragment}`);
   }
@@ -606,55 +550,13 @@ function validateRoutingSources() {
   }
 
   const installer = readFileSync(installerFile, "utf8");
-  for (const fragment of ["--scope", "--target", "--uninstall", "--yes", "--controller-model", "--researcher-model", "--planner-model", "--executor-model", "--reviewer-model", "--frontend-model", "odai-routing.json", "odai-run-routing.mjs", "odai-run-role.mjs", "odai-verify-routing.mjs", "assertManagedState", "uninstall", "requiresNewSession", "settings.local.json", "目标已有非 odai 管理的配置", "拒绝删除"]) {
+  for (const fragment of ["--scope", "--target", "--uninstall", "--yes", "--controller-model", "--researcher-model", "--planner-model", "--reviewer-model", "--frontend-model", "odai-routing.json", "odai-run-routing.mjs", "odai-run-role.mjs", "odai-verify-routing.mjs", "assertManagedState", "uninstall", "requiresNewSession", "settings.local.json", "目标已有非 odai 管理的配置", "拒绝删除"]) {
     if (!installer.includes(fragment)) fail(`scripts/install-routing.mjs: missing safe installation behavior: ${fragment}`);
   }
 
   const roleRunner = readFileSync(roleRunnerFile, "utf8");
-  for (const fragment of ["--role", "controller", "researcher", "planner", "executor", "reviewer", "frontend", "model_verified", "tool_evidence", "odai-routing.json", "reasoning_efforts", "requested"] ) {
+  for (const fragment of ["--role", "controller", "researcher", "planner", "reviewer", "frontend", "model_verified", "tool_evidence", "odai-routing.json", "reasoning_efforts", "requested"] ) {
     if (!roleRunner.includes(fragment)) fail(`scripts/run-role.mjs: missing role routing behavior: ${fragment}`);
-  }
-
-  const runner = readFileSync(runnerFile, "utf8");
-  if (!runner.includes("会改变复验结果的准确对象、条件、输入或位置须保留")) {
-    fail("scripts/run-routing.mjs: missing evidence-specificity handoff contract");
-  }
-  if (!runner.includes("不再加载外部能力、安装工具或广泛搜索来重复证明缺失")) {
-    fail("scripts/run-routing.mjs: missing authority-backed environment stop contract");
-  }
-  if (!runner.includes("需要验证不自动授权修改测试、基准、文档或其他证据源")) {
-    fail("scripts/run-routing.mjs: missing verification-write-boundary contract");
-  }
-  if (!runner.includes("准备 direct 写入时，按目标对象在既有项目约定与验证入口中做一次有界发现")) {
-    fail("scripts/run-routing.mjs: missing direct-write contract discovery");
-  }
-  if (!runner.includes("同意前让用户看到会改变决定的真实影响、继续动作、验证和替代差异")) {
-    fail("scripts/run-routing.mjs: missing alternative-equivalence handoff contract");
-  }
-  for (const fragment of [
-    "`${decisionRole}-route.txt`", "evidence-packet", "routing-run.json", "host-owned-no-model-call",
-    "validatePlan", "parseAcceptance", "validateReview", "validateCloseout", "renderDelivery", "odai_closeout",
-    "runSelectedExecution", '"--role", role',
-    "planState.reviewIds.length > 0", '"--role", "reviewer"', "parseReviewDecision",
-    "runIncrementalReplan", "runExecutionCorrection", "buildEvidencePacket", "captureRepositoryState",
-    "executionContext", "bounded-fresh-execution-context", "persistent-task-thread", "normalizeReviewField", "expandReviewIds", "plannerEvidencePointers", "cited_paths", "captureCitedSources", "cited_sources", "pickExecutionVerificationEvidence", "isVerificationCommand", "captureUntrackedFiles", "untracked_files", "parseCloseoutJson", "directExecutionOutput", "repositoryStateChanged", "原始用户请求由总控、planner 与 reviewer 保管", "其中用户请求、规划与执行回交各只有一份", "仍调用工具", "完整 accept 是否覆盖原始请求", "duration_ms",
-    "首个非空行必须且只能是 mode", "顶层字段不得重复",
-    "requireObservedRole", "requireSameThread", "runControllerRecovery", "tool_evidence", '"stage"',
-  ]) {
-    if (!runner.includes(fragment)) fail(`scripts/run-routing.mjs: missing deterministic preflight behavior: ${fragment}`);
-  }
-  if (runner.includes('"--enable", "multi_agent"')) {
-    fail("scripts/run-routing.mjs: deterministic role scheduling must not depend on controller-discovered multi_agent tools");
-  }
-
-  if (existsSync(harnessFile)) {
-    const harness = readFileSync(harnessFile, "utf8");
-    for (const fragment of ["deterministicRoutingRunner", "odai-run-routing.mjs", "readDeterministicRoutingTelemetry", "routing-run.json"]) {
-      if (!harness.includes(fragment)) fail(`scripts/odai-canary-harness.mjs: deterministic route drifted from the managed runner contract: ${fragment}`);
-    }
-    for (const fragment of ["skill-package resources", "fixture repository root", ".odai/local.md"]) {
-      if (!harness.includes(fragment)) fail(`scripts/odai-canary-harness.mjs: fixture path-resolution contract drifted: ${fragment}`);
-    }
   }
 
   const verifier = readFileSync(verifierFile, "utf8");
@@ -666,22 +568,34 @@ function validateRoutingSources() {
 async function validateSkillManifest() {
   const manifestFile = path.join(skillRoot, "manifest.json");
   if (!existsSync(manifestFile)) return;
-  let manifest;
-  try {
-    manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
-  } catch (error) {
-    return fail(`manifest.json: invalid JSON: ${error.message}`);
-  }
+  const manifest = canonicalManifest;
   if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
     return fail("manifest.json: root must be an object");
   }
-  const fields = new Set(["schemaVersion", "name", "skillVersion", "runtimeContract", "requiredFiles"]);
+  const fields = new Set([
+    "schemaVersion",
+    "name",
+    "skillVersion",
+    "runtimeContract",
+    "roleFiles",
+    "referenceFiles",
+    "requiredFiles",
+  ]);
   for (const field of Object.keys(manifest)) {
     if (!fields.has(field)) fail(`manifest.json: unexpected field ${field}`);
   }
-  if (manifest.schemaVersion !== 1) fail("manifest.json: schemaVersion must be 1");
+  if (manifest.schemaVersion !== 2) fail("manifest.json: schemaVersion must be 2");
   if (manifest.name !== "odai") fail("manifest.json: name must be odai");
-  if (manifest.runtimeContract !== 3) fail("manifest.json: runtimeContract must be 3");
+  if (manifest.runtimeContract !== 6) fail("manifest.json: runtimeContract must be 6");
+  validateOwnerMap(manifest, "roleFiles", ["controller", "researcher", "planner", "reviewer", "frontend"]);
+  validateOwnerMap(manifest, "referenceFiles", ["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety"]);
+  const ownedPaths = [
+    ...Object.values(manifest.roleFiles ?? {}),
+    ...Object.values(manifest.referenceFiles ?? {}),
+  ];
+  if (new Set(ownedPaths).size !== ownedPaths.length) {
+    fail("manifest.json: roleFiles and referenceFiles must not share an owner path");
+  }
   if (!Array.isArray(manifest.requiredFiles)) {
     fail("manifest.json: requiredFiles must be an array");
   } else {
@@ -704,8 +618,36 @@ async function validateSkillManifest() {
     if (bundle.manifest.skillVersion !== manifest.skillVersion) {
       fail("manifest.json: runtime parser disagrees with canonical skillVersion");
     }
+    if (JSON.stringify(Object.keys(bundle.roleContracts)) !== JSON.stringify(Object.keys(manifest.roleFiles))) {
+      fail("manifest.json: runtime parser disagrees with roleFiles owner topology");
+    }
+    if (JSON.stringify(Object.keys(bundle.referenceContracts)) !== JSON.stringify(Object.keys(manifest.referenceFiles))) {
+      fail("manifest.json: runtime parser disagrees with referenceFiles owner topology");
+    }
   } catch (error) {
     fail(`manifest.json: runtime bundle validation failed: ${error.message}`);
+  }
+}
+
+function validateOwnerMap(manifest, field, expectedNames) {
+  const value = manifest[field];
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    fail(`manifest.json: ${field} must be an object`);
+    return;
+  }
+  const names = Object.keys(value);
+  if (JSON.stringify(names.sort()) !== JSON.stringify([...expectedNames].sort())) {
+    fail(`manifest.json: ${field} must declare exactly ${expectedNames.join(", ")}`);
+  }
+  const paths = Object.values(value);
+  if (paths.some((file) => typeof file !== "string" || file.length === 0)) {
+    fail(`manifest.json: ${field} values must be non-empty paths`);
+  }
+  if (new Set(paths).size !== paths.length) fail(`manifest.json: ${field} paths must be unique`);
+  if (Array.isArray(manifest.requiredFiles)) {
+    for (const file of paths) {
+      if (!manifest.requiredFiles.includes(file)) fail(`manifest.json: ${field} path ${String(file)} must appear in requiredFiles`);
+    }
   }
 }
 
@@ -773,54 +715,6 @@ function validateReferences() {
     text.split(/\r?\n/).forEach((line, index) => {
       if (line.length > 240) warn(`${relativePath}:${index + 1}: long rule line (${line.length} chars)`);
     });
-  }
-}
-
-async function validatePlanningIntegration() {
-  const moduleFile = path.join(repoRoot, "cli", "src", "core", "skill-pack.mjs");
-  if (!existsSync(moduleFile)) {
-    fail("cli/src/core/skill-pack.mjs: planning reference selector is missing");
-    return;
-  }
-
-  try {
-    const { loadSkillPack, selectSkillReferences } = await import(pathToFileURL(moduleFile).href);
-    const cases = [
-      ["生成详细实施计划", true],
-      ["先给这个修复做个计划", true],
-      ["制定迁移方案和执行步骤", true],
-      ["给出可执行的重构步骤", true],
-      ["不要改代码，先规划这个开发任务", true],
-      ["write an implementation plan", true],
-      ["plan next steps", false],
-      ["规划下一步", false],
-      ["不要写实施计划，直接修复", false],
-      ["无需迁移计划，按现有方案执行", false],
-      ["don't write an implementation plan; fix it directly", false],
-    ];
-    for (const [task, expected] of cases) {
-      const selected = selectSkillReferences({ task }).includes("references/planning.md");
-      if (selected !== expected) {
-        fail(`cli/src/core/skill-pack.mjs: planning selection for ${JSON.stringify(task)} expected ${expected}, got ${selected}`);
-      }
-    }
-
-    const pack = await loadSkillPack({ repoRoot });
-    if (!pack.supportFiles.includes("references/planning.md")) {
-      fail("cli/src/core/skill-pack.mjs: canonical planning reference is absent from support files");
-    }
-    const rendered = await pack.render({ references: ["references/planning.md"] });
-    for (const fragment of [
-      "# odai reference: references/planning.md",
-      "计划完成只表示路线、边界与验收已达到可执行标准",
-      "计划文档承担主状态时不另建独立账本",
-    ]) {
-      if (!rendered.includes(fragment)) {
-        fail(`cli/src/core/skill-pack.mjs: rendered planning reference missing ${fragment}`);
-      }
-    }
-  } catch (error) {
-    fail(`cli/src/core/skill-pack.mjs: planning integration failed: ${error.message}`);
   }
 }
 

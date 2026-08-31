@@ -1,17 +1,17 @@
-import { classifyImplementationAuthorization, extractLatestUserText } from "./router.mjs";
+import { extractLatestUserText } from "./router.mjs";
 import { activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
 import { createRoutingConfigTool, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import { createOutputConfigTool } from "./output-config.mjs";
 import type { OutputPolicy } from "./output-config.mjs";
+import { createCanonicalReferenceTool } from "./canonical-reference.mjs";
 import { createCompactionConfigTool } from "./compaction-config.mjs";
 import { ODAI_CORE_TOOL_NAMES, activeOdaiToolNames, inactiveOdaiToolNames } from "./context-activation.mjs";
 import type { ContextActivation } from "./context-activation.mjs";
 import { createContextCapabilityTool } from "./context-capability.mjs";
-import { HUMAN_CARE_REFERENCE_PATH, createHumanCareTool } from "./human-care.mjs";
-import { HUMAN_SAFETY_REFERENCE_PATH, createHumanSafetyTool } from "./human-safety.mjs";
+import { createHumanCareTool } from "./human-care.mjs";
+import { createHumanSafetyTool } from "./human-safety.mjs";
 import { createHumanSafetyContinuityTool } from "./human-safety-continuity.mjs";
-import { activeRouteCard, createRouteCardTool, unsettledRouteCard } from "./route-card.mjs";
-import { bindResponsibilityGapToTask, createResponsibilityGapTool, resolveResponsibilityGap } from "./responsibility-gap.mjs";
+import { bindResponsibilityGapToTask, createResponsibilityGapTool } from "./responsibility-gap.mjs";
 import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { createResponsibilityReturnTool } from "./responsibility-return.mjs";
 import type { ResponsibilityReturnResult } from "./responsibility-return.mjs";
@@ -27,8 +27,8 @@ import type { SkillSelection } from "./runtime-support.mjs";
 import type { DshAgent, DshEvent, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
 
 interface RouteProtection extends UnknownRecord { scopeId?: string }
-interface ExposureOptions { turn?: number; step?: number; routeCard?: boolean; responsibilityReturn?: boolean }
-interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; routeCard: boolean; responsibilityReturn: boolean }) => readonly string[] }): void }
+interface ExposureOptions { turn?: number; step?: number; responsibilityReturn?: boolean }
+interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
 interface ToolRuntimeDependencies {
   appendEvent(agent: DshAgent, type: string, data: object): void;
   baseSelection: SkillSelection;
@@ -79,6 +79,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       ? bindResponsibilityGapToTask(proposal, message.id)
       : proposal;
   };
+  const bundleFor = (agent: DshAgent): SkillBundle => sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
   ctx.tools.register(createContextCapabilityTool({
     isChild: isSubagent,
     onRequested(agent: DshAgent, capability: string) {
@@ -89,6 +90,12 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
         ...(step === undefined ? {} : { step }),
         capability,
       });
+    },
+  }));
+  ctx.tools.register(createCanonicalReferenceTool({
+    bundleFor,
+    isUnavailable(agent) {
+      return isSubagent(agent) || responsibilityScopes.has(agent);
     },
   }));
   ctx.tools.register(createRoutingConfigTool(config.routing.configPath, {
@@ -110,15 +117,15 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
   ctx.tools.register(createHumanCareTool({
     isChild: isSubagent,
     contractFor(agent: DshAgent) {
-      const bundle = sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
-      return readSkillBundleFile(bundle, HUMAN_CARE_REFERENCE_PATH).toString("utf8");
+      const bundle = bundleFor(agent);
+      return readSkillBundleFile(bundle, bundle.manifest.referenceFiles.care).toString("utf8");
     },
   }));
   ctx.tools.register(createHumanSafetyTool({
     isChild: isSubagent,
     contractFor(agent: DshAgent) {
-      const bundle = sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
-      return readSkillBundleFile(bundle, HUMAN_SAFETY_REFERENCE_PATH).toString("utf8");
+      const bundle = bundleFor(agent);
+      return readSkillBundleFile(bundle, bundle.manifest.referenceFiles["human-safety"]).toString("utf8");
     },
   }));
   ctx.tools.register(createResponsibilityGapTool({
@@ -138,9 +145,6 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     activeScopeFor(agent) {
       return responsibilityScopes.get(agent);
     },
-    activeCardFor(agent) {
-      return activeRouteCard(evidence.events(agent));
-    },
     onReturned(agent, result: ResponsibilityReturnResult) {
       const turn = currentAgentTurn(agent);
       const step = currentAgentStep(agent);
@@ -154,44 +158,6 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
         ...(step === undefined ? {} : { step }),
         ...result,
       });
-      if (result.target === "executor") {
-        const proposal = gapForCurrentTask(agent, resolveResponsibilityGap({
-          responsibility: "executor",
-          gap: result.summary,
-          evidenceRefs: [
-            `route-card:${result.routeCardId}`,
-            ...result.evidenceRefs,
-          ],
-          expectedChange: "Implement the authorized frozen route card and return verifiable evidence to the controller.",
-        }));
-        appendEvent(agent, "odai/responsibility-gap", {
-          ...(turn === undefined ? {} : { turn }),
-          ...(step === undefined ? {} : { step }),
-          ...proposal,
-        });
-      }
-    },
-  }));
-  ctx.tools.register(createRouteCardTool({
-    activeFor(agent: DshAgent) {
-      return activeRouteCard(evidence.events(agent));
-    },
-    unsettledFor(agent: DshAgent) {
-      return unsettledRouteCard(evidence.events(agent));
-    },
-    authorizationFor(agent: DshAgent) {
-      const message = latestDirectUserMessage(agent);
-      if (!message) return Object.freeze({ status: "unknown" });
-      return Object.freeze({
-        ...classifyImplementationAuthorization(extractLatestUserText([message])),
-        userMessageId: message.id,
-      });
-    },
-    onFrozen(agent, card) {
-      appendEvent(agent, "odai/route-card-frozen", { card });
-    },
-    onCleared(agent: DshAgent, cardId: string) {
-      appendEvent(agent, "odai/route-card-cleared", { cardId });
     },
   }));
   ctx.tools.register(createSkillSourceConfigTool(
@@ -263,12 +229,11 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     const child = isSubagentSession(agent);
     const activeNames = activeOdaiToolNames(activation, {
       child,
-      routeCard: options.routeCard === true,
       responsibilityReturn: options.responsibilityReturn === true,
     });
     const deniedNames = [
       ...inactiveOdaiToolNames(activeNames),
-      ...(child ? ODAI_CORE_TOOL_NAMES : []),
+      ...ODAI_CORE_TOOL_NAMES.filter((name) => !activeNames.includes(name)),
     ];
     const key = deniedNames.join("\u0000");
     const previous = toolExposureStates.get(agent);

@@ -93,6 +93,11 @@ function installBundle(root: string, version: string, marker = ""): string {
       `${readFileSync(resolve(root, "assets/routing-roles/planner.md"), "utf8").trimEnd()}\n\n${marker}_PLANNER\n`,
       "utf8",
     );
+    writeFileSync(
+      resolve(root, "references/planning.md"),
+      `${readFileSync(resolve(root, "references/planning.md"), "utf8").trimEnd()}\n\n${marker}_PLANNING\n`,
+      "utf8",
+    );
   }
   return resolve(root, "SKILL.md");
 }
@@ -153,15 +158,26 @@ function assemblyFor(ctx: CapturedContext) {
 }
 
 test("bundle manifest validates complete content and full SemVer precedence", () => {
-  assert.equal(bundled.manifest.skillVersion, "0.3.5");
-  assert.equal(bundled.manifest.runtimeContract, 3);
-  assert.equal(bundled.manifest.requiredFiles.length, 29);
+  assert.equal(bundled.manifest.skillVersion, "0.3.7");
+  assert.equal(bundled.manifest.runtimeContract, 6);
+  assert.equal(bundled.manifest.requiredFiles.length, 27);
   assert.match(bundled.roleContracts.researcher, /来源账本只是检索索引/u);
   assert.ok(bundled.manifest.requiredFiles.includes("references/care.md"));
+  assert.deepEqual(Object.keys(bundled.referenceContracts), [
+    "dao",
+    "planning",
+    "craft",
+    "verification",
+    "support",
+    "leverage",
+    "care",
+    "human-safety",
+  ]);
   assert.match(bundled.referenceContracts.craft, /通用制作工艺/u);
+  assert.match(bundled.referenceContracts.verification, /验证与完成/u);
   const leverage = readFileSync(resolve(canonicalRoot, "references/leverage.md"), "utf8");
-  assert.match(leverage, /先前的 direct 判断即失效/u);
-  assert.match(leverage, /不因执行惯性继续 direct，也不因规模本身委派/u);
+  assert.match(leverage, /唯一总控与四项可选责任/u);
+  assert.match(leverage, /实施始终由总控负责/u);
   assert.match(bundled.digest, /^[a-f0-9]{64}$/u);
   assert.equal(compareSkillVersions("1.0.0-alpha.2", "1.0.0-alpha.10"), -1);
   assert.equal(compareSkillVersions("1.0.0+build.1", "1.0.0+build.2"), 0);
@@ -187,6 +203,25 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
     );
     rmSync(resolve(scratch, "odai", "assets/routing-roles/planner.md"));
     assert.throws(() => loadSkillBundle(resolve(scratch, "odai", "SKILL.md")), /missing assets\/routing-roles\/planner\.md/u);
+
+    const topologyRoot = resolve(scratch, "topology");
+    installBundle(topologyRoot, bundled.manifest.skillVersion);
+    const topologyManifestPath = resolve(topologyRoot, "manifest.json");
+    const topologyManifest: unknown = JSON.parse(readFileSync(topologyManifestPath, "utf8"));
+    if (!isUnknownRecord(topologyManifest) || !isUnknownRecord(topologyManifest.referenceFiles)) {
+      throw new TypeError("fixture manifest must expose referenceFiles");
+    }
+    const supportPath = topologyManifest.referenceFiles.support;
+    delete topologyManifest.referenceFiles.support;
+    writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /referenceFiles/u);
+    topologyManifest.referenceFiles.support = topologyManifest.referenceFiles.dao;
+    writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /unique file/u);
+    topologyManifest.referenceFiles.support = supportPath;
+    topologyManifest.referenceFiles.unknown = "references/dao.md";
+    writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /unknown owners/u);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -510,6 +545,14 @@ test("runtime injects one project snapshot into both prompt and routed role cont
     assert.ok(governance);
     assert.match(governance.text, /Canonical source: project-dsh/u);
     assert.match(governance.text, /PROJECT_RUNTIME/u);
+    const referenceTool = ctx.captured.tools.find(({ name }) => name === "odai_reference");
+    assert.ok(referenceTool);
+    const planning = await referenceTool.execute({ reference: "planning" }, { name: referenceTool.name, agent });
+    assert.ok(typeof planning.contract === "string");
+    assert.match(planning.contract, /PROJECT_RUNTIME_PLANNING/u);
+    const referenceSnapshot = sharedSkillSelection(agent, 1);
+    assert.ok(isUnknownRecord(referenceSnapshot) && isUnknownRecord(referenceSnapshot.bundle));
+    assert.equal(planning.digest, referenceSnapshot.bundle.digest);
 
     const preStep = handler(ctx, "agent/pre-step");
     await preStep({ agent, turn: 1, step: 1, signal }, async () => ({

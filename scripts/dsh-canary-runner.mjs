@@ -17,6 +17,7 @@ import { createServer } from "node:net";
 import { delimiter, dirname, extname, resolve } from "node:path";
 import { emitCanaryIsolation } from "./canary-isolation.mjs";
 import { observeProviderOutputCeiling } from "./dsh-output-budget-observation.mjs";
+import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 emitCanaryIsolation("dsh");
@@ -618,6 +619,7 @@ async function runWebAgent(command, patchPath, prompt, args, options) {
   const child = spawnDsh(command, [
     "--profile", "web",
     "--patch", patchPath,
+    "--no-open",
     "--host", "127.0.0.1",
     "--port", String(port),
   ], {
@@ -634,30 +636,30 @@ async function runWebAgent(command, patchPath, prompt, args, options) {
   const deadline = Date.now() + options.timeoutMs;
 
   try {
-    await waitForWeb(baseUrl, child, () => output, deadline);
-    const roster = await rpc(baseUrl, "agentPreset.list", {});
+    const browserCookie = await waitForDshWeb(baseUrl, child, () => output, Math.max(1, deadline - Date.now()));
+    const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
     if (!roster.presets?.some((preset) => preset.id === args.agentPreset)) {
       throw new Error(`Agent preset ${args.agentPreset} was not discovered`);
     }
-    const created = await rpc(baseUrl, "session.create", {
+    const created = await dshWebRpc(baseUrl, "session.create", {
       cwd: options.cwd,
       agentPreset: args.agentPreset,
-    });
+    }, browserCookie);
     if (created.agentPreset !== args.agentPreset) {
       throw new Error(`session mounted ${created.agentPreset ?? "<none>"}, expected ${args.agentPreset}`);
     }
-    await rpc(baseUrl, "session.selectModel", {
+    await dshWebRpc(baseUrl, "session.selectModel", {
       sessionId: created.sessionId,
       provider: args.provider,
       model: args.model,
       reasoningEffort: args.reasoningEffort,
-    });
-    await rpc(baseUrl, "session.prompt", {
+    }, browserCookie);
+    await dshWebRpc(baseUrl, "session.prompt", {
       sessionId: created.sessionId,
       mode: "queue",
       content: [{ type: "text", text: prompt }],
-    });
-    const events = await waitForTurnEnd(baseUrl, created.sessionId, child, () => output, deadline);
+    }, browserCookie);
+    const events = await waitForTurnEnd(baseUrl, created.sessionId, child, () => output, deadline, browserCookie);
     const finalText = [...events].reverse().find((event) => event.type === "assistant/message")
       ?.data?.message?.content
       ?.filter((block) => block.type === "text")
@@ -689,36 +691,10 @@ async function freePort() {
   });
 }
 
-async function rpc(baseUrl, method, payload) {
-  const response = await fetch(`${baseUrl}/api/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ type: "client-request", rpcId: `${method}-${Date.now()}`, method, payload }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`${method} HTTP ${response.status}: ${text}`);
-  const body = JSON.parse(text);
-  if (body.result?.ok !== true) throw new Error(`${method} failed: ${text}`);
-  return body.result.value;
-}
-
-async function waitForWeb(baseUrl, child, output, deadline) {
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`dsh web exited early (${child.exitCode})\n${output()}`);
-    try {
-      await rpc(baseUrl, "agentPreset.list", {});
-      return;
-    } catch {
-      await delay(75);
-    }
-  }
-  throw new Error(`timed out waiting for dsh web\n${output()}`);
-}
-
-async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline) {
+async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, browserCookie) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`dsh web exited during the turn (${child.exitCode})\n${output()}`);
-    const history = await rpc(baseUrl, "session.history", { sessionId, maxMessages: 2_000 });
+    const history = await dshWebRpc(baseUrl, "session.history", { sessionId, maxMessages: 2_000 }, browserCookie);
     const events = history.events.map((entry) => entry.event);
     if (events.some((event) => event.type === "turn/end")) return events;
     await delay(100);

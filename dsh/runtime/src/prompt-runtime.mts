@@ -19,13 +19,12 @@ import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { classifyContextActivation } from "./context-activation.mjs";
 import type { ContextActivation } from "./context-activation.mjs";
 import { activateRequestedCapabilities, requestedContextCapabilities } from "./context-capability.mjs";
-import { latestDanglingResponsibilityScope, pendingResponsibilityInterruption } from "./responsibility-scope.mjs";
+import { latestDanglingResponsibilityScope } from "./responsibility-scope.mjs";
 import {
   HUMAN_SAFETY_CONTINUITY_PROMPT,
   renderHumanSafetyContinuitySection,
 } from "./human-safety-continuity.mjs";
 import { readHumanSafetyContinuityStore } from "./human-safety-continuity-store.mjs";
-import { ROUTE_CARD_PROMPT, activeRouteCard } from "./route-card.mjs";
 import { SKILL_SOURCE_CONFIG_PROMPT, effectiveSkillSource } from "./skill-source-config.mjs";
 import { ODAI_RUNTIME_CONTRACT, loadSkillBundle } from "./skill-bundle.mjs";
 import { resolveSkillSelection } from "./skill-selector.mjs";
@@ -98,7 +97,7 @@ interface PromptInstallDependencies {
   syncToolExposure(
     agent: DshAgent,
     activation: ContextActivation,
-    options: { turn?: number; step: number; routeCard: boolean; responsibilityReturn: boolean },
+    options: { turn?: number; step: number; responsibilityReturn: boolean },
   ): readonly string[];
 }
 
@@ -155,11 +154,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     name: "odai:responsibility-gap",
     order: -18.75,
     text: RESPONSIBILITY_GAP_PROMPT,
-  });
-  ctx.systemPrompt.section({
-    name: "odai:route-card",
-    order: -18.5,
-    text: ROUTE_CARD_PROMPT,
   });
   ctx.systemPrompt.section({
     name: "odai:skill-source-configuration",
@@ -307,14 +301,10 @@ export function createPromptRuntime(deps: PromptDependencies) {
       ["researcher", "planner", "reviewer"].includes(pendingReadOnlyRole ?? "")
       || ["researcher", "planner", "reviewer"].includes(danglingScope?.role ?? "")
     );
-    const routeCardNeeded = !childSession && (Boolean(activeRouteCard(exposureEvents))
-      || ["planner", "executor"].includes(pendingGap?.responsibility ?? "")
-      || pendingResponsibilityInterruption(exposureEvents)?.responsibility === "executor");
     // DSH builds assembly.tools before this middleware runs. Filter that snapshot and the execution registry together.
     const activeToolNames = syncToolExposure(agent, activation, {
       turn,
       step: proposedStep,
-      routeCard: routeCardNeeded,
       responsibilityReturn: responsibilityReturnNeeded,
     });
     const executableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
@@ -398,7 +388,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
         if (section.name === "odai:human-safety-continuity") return { ...section, text: continuityPrompt };
         if (section.name === "odai:responsibility-gap") return { ...section, text: childSession ? "" : RESPONSIBILITY_GAP_PROMPT };
-        if (section.name === "odai:route-card") return { ...section, text: routeCardNeeded ? ROUTE_CARD_PROMPT : "" };
         if (section.name === "odai:skill-source-configuration") return { ...section, text: activation.skillSource ? SKILL_SOURCE_CONFIG_PROMPT : "" };
         if (section.name === "odai:controller-output-policy") return { ...section, text: outputPrompt };
         if (section.name === "odai:compaction-model-configuration") return { ...section, text: activation.compactionConfig ? COMPACTION_CONFIG_PROMPT : "" };

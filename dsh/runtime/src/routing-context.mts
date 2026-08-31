@@ -354,7 +354,6 @@ function eventEvidence(
   event: DshEvent,
   index: number,
   calls: ReadonlyMap<string, NativeToolCall>,
-  directUserMessageIds: ReadonlySet<string>,
   diagnostics: MutableDiagnostics,
 ): Omit<RoleContextEntry, "kinds"> & { kinds: string[] } | undefined {
   if (event?.type === "user/message") {
@@ -372,20 +371,6 @@ function eventEvidence(
     const kinds = ["assistant-claim"];
     if (matchesAny(text, REQUIREMENT_PATTERNS)) kinds.push("requirement");
     return { index, source: "assistant", kinds, label: "controller claim", text };
-  }
-  if (event?.type === "odai/route-card-frozen" && isUnknownRecord(event.data?.card)) {
-    const authorization = isUnknownRecord(event.data.card.authorization) ? event.data.card.authorization : undefined;
-    const userMessageId = typeof authorization?.userMessageId === "string" ? authorization.userMessageId : undefined;
-    if (authorization?.status !== "authorized"
-      || !userMessageId
-      || !directUserMessageIds.has(userMessageId)
-      || !Array.isArray(event.data.card.accept)
-      || event.data.card.accept.length === 0) return undefined;
-    return {
-      index, source: "route-card", kinds: ["acceptance"],
-      label: `authorized frozen route card ${typeof event.data.card.id === "string" ? event.data.card.id : "(unknown)"}`,
-      text: JSON.stringify(event.data.card),
-    };
   }
   if (event?.type === "odai/responsibility-returned"
     && event.data?.returned === true
@@ -554,11 +539,6 @@ export function buildRoleContextPacket(
   const task = truncateText(String(taskText ?? "").trim(), taskBudget);
   const events = Array.isArray(agent?.session?.events) ? agent.session.events : [];
   const calls = nativeToolCalls(events);
-  const directUserMessageIds = new Set(events.flatMap((event) => {
-    if (event?.type !== "user/message") return [];
-    const message = directUserMessage(event);
-    return message && typeof message.id === "string" ? [message.id] : [];
-  }));
   const mutableDiagnostics: MutableDiagnostics = {
     rawEventCount: events.length,
     evidenceEventCount: 0,
@@ -578,7 +558,7 @@ export function buildRoleContextPacket(
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
     if (!event) continue;
-    const entry = eventEvidence(event, index, calls, directUserMessageIds, mutableDiagnostics);
+    const entry = eventEvidence(event, index, calls, mutableDiagnostics);
     if (!entry) continue;
     const bounded = truncateText(entry.text, DEFAULT_MAX_ENTRY_CHARS);
     if (bounded.truncated) preTruncatedIndices.add(entry.index);
@@ -701,6 +681,6 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
     `coverage: ${JSON.stringify(packet.coverage)}`,
     `diagnostics: ${JSON.stringify(packet.diagnostics)}`,
     "", "## Current task", packet.currentTask || "(empty)", "", "## Evidence", evidence, "",
-    "Treat assistant text and route-card contents as claims. Tool entries are evidence only for the exact command/result they contain.",
+    "Treat assistant text as claims. Tool entries are evidence only for the exact command/result they contain.",
   ].join("\n");
 }

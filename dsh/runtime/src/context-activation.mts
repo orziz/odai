@@ -4,7 +4,6 @@ export const ODAI_CONTEXTUAL_TOOL_NAMES = Object.freeze([
   "odai_routing_config",
   "odai_human_care",
   "odai_human_safety",
-  "odai_route_card",
   "odai_responsibility_return",
   "odai_skill_source_config",
   "odai_skill_evolution",
@@ -14,7 +13,11 @@ export const ODAI_CONTEXTUAL_TOOL_NAMES = Object.freeze([
   "odai_human_safety_continuity",
 ] as const);
 
-export const ODAI_CORE_TOOL_NAMES = Object.freeze(["odai_context_capability", "odai_responsibility_gap"] as const);
+export const ODAI_CORE_TOOL_NAMES = Object.freeze([
+  "odai_context_capability",
+  "odai_responsibility_gap",
+  "odai_reference",
+] as const);
 
 export type OdaiToolName = (typeof ODAI_CONTEXTUAL_TOOL_NAMES)[number] | (typeof ODAI_CORE_TOOL_NAMES)[number];
 
@@ -32,7 +35,6 @@ export interface ContextActivation {
 
 export interface ActivationOptions {
   child?: boolean;
-  routeCard?: boolean;
   responsibilityReturn?: boolean;
 }
 
@@ -44,7 +46,7 @@ interface ToolSchemaSummary {
 
 const CARE_CUE = /(?:疲惫|心累|焦虑|紧张|自我怀疑|怀疑自己|否定自己|内耗|反刍|反复纠结|羞耻|丢脸|害怕犯错|怕犯错|持续消极|提不起劲|失去行动感|阿岱|欧黛|fatigue|burn(?:ed|t) out|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|shame|fear of mistakes?|persistent negativity|cannot get started|companionship style|practical support style)/iu;
 const CRISIS_CUE = /(?:持续低落|越来越低落|绝望|无望|撑不住|活不下去|不想活|想死|结束生命|成为负担|自伤|自残|轻生|自杀|伤害自己|immediate danger|persistent low mood|hopeless|cannot go on|burden|self[- ]harm|suicid(?:e|al)|want to die|kill myself|end my life)/iu;
-const ROUTING_CONFIG_CUE = /(?:(?:研究|调查|规划|计划|执行|审查|验收|前端|researcher|planner|executor|reviewer|frontend).{0,24}(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理)|(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理).{0,24}(?:研究|调查|规划|计划|执行|审查|验收|前端|researcher|planner|executor|reviewer|frontend)|(?:所有|当前|职责|责任)?(?:模型|路由|调度|派发)(?:配置|映射)|routing config)/iu;
+const ROUTING_CONFIG_CUE = /(?:(?:研究|调查|规划|计划|审查|验收|前端|researcher|planner|reviewer|frontend).{0,24}(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理)|(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理).{0,24}(?:研究|调查|规划|计划|审查|验收|前端|researcher|planner|reviewer|frontend)|(?:所有|当前|职责|责任)?(?:模型|路由|调度|派发)(?:配置|映射)|routing config)/iu;
 const SKILL_SOURCE_CUE = /(?:(?:odai|阿岱|欧黛).{0,20}(?:skill|治理).{0,20}(?:来源|source|bundled|auto|user)|(?:skill|治理).{0,20}(?:来源|source).{0,20}(?:odai|阿岱|欧黛))/iu;
 const SKILL_EVOLUTION_CUE = /(?:(?:odai|skill|治理).{0,24}(?:演化|代际|generation|evolution|rebase|rollback|activate|deactivate)|(?:演化|代际|generation|evolution|rebase|rollback).{0,24}(?:odai|skill|治理))/iu;
 const OUTPUT_CONFIG_CUE = /(?:(?:输出|回复|回答).{0,20}(?:normal|正常|简洁|精简|concise|economy|经济|token|上限)|(?:maxTokens|token 上限|output mode|输出模式)|(?:(?:这个|当前|本次|本)(?:会话|对话)|\b(?:this|current)\s+(?:chat|conversation|session)\b).{0,24}(?:上限|限制|limit|cap|ceiling)|(?:\b(?:output|token)?\s*(?:limit|cap|ceiling)\b).{0,24}\b(?:this|current)\s+(?:chat|conversation|session)\b)/iu;
@@ -74,10 +76,10 @@ export function activeOdaiToolNames(
 ): readonly OdaiToolName[] {
   if (options.child) return Object.freeze([]);
   const names = new Set<OdaiToolName>(ODAI_CORE_TOOL_NAMES);
+  if (options.responsibilityReturn) names.delete("odai_reference");
   if (activation.routingConfig) names.add("odai_routing_config");
   if (activation.care) names.add("odai_human_care");
   if (activation.safety) names.add("odai_human_safety");
-  if (options.routeCard) names.add("odai_route_card");
   if (options.responsibilityReturn) names.add("odai_responsibility_return");
   if (activation.skillSource) names.add("odai_skill_source_config");
   if (activation.skillEvolution) names.add("odai_skill_evolution");

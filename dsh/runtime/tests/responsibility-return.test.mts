@@ -4,7 +4,6 @@ import test from "node:test";
 import { createResponsibilityReturnTool } from "../build/responsibility-return.mjs";
 import { createResponsibilityScope } from "../build/responsibility-scope.mjs";
 import type { ResponsibilityReturnResult } from "../build/responsibility-return.mjs";
-import type { RouteCard } from "../build/route-card.mjs";
 import type { DshAgent, ToolExecution } from "../build/runtime-types.mjs";
 
 function agent(): DshAgent {
@@ -24,25 +23,12 @@ function scope(role: "researcher" | "planner" | "reviewer") {
   });
 }
 
-const authorizedCard: RouteCard = Object.freeze({
-  id: "card-1",
-  frozen: true,
-  observableBenefit: true,
-  authorization: { status: "authorized" as const, userMessageId: "user-1" },
-  target: "Implement the frozen change",
-  evidence: ["planner evidence"],
-  scope: ["runtime only"],
-  accept: ["focused tests pass"],
-  stop: "Stop on contract mismatch",
-});
-
 test("same-turn read-only responsibilities return through a validated mechanical handback", async () => {
   const owner = agent();
   let active: ReturnType<typeof scope> | undefined = scope("planner");
   let returned: ResponsibilityReturnResult | undefined;
   const tool = createResponsibilityReturnTool({
     activeScopeFor: () => active,
-    activeCardFor: () => undefined,
     onReturned(_agent, result) {
       returned = result;
       active = undefined;
@@ -65,27 +51,15 @@ test("same-turn read-only responsibilities return through a validated mechanical
   );
 });
 
-test("only planner with an authorized active card may return directly to executor", async () => {
+test("responsibility handback accepts only the preserved controller target", () => {
   const owner = agent();
-  let active: ReturnType<typeof scope> | undefined = scope("planner");
-  let card: RouteCard | undefined;
   const tool = createResponsibilityReturnTool({
-    activeScopeFor: () => active,
-    activeCardFor: () => card,
+    activeScopeFor: () => scope("planner"),
     onReturned() {},
   });
 
   assert.throws(
     () => tool.execute({ target: "executor", summary: "ready", evidenceRefs: ["plan"] }, execution(owner)),
-    /requires an active authorized frozen route card/u,
-  );
-  card = authorizedCard;
-  const result = await tool.execute({ target: "executor", summary: "ready", evidenceRefs: ["plan"] }, execution(owner));
-  assert.equal(result.routeCardId, authorizedCard.id);
-
-  active = scope("reviewer");
-  assert.throws(
-    () => tool.execute({ target: "executor", summary: "reviewed", evidenceRefs: ["packet"] }, execution(owner)),
-    /only planner/u,
+    /target must be controller/u,
   );
 });

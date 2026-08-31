@@ -1,7 +1,7 @@
 import type { DshEvent, DshMessage, ModelRoute, RuntimeEventData } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
-export type OdaiRouteRole = "controller" | "researcher" | "planner" | "executor" | "reviewer" | "frontend";
+export type OdaiRouteRole = "controller" | "researcher" | "planner" | "reviewer" | "frontend";
 export type OdaiRouteAction = "direct" | "delegate" | "upgrade";
 
 export interface RouteConsideration {
@@ -30,12 +30,6 @@ export interface ResponsibilityGapState {
   readonly stateDigest: string;
 }
 
-export interface RouteCardState {
-  readonly frozen?: boolean;
-  readonly observableBenefit?: boolean;
-  readonly authorization?: { readonly status?: string };
-}
-
 export interface ResponsibilityInterruptionState {
   readonly responsibility?: string;
   readonly continuationText?: string;
@@ -44,7 +38,6 @@ export interface ResponsibilityInterruptionState {
 export interface RouteDecisionInput {
   readonly text?: string;
   readonly proposal?: ResponsibilityGapState;
-  readonly routeCard?: RouteCardState;
   readonly interruption?: ResponsibilityInterruptionState;
 }
 
@@ -64,20 +57,18 @@ export interface ImplementationAuthorization {
   readonly status: "authorized" | "plan-only" | "unknown";
 }
 
-function isContinuationRole(value: unknown): value is "planner" | "executor" | "frontend" {
-  return value === "planner" || value === "executor" || value === "frontend";
+function isContinuationRole(value: unknown): value is "planner" | "frontend" {
+  return value === "planner" || value === "frontend";
 }
 
 export const HIGH_IMPACT_PLANNER_REASON = "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE";
 export const RESEARCHER_EVIDENCE_REASON = "RESEARCHER_MULTI_SOURCE_DECISION_EVIDENCE";
 export const FRONTEND_SPECIALIST_REASON = "FRONTEND_SUBSTANTIAL_INTERFACE_WORK";
-export const EXECUTOR_ROUTE_CARD_REASON = "EXECUTOR_FROZEN_ROUTE_NET_BENEFIT";
 export const OUTPUT_LIMIT_CONTINUATION_REASON = "RESPONSIBILITY_OUTPUT_LIMIT_CONTINUATION";
 
 const RESPONSIBILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
   researcher: "多源事实调查",
   planner: "规划",
-  executor: "执行",
   reviewer: "验收",
   frontend: "前端设计与制作",
 });
@@ -224,9 +215,9 @@ const EXECUTION_ACTION_PATTERNS = [
   /(?:开始|执行|实施|落实|动手)/iu,
   /\b(?:start|execute|implement|apply)\b/iu,
 ];
-const ROUTE_CARD_REFERENCE_PATTERNS = [
-  /(?:(?:这个|该|上述|上面|前面|刚才)的?(?:方案|计划|卡片|实现|改动|工作))/iu,
-  /\b(?:(?:this|that|the|above|previous)\s+(?:plan|proposal|route card|implementation|change)|(?:it|that))\b/iu,
+const IMPLEMENTATION_REFERENCE_PATTERNS = [
+  /(?:(?:这个|该|上述|上面|前面|刚才)的?(?:方案|计划|实现|改动|工作))/iu,
+  /\b(?:(?:this|that|the|above|previous)\s+(?:plan|proposal|implementation|change)|(?:it|that))\b/iu,
 ];
 const NEW_TASK_PATTERNS = [
   /(?:另一个|另一项|另一件|另外(?:一个|一项|一件)|新(?:的)?(?:问题|任务|需求|工作))/iu,
@@ -313,7 +304,7 @@ export function isExecutionContinuation(text: string): boolean {
   if (!explicit || matchesAny(explicit, NEW_TASK_PATTERNS) || matchesAny(explicit, EXECUTION_REVISION_PATTERNS)) return false;
   if (matchesAny(explicit, EXPLICIT_EXECUTION_CONTINUATION_PATTERNS)) return true;
   return matchesAny(explicit, EXECUTION_ACTION_PATTERNS)
-    && matchesAny(explicit, ROUTE_CARD_REFERENCE_PATTERNS);
+    && matchesAny(explicit, IMPLEMENTATION_REFERENCE_PATTERNS);
 }
 
 export function classifyImplementationAuthorization(text: unknown): Readonly<ImplementationAuthorization> {
@@ -460,9 +451,8 @@ export function decideResearchPrefetch(input: RouteDecisionInput = {}): Readonly
 }
 
 /**
- * Choose the smallest useful odai role. Risk alone never creates another role.
- * Executor routing requires a frozen route card and observable net benefit;
- * those facts cannot be inferred from task prose.
+ * Choose the smallest useful odai role. Risk alone never creates another role,
+ * and implementation remains with the controller.
  */
 export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecision> {
   const text = typeof input.text === "string" ? input.text.trim() : "";
@@ -495,28 +485,6 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
       ["verified-output-limit-interruption", "explicit-continuation"],
       "upgrade",
       interruption.responsibility,
-    );
-  }
-
-  const executionAuthorizedByState = proposal?.responsibility === "executor"
-    && input.routeCard?.authorization?.status === "authorized";
-  if (input.routeCard?.frozen === true
-    && input.routeCard?.observableBenefit === true
-    && (isExecutionContinuation(explicitIntentText) || executionAuthorizedByState)) {
-    signals.push(
-      "route-card-frozen",
-      "observable-net-benefit",
-      ...(executionAuthorizedByState ? ["evidence-grounded-responsibility-gap", `state:${proposal.stateDigest}`] : ["explicit-execution-continuation"]),
-    );
-    return route(
-      "controller",
-      EXECUTOR_ROUTE_CARD_REASON,
-      executionAuthorizedByState
-        ? proposal.gap
-        : "A frozen route card exists, executor separation has an observable net benefit, and the user explicitly continued implementation.",
-      signals,
-      "upgrade",
-      "executor",
     );
   }
 
@@ -682,7 +650,7 @@ export function requiresFailClosedProtection(decision: RouteDecision | undefined
 
   if (!decision) return false;
   const decisionRole = decision.targetRole ?? decision.role;
-  if (decisionRole !== "planner" && decisionRole !== "executor" && decisionRole !== "reviewer") return false;
+  if (decisionRole !== "planner" && decisionRole !== "reviewer") return false;
 
   const signals = new Set(decision.signals);
   if (!signals.has("risk-present")) return false;
@@ -718,7 +686,7 @@ export function renderRouteNotice(
   const isUpgrade = dispatch
     ? dispatch === "same-turn"
     : decision.action === "upgrade"
-      && (runtimeMode === "auto" || ["executor", "frontend"].includes(routeRole));
+      && (runtimeMode === "auto" || ["frontend"].includes(routeRole));
   const action = isUpgrade
     ? "The current controller turn requested an in-place upgrade; no child was started."
     : runtimeMode === "observe"

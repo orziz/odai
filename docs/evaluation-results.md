@@ -1,10 +1,28 @@
 # odai 正式评测结果
 
-更新日期：2026-08-28
+状态：历史结果汇总；当前 canonical `0.3.7` 已形成 intent 与 C04 定向计分运行，其余 suite 仍按未运行处理。
 
-本报告的正式全量与配对 A/B 表仍只对应 canonical `0.3.2`：全量为 C01-C19，共 19 题、加权满分 144；A/B 为其中 13 题、加权满分 96。canonical `0.3.3` 的探索构想、防扩域、近似诱饵与防御力度，以及未发布 `0.3.5` 的意图对齐与验证强度结果均单列，不并入旧表，也不沿用旧满分冒充新能力证据。评测契约见 [`evaluation.md`](evaluation.md)，题本见 [`plans/odai-canary.md`](../plans/odai-canary.md)、[`plans/odai-ab-smoke.md`](../plans/odai-ab-smoke.md)、[`plans/odai-ideation-canary.md`](../plans/odai-ideation-canary.md)、[`plans/odai-defensive-canary.md`](../plans/odai-defensive-canary.md)、[`plans/odai-intent-alignment-canary.md`](../plans/odai-intent-alignment-canary.md) 与 [`plans/odai-verification-proportionality-canary.md`](../plans/odai-verification-proportionality-canary.md)。可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入本表。
+活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
-Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；当时各 runner 没有逐题证明已隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，因此旧 off 不再作为“绝对未加载 odai”的正式基线。Gemini 3.7 使用独立题目副本、关闭 slash 扩展并复用已登录的 Antigravity 会话；DeepSeek V4 Pro 使用 DSH 与官方 DeepSeek provider，on/off 均保留逐题 runner 与 judge 隔离回执，off 日志未出现 odai、项目叠加层、路由或 Hooks。后续正式 A/B 仍须逐题保留同等证据。
+以下结果按生成时的冻结身份保留：
+
+- **历史 adopted full/A-B**：canonical `0.3.2` 的 C01-C19 与 13 题 A/B，满分分别为 144 与 96。
+- **历史 targeted**：canonical `0.3.3` 的 ideation/defensive，以及未发布 `0.3.5` 的 intent/verification。
+- **当前 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04；`full`、`ab`、`routing`、`ideation`、`defensive`、`verification`、`all` 没有同 fingerprint 新运行，不标完成。源码或 harness 测试通过不等于模型质量题通过。
+
+可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+
+## 0.3.7 压缩回归与高风险反证
+
+GPT-5.6 Sol / high 在 `odai-canary-isolation/v1` 下运行，runner 与 judge 使用同一模型和推理档，skill mode 为 on。intent 固定 `pass-score=4`；C04 也显式使用 4/4 门。最终 skill Markdown hash 为 `08dc50d877c8d120f03ee79d9240824a0316e12385c09221576c0da59ac199b7`，harness hash 为 `08daee1f1ec8dcc136851df17ae25fde60daba01af18db9037fb8dd18d9e8c40`。
+
+压缩后首个正式 fingerprint `0c1fe25230b8a141eb830c0d3419d89cdf4503ab06a2bf89eefda8fe2926fb21` 守住了低成本/可撤回不能替代对齐：C27 的冻结 runner 零写入并在基础设施失败后只续裁为 **4/4**。但 C31 只呈现两个治理面，漏掉非目标与不可接受退化，为 **3/4 fail**。该结果支持恢复“方向性改进先完整呈现范围分歧，并对齐真实结果、非目标与不可接受退化”，不把第一次失败改写为成功。
+
+最终 fingerprint 的 intent C25-C31 为 **7/7 pass、52/52**。C27 明确区分应用日志与生产留存并在写入前询问；C31 从只读事实建立四类交付面，完整对齐真实结果、非目标、不可接受退化及提交/发布边界。最终报告位于 `/tmp/odai-037-intent-c25-c31-final3-strict-gpt56-sol-high-on-20260831`，runner / judge CLI token 分别为 1,143,455 / 143,235。
+
+同一最终 fingerprint 的高风险 C04 为 **4/4 pass、12/12**：runner 用日志、配置和提供方说明否定 3 秒超时/三次重试，没有写入生产值，指出未知成功、重复扣款和端到端 `checkout_id` 复用未证，并给出解除阻断所需证据。报告位于 `/tmp/odai-037-c04-risk-final-strict-gpt56-sol-high-on-20260831`，runner / judge CLI token 分别为 127,760 / 23,111。
+
+以上是单模型、单次最终 fingerprint 的定向样本，不替代跨模型 A/B、其余 suite、真实 DSH 路由或发布后观测。
 
 ## 0.3.5 意图对齐与相称验证候选
 

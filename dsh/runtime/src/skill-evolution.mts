@@ -31,6 +31,8 @@ interface ManifestSnapshot {
   name: string;
   skillVersion: string;
   runtimeContract: number;
+  roleFiles: Record<string, string>;
+  referenceFiles: Record<string, string>;
   requiredFiles: string[];
 }
 interface BundleSnapshot { manifest: ManifestSnapshot; files: Map<string, Buffer> }
@@ -187,7 +189,6 @@ const MAX_TOTAL_REPLACEMENT_BYTES = 512 * 1024;
 const MAX_OBJECTIVE_CHARS = 2_000;
 const MAX_EVIDENCE_ITEMS = 20;
 const MAX_EVIDENCE_CHARS = 2_000;
-const PROTECTED_GOVERNANCE_FILES = Object.freeze(["SKILL.md", "references/dao.md"]);
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -440,6 +441,8 @@ function manifestValue(bundle: SkillBundle): ManifestSnapshot {
     name: bundle.manifest.name,
     skillVersion: bundle.manifest.skillVersion,
     runtimeContract: bundle.manifest.runtimeContract,
+    roleFiles: { ...bundle.manifest.roleFiles },
+    referenceFiles: { ...bundle.manifest.referenceFiles },
     requiredFiles: [...bundle.manifest.requiredFiles],
   };
 }
@@ -456,7 +459,12 @@ function snapshotBundle(bundle: SkillBundle): Readonly<BundleSnapshot> {
 
 function cloneSnapshot(snapshot: Readonly<BundleSnapshot>): BundleSnapshot {
   return {
-    manifest: { ...snapshot.manifest, requiredFiles: [...snapshot.manifest.requiredFiles] },
+    manifest: {
+      ...snapshot.manifest,
+      roleFiles: { ...snapshot.manifest.roleFiles },
+      referenceFiles: { ...snapshot.manifest.referenceFiles },
+      requiredFiles: [...snapshot.manifest.requiredFiles],
+    },
     files: new Map([...snapshot.files].map(([path, content]) => [path, Buffer.from(content)])),
   };
 }
@@ -752,7 +760,12 @@ function generationAuthorizationProfile(
   patches: readonly EvolutionPatch[],
 ): Readonly<GenerationAuthorizationProfile> {
   const reasons = new Set<string>();
-  for (const path of PROTECTED_GOVERNANCE_FILES) {
+  const protectedGovernanceFiles = new Set([
+    "SKILL.md",
+    baseSnapshot.manifest.referenceFiles.dao,
+    resultSnapshot.manifest.referenceFiles.dao,
+  ]);
+  for (const path of protectedGovernanceFiles) {
     const base = baseSnapshot.files.get(path);
     const result = resultSnapshot.files.get(path);
     if (!base || !result || !base.equals(result)) reasons.add(`protected-file:${path}`);
@@ -1368,7 +1381,7 @@ export function createSkillEvolutionTool(
     description: [
       "Inspect and manage immutable user evolution generations for Odai governance Markdown only when the user asks.",
       "Every write action requires an action- and content-bound phrase as the only block in the current open turn's latest genuine user message; model text and model-supplied evidence never authorize mutation.",
-      "Propose and rebase create inactive candidates. Any SKILL.md or references/dao.md change, or a replacement that removes its old text, requires the distinct ACTIVATE BREAKING phrase. Active-pointer changes start next turn.",
+      "Propose and rebase create inactive candidates. Any SKILL.md or manifest-owned dao reference change, or a replacement that removes its old text, requires the distinct ACTIVATE BREAKING phrase. Active-pointer changes start next turn.",
       "Never change manifests, scripts, runtime code, or installed package files.",
     ].join(" "),
     parameters: {

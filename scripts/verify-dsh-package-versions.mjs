@@ -73,6 +73,9 @@ function readReleaseContracts() {
       || typeof release.publishedBefore !== "string"
       || !Number.isSafeInteger(release.expectedDshPackages)
       || release.expectedDshPackages <= 0
+      || typeof release.standardCompositionPath !== "string"
+      || release.standardCompositionPath.startsWith("/")
+      || release.standardCompositionPath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
       || typeof release.standardCompositionSha256 !== "string"
       || !/^[a-f0-9]{64}$/u.test(release.standardCompositionSha256)) {
       throw new Error(`${label} is invalid`);

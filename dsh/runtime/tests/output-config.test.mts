@@ -168,7 +168,6 @@ test("in-place responsibility budgets report unconfigured, inherited, and explic
   assert.deepEqual(
     resolveInPlaceResponsibilityOutputBudgets({ concise: true, maxTokens: 500 }, {
       planner: { provider: "planner", model: "model" },
-      executor: { provider: "executor", model: "model", maxTokens: 8_192 },
       frontend: { provider: "frontend", model: "model", maxTokens: 16_384 },
       reviewer: { provider: "reviewer", model: "model" },
     }),
@@ -178,7 +177,6 @@ test("in-place responsibility budgets report unconfigured, inherited, and explic
         maxTokens: 500,
         warning: "responsibility-inherits-controller-ceiling",
       },
-      executor: { source: "responsibility-override", maxTokens: 8_192 },
       frontend: { source: "responsibility-override", maxTokens: 16_384 },
     },
   );

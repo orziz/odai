@@ -489,38 +489,11 @@ test("plugin-authored user messages cannot manufacture user acceptance", () => {
   assert.equal(packet.sufficient, false);
 });
 
-test("assistant claims and unauthorized route cards cannot manufacture acceptance", () => {
+test("assistant claims cannot manufacture acceptance", () => {
   const assistantOnly = completeReviewEvents().filter((event) => event.type !== "user/message");
-  assistantOnly.unshift({
-    type: "odai/route-card-frozen",
-    data: {
-      card: {
-        id: "plan-only-card",
-        frozen: true,
-        authorization: { status: "plan-only", userMessageId: "user-1" },
-        accept: ["tests pass"],
-      },
-    },
-  });
   const assistantPacket = buildRoleContextPacket({ session: { events: assistantOnly } }, "reviewer", "review");
   assert.equal(assistantPacket.coverage.acceptanceCount, 0);
   assert.equal(assistantPacket.sufficient, false);
-
-  const authorized = completeReviewEvents();
-  authorized.push({
-    type: "odai/route-card-frozen",
-    data: {
-      card: {
-        id: "authorized-card",
-        frozen: true,
-        authorization: { status: "authorized", userMessageId: "user-1" },
-        accept: ["tests pass"],
-      },
-    },
-  });
-  const authorizedPacket = buildRoleContextPacket({ session: { events: authorized } }, "reviewer", "review");
-  assert.equal(authorizedPacket.coverage.acceptanceCount, 2);
-  assert.equal(authorizedPacket.sufficient, true);
 });
 
 test("reviewer packets reject failed tool results and incomplete bounded evidence", () => {

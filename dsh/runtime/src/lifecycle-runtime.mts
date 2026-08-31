@@ -5,7 +5,6 @@ import {
   decideRoute,
   extractLatestUserText,
   extractRoutingText,
-  isExecutionContinuation,
   renderMissingRouteConfigNotice,
   renderRouteFailureNotice,
   renderRouteNotice,
@@ -35,10 +34,6 @@ import {
 } from "./responsibility-scope.mjs";
 import type { InPlaceResponsibility, ResponsibilityScope } from "./responsibility-scope.mjs";
 export type { ResponsibilityScope } from "./responsibility-scope.mjs";
-import {
-  activeRouteCard,
-  routeCardById,
-} from "./route-card.mjs";
 import { buildRoleContextPacket, renderRoleContextPacket } from "./routing-context.mjs";
 import {
   parseResearchPacket,
@@ -78,7 +73,7 @@ interface AgentTurnEvent { agent: DshAgent; turn: number }
 interface RequestOptions extends UnknownRecord, Partial<ModelRoute> { messages?: readonly DshMessage[] }
 interface StepResult extends UnknownRecord { kind: string; messages: readonly DshMessage[] }
 interface RouteFailure { kind: string; code: string; message: string }
-interface RoleState { route?: ModelRoute; source?: string; dispatch?: ResponsibilityDispatch; dispatchSource?: string; error?: string; detail?: string; id?: string; cardId?: string; baseRoute?: ModelRoute }
+interface RoleState { route?: ModelRoute; source?: string; dispatch?: ResponsibilityDispatch; dispatchSource?: string; error?: string; detail?: string; id?: string; baseRoute?: ModelRoute }
 export interface RouteProtection extends UnknownRecord { scopeId?: string }
 
 function effectiveRoleDispatch(
@@ -91,12 +86,12 @@ function effectiveRoleDispatch(
   if (role === "planner") return routingMode === "auto" ? "same-turn" : "child";
   return "same-turn";
 }
-export interface PendingRouteReceipt extends UnknownRecord { agent: DshAgent; turn: number; step: number; responsibility: string; responsibilityScopeId?: string; routeCardId?: string; routeMode: string; routeSource?: string; requestedRoute: ModelRoute; expectedRoute: ModelRoute; resumeOfScopeId?: string }
+export interface PendingRouteReceipt extends UnknownRecord { agent: DshAgent; turn: number; step: number; responsibility: string; responsibilityScopeId?: string; routeMode: string; routeSource?: string; requestedRoute: ModelRoute; expectedRoute: ModelRoute; resumeOfScopeId?: string }
 export interface PendingRestoration extends UnknownRecord { agent: DshAgent; scopeId: string; turn: number; step: number; role: string; expectedRoute: ModelRoute }
 export interface OutputUsage extends UnknownRecord { turn?: number; usage?: { outputTokens?: number } }
 interface MemorySettings { mode: "auto" | "off"; source: string }
 function isInPlaceResponsibility(value: unknown): value is InPlaceResponsibility {
-  return value === "researcher" || value === "planner" || value === "reviewer" || value === "executor" || value === "frontend";
+  return value === "researcher" || value === "planner" || value === "reviewer" || value === "frontend";
 }
 
 function isSubagentsService(value: unknown): value is SubagentsService {
@@ -225,7 +220,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           routeMode,
           routeSource,
           ...(receiptScope?.id ? { responsibilityScopeId: receiptScope.id } : {}),
-          ...(receiptScope?.cardId ? { routeCardId: receiptScope.cardId } : {}),
           ...(receiptScope?.resumeOfScopeId ? { resumeOfScopeId: receiptScope.resumeOfScopeId } : {}),
           requestedRoute: expectedRoute,
           expectedRoute,
@@ -281,7 +275,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           step,
           responsibility,
           ...(scope?.id ? { responsibilityScopeId: scope.id } : {}),
-          ...(scope?.cardId ? { routeCardId: scope.cardId } : {}),
           routeMode,
           routeSource,
           requestedRoute: roleRoute,
@@ -292,14 +285,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           error: validation.failure.message,
           invalidated: invalidation.invalidated,
         });
-        if (scope?.cardId) {
-          appendEvent(agent, "odai/route-card-claim-released", {
-            cardId: scope.cardId,
-            turn,
-            step,
-            reason: "route-validation-failed",
-          });
-        }
         if (childRole) {
           const error = new Error(`Odai ${childRole} route failed validation: ${validation.failure.code}: ${validation.failure.message}`) as Error & {
             code: string;
@@ -395,7 +380,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       step,
       responsibility: active.role,
       ...(active.id ? { responsibilityScopeId: active.id } : {}),
-      ...(active.cardId ? { routeCardId: active.cardId } : {}),
       routeMode: childRole ? "child" : "same-turn",
       routeSource: active.source,
       requestedRoute: active.route,
@@ -406,14 +390,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       error: classified.message,
       invalidated: invalidation.invalidated,
     });
-    if (active.cardId) {
-      appendEvent(agent, "odai/route-card-claim-released", {
-        cardId: active.cardId,
-        turn,
-        step,
-        reason: "route-request-failed",
-      });
-    }
     if (childRole) return next();
     if (agent?.session) pendingRouteReceipts.delete(agent.session);
     stopResponsibilityScope(agent, classified.kind === "cancelled" ? "request-cancelled" : "route-request-failed", { step });
@@ -511,7 +487,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             && candidate.data?.status === "applied"
             && candidate.data?.responsibilityScopeId === stopped.scopeId
         ))?.data;
-        const routeCard = stopped?.routeCardId ? routeCardById(events, stopped.routeCardId) : undefined;
         const observedOutputTokens = usage?.turn === stopped?.turn
           && usage?.step === stopped?.stopStep
           && Number.isSafeInteger(usage?.usage?.outputTokens)
@@ -554,8 +529,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           && Number.isSafeInteger(observedOutputTokens)
           && isInPlaceResponsibility(receipt?.responsibility)
           && receipt.responsibility !== "reviewer"
-          && receipt.requestedRoute
-          && (receipt.responsibility !== "executor" || routeCard)) {
+          && receipt.requestedRoute) {
           const effectiveRoute = receipt.actualRoute ?? receipt.requestedRoute;
           appendEvent(owner, "odai/responsibility-interrupted", {
             scopeId: stopped.scopeId,
@@ -569,8 +543,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             ...(effectiveRoute ? { effectiveRoute } : {}),
             ...(effectiveRoute?.maxTokens === undefined ? {} : { effectiveMaxTokens: effectiveRoute.maxTokens }),
             outputTokens: observedOutputTokens,
-            ...(stopped.routeCardId ? { routeCardId: stopped.routeCardId } : {}),
-            ...(routeCard ? { routeCard } : {}),
           });
         }
       }
@@ -634,7 +606,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         step: pending.step,
         responsibility: pending.responsibility,
         ...(pending.responsibilityScopeId ? { responsibilityScopeId: pending.responsibilityScopeId } : {}),
-        ...(pending.routeCardId ? { routeCardId: pending.routeCardId } : {}),
         status: "unverified",
         routeMode: pending.routeMode,
         routeSource: pending.routeSource,
@@ -642,14 +613,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         requestedRoute: pending.requestedRoute,
         stopReason: "no-effective-request",
       });
-      if (pending.routeCardId) {
-        appendEvent(pending.agent, "odai/route-card-claim-released", {
-          cardId: pending.routeCardId,
-          turn: pending.turn,
-          step: pending.step,
-          reason: "no-effective-request",
-        });
-      }
       stopResponsibilityScope(pending.agent, "no-effective-request", {
         scopeId: pending.responsibilityScopeId,
         step: pending.step,
@@ -672,7 +635,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       step: pending.step,
       responsibility: pending.responsibility,
       ...(pending.responsibilityScopeId ? { responsibilityScopeId: pending.responsibilityScopeId } : {}),
-      ...(pending.routeCardId ? { routeCardId: pending.routeCardId } : {}),
       status: mismatch ? "mismatch" : "applied",
       routeMode: pending.routeMode,
       routeSource: pending.routeSource,
@@ -694,14 +656,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         step: pending.step,
         responsibility: pending.responsibility,
         resumedScopeId: pending.responsibilityScopeId,
-      });
-    }
-    if (pending.routeCardId) {
-      appendEvent(pending.agent, mismatch ? "odai/route-card-claim-released" : "odai/route-card-consumed", {
-        cardId: pending.routeCardId,
-        turn: pending.turn,
-        step: pending.step,
-        ...(mismatch ? { reason: "route-mismatch" } : { receiptStatus: "applied" }),
       });
     }
     pendingRouteReceipts.delete(session);
@@ -988,25 +942,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         }
       }
 
-      let frozenCard = responsibilityContinuation?.routeCard ?? activeRouteCard(evidence.events(agent));
-      if (!responsibilityContinuation
-        && frozenCard
-        && authenticatedDirectMessage
-        && frozenCard.authorization.userMessageId !== authenticatedDirectMessage.id
-        && !isExecutionContinuation(authenticatedDirectText)) {
-        appendEvent(agent, "odai/route-card-cleared", {
-          turn,
-          step,
-          cardId: frozenCard.id,
-          reason: "SUPERSEDED_BY_DIRECT_USER_TASK",
-          supersededAuthorizationMessageId: frozenCard.authorization.userMessageId,
-          currentTaskMessageId: authenticatedDirectMessage.id,
-        });
-        frozenCard = undefined;
-      }
       let decision = sameTurnResearchDecision ?? decideRoute({
         text: taskText,
-        routeCard: frozenCard,
         proposal: responsibilityGap,
         interruption: responsibilityContinuation,
       });
@@ -1320,7 +1257,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           source: roleState.source,
           decision,
           routeValidated: rolePreflightVerified,
-          ...(routeRole === "executor" && frozenCard ? { cardId: frozenCard.id } : {}),
           ...(responsibilityContinuation ? { resumeOfScopeId: responsibilityContinuation.scopeId } : {}),
         });
         responsibilityScopes.set(agent, responsibilityScope);
@@ -1328,14 +1264,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         appendEvent(agent, "odai/responsibility-scope-started", responsibilityScopeStartedEvent(responsibilityScope));
         if (["researcher", "planner", "reviewer"].includes(routeRole)) {
           protectController(agent, turn, step, decision, `responsibility-scope-${routeRole}`, undefined, responsibilityScope.id);
-        }
-        if (routeRole === "executor" && frozenCard) {
-          appendEvent(agent, "odai/route-card-claimed", {
-            cardId: frozenCard.id,
-            turn,
-            step,
-            ...(responsibilityContinuation ? { reason: "output-limit-continuation" } : {}),
-          });
         }
         appendEvent(agent, "odai/route-upgrade", {
           turn,
@@ -1369,9 +1297,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
                 "",
                 `${routeRole} responsibility contract:`,
                 roleContract,
-                ...(routeRole === "executor" && frozenCard
-                  ? ["", "Frozen route card:", JSON.stringify(frozenCard, null, 2)]
-                  : []),
               ].join("\n"),
               `odai upgraded controller route (${decision.reasonCode})`,
             ),

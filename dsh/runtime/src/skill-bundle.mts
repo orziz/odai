@@ -5,7 +5,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
-export const ODAI_RUNTIME_CONTRACT = 3;
+export const ODAI_RUNTIME_CONTRACT = 6;
 export const SKILL_MANIFEST_FILE = "manifest.json";
 export const SKILL_SOURCE_MODES = Object.freeze(["bundled", "auto", "user"] as const);
 
@@ -16,12 +16,29 @@ export interface ParsedSkillVersion {
   readonly prerelease: readonly string[];
 }
 
+export const ODAI_ROLE_NAMES = Object.freeze(["controller", "researcher", "planner", "reviewer", "frontend"] as const);
+export const ODAI_REFERENCE_NAMES = Object.freeze([
+  "dao",
+  "planning",
+  "craft",
+  "verification",
+  "support",
+  "leverage",
+  "care",
+  "human-safety",
+] as const);
+
+export type OdaiRoleName = (typeof ODAI_ROLE_NAMES)[number];
+export type OdaiReferenceName = (typeof ODAI_REFERENCE_NAMES)[number];
+
 export interface SkillManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly name: "odai";
   readonly skillVersion: string;
   readonly versionParts: ParsedSkillVersion;
   readonly runtimeContract: number;
+  readonly roleFiles: Readonly<Record<OdaiRoleName, string>>;
+  readonly referenceFiles: Readonly<Record<OdaiReferenceName, string>>;
   readonly requiredFiles: readonly string[];
 }
 
@@ -64,17 +81,10 @@ const MANIFEST_FIELDS = new Set<string>([
   "name",
   "skillVersion",
   "runtimeContract",
+  "roleFiles",
+  "referenceFiles",
   "requiredFiles",
 ]);
-const REQUIRED_RUNTIME_FILES = Object.freeze([
-  "SKILL.md",
-  "assets/routing-roles/controller.md",
-  "assets/routing-roles/researcher.md",
-  "assets/routing-roles/planner.md",
-  "assets/routing-roles/executor.md",
-  "assets/routing-roles/reviewer.md",
-  "assets/routing-roles/frontend.md",
-] as const);
 const PROJECT_SOURCES = new Set<string>(["project-dsh", "project-agents", "custom"]);
 const USER_SOURCES = new Set<string>(["user-dsh", "user-agents"]);
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u;
@@ -173,6 +183,32 @@ function resolveBundleFile(root: string, relativePath: unknown): string {
   return target;
 }
 
+function parseOwnedFiles<Name extends string>(
+  skillRoot: string,
+  value: unknown,
+  field: string,
+  names: readonly Name[],
+  requiredFiles: readonly string[],
+): Readonly<Record<Name, string>> {
+  const entries = assertPlainObject(value, field);
+  const unknownNames = Object.keys(entries).filter((name) => !names.includes(name as Name));
+  if (unknownNames.length > 0) throw new TypeError(`${field} has unknown owners: ${unknownNames.join(", ")}`);
+  const files = names.map((name) => {
+    const relativePath = entries[name];
+    if (typeof relativePath !== "string" || relativePath.trim() === "") {
+      throw new TypeError(`${field}.${name} must be a non-empty string`);
+    }
+    resolveBundleFile(skillRoot, relativePath);
+    if (!requiredFiles.includes(relativePath)) {
+      throw new TypeError(`${field}.${name} must also appear in requiredFiles`);
+    }
+    return [name, relativePath] as const;
+  });
+  const paths = files.map(([, relativePath]) => relativePath);
+  if (new Set(paths).size !== paths.length) throw new TypeError(`${field} must map each owner to a unique file`);
+  return Object.freeze(Object.fromEntries(files)) as Readonly<Record<Name, string>>;
+}
+
 function assertRealPathInside(rootRealPath: string, target: string, label: string): string {
   const targetRealPath = realpathSync(target);
   const fromRoot = relative(rootRealPath, targetRealPath);
@@ -197,7 +233,7 @@ export function readSkillManifest(skillRoot: string): Readonly<SkillManifest> {
   if (unknownFields.length > 0) {
     throw new TypeError(`Odai skill manifest ${manifestPath} has unknown fields: ${unknownFields.join(", ")}`);
   }
-  if (manifest.schemaVersion !== 1) {
+  if (manifest.schemaVersion !== 2) {
     throw new TypeError(`Odai skill manifest ${manifestPath} has unsupported schemaVersion ${String(manifest.schemaVersion)}`);
   }
   if (manifest.name !== "odai") throw new TypeError(`Odai skill manifest ${manifestPath} must name odai`);
@@ -213,24 +249,44 @@ export function readSkillManifest(skillRoot: string): Readonly<SkillManifest> {
     throw new TypeError(`Odai skill manifest ${manifestPath}.requiredFiles must be a non-empty array`);
   }
   const requiredFiles = manifest.requiredFiles.map((file) => {
+    if (typeof file !== "string" || file.trim() === "") {
+      throw new TypeError("skill manifest requiredFiles entries must be non-empty strings");
+    }
     resolveBundleFile(skillRoot, file);
-    if (typeof file !== "string") throw new TypeError("skill manifest requiredFiles entries must be strings");
     return file;
   });
   if (new Set(requiredFiles).size !== requiredFiles.length) {
     throw new TypeError(`Odai skill manifest ${manifestPath}.requiredFiles contains duplicates`);
   }
-  for (const required of REQUIRED_RUNTIME_FILES) {
-    if (!requiredFiles.includes(required)) {
-      throw new TypeError(`Odai skill manifest ${manifestPath} is missing required runtime file ${required}`);
-    }
+  if (!requiredFiles.includes("SKILL.md")) {
+    throw new TypeError(`Odai skill manifest ${manifestPath} is missing required runtime file SKILL.md`);
+  }
+  const roleFiles = parseOwnedFiles(
+    skillRoot,
+    manifest.roleFiles,
+    `Odai skill manifest ${manifestPath}.roleFiles`,
+    ODAI_ROLE_NAMES,
+    requiredFiles,
+  );
+  const referenceFiles = parseOwnedFiles(
+    skillRoot,
+    manifest.referenceFiles,
+    `Odai skill manifest ${manifestPath}.referenceFiles`,
+    ODAI_REFERENCE_NAMES,
+    requiredFiles,
+  );
+  const ownerPaths = [...Object.values(roleFiles), ...Object.values(referenceFiles)];
+  if (new Set(ownerPaths).size !== ownerPaths.length) {
+    throw new TypeError(`Odai skill manifest ${manifestPath} must map each role and reference owner to a unique file`);
   }
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "odai",
     skillVersion,
     versionParts,
     runtimeContract: manifest.runtimeContract,
+    roleFiles,
+    referenceFiles,
     requiredFiles: Object.freeze(requiredFiles),
   });
 }
@@ -247,6 +303,8 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
     name: manifest.name,
     skillVersion: manifest.skillVersion,
     runtimeContract: manifest.runtimeContract,
+    roleFiles: manifest.roleFiles,
+    referenceFiles: manifest.referenceFiles,
     requiredFiles: manifest.requiredFiles,
   }));
 
@@ -272,8 +330,8 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
   }
 
   const roleContracts: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
-    ["controller", "researcher", "planner", "executor", "reviewer", "frontend"].map((role) => {
-      const relativePath = `assets/routing-roles/${role}.md`;
+    ODAI_ROLE_NAMES.map((role) => {
+      const relativePath = manifest.roleFiles[role];
       const content = contents.get(relativePath);
       if (!content) throw new Error(`Odai canonical ${role} role is unavailable: ${resolve(root, relativePath)}`);
       const text = content.toString("utf8").trim();
@@ -282,8 +340,8 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
     }),
   ));
   const referenceContracts: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
-    ["craft"].map((reference) => {
-      const relativePath = `references/${reference}.md`;
+    ODAI_REFERENCE_NAMES.map((reference) => {
+      const relativePath = manifest.referenceFiles[reference];
       const text = contents.get(relativePath)?.toString("utf8").trim();
       if (!text) throw new Error(`Odai canonical ${reference} reference is unavailable: ${resolve(root, relativePath)}`);
       return [reference, text];

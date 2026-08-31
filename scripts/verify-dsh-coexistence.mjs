@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   cp,
@@ -17,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { installAgentPreset } from "../dsh/agent/build/src/installer.mjs";
 import { readDshVersion, spawnDsh } from "../dsh/agent/build/src/dsh-version.mjs";
+import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pluginRoot = resolve(repoRoot, "dsh/plugin");
@@ -69,34 +69,6 @@ async function freePort() {
       server.close((error) => error ? reject(error) : accept(port));
     });
   });
-}
-
-async function rpc(baseUrl, method, payload) {
-  const rpcId = randomUUID();
-  const response = await fetch(`${baseUrl}/api/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ type: "client-request", rpcId, method, payload }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`${method} HTTP ${response.status}: ${text}`);
-  const body = JSON.parse(text);
-  if (body.result?.ok !== true) throw new Error(`${method} failed: ${text}`);
-  return body.result.value;
-}
-
-async function waitForServer(baseUrl) {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`dsh web exited early (${child.exitCode})\n${output}`);
-    try {
-      await rpc(baseUrl, "agentPreset.list", {});
-      return;
-    } catch {
-      await new Promise((accept) => setTimeout(accept, 75));
-    }
-  }
-  throw new Error(`timed out waiting for dsh web\n${output}`);
 }
 
 async function waitForMarker() {
@@ -183,7 +155,7 @@ async function installPlugin() {
 }
 
 async function prepareProbe() {
-  const probe = `import { writeFileSync } from "node:fs";\nimport { sharedSkillSelection } from ${JSON.stringify(pathToFileURL(sharedStateModule).href)};\n\nexport const name = "odai-coexistence-probe";\nexport const inject = ["systemPrompt", "tools"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {\n      const preset = agent.session?.header?.agentPreset;\n      if (preset !== "standard" && preset !== "odai") return;\n      const signal = new AbortController().signal;\n      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const coldNames = assembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedColdNames = ["odai_context_capability", "odai_responsibility_gap"];\n      if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {\n        throw new Error(\`cold Odai tool schema mismatch for \${preset}: \${JSON.stringify(coldNames)}\`);\n      }\n      const hiddenResult = await ctx.tools.execute({\n        callId: \`coexistence-hidden-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (!hiddenResult.isError || !/unknown tool/u.test(hiddenResult.error?.message ?? "")) {\n        throw new Error(\`hidden Odai routing tool remained executable for \${preset}: \${JSON.stringify(hiddenResult)}\`);\n      }\n      agent.session.append("turn/start", { turn: 1 });\n      agent.session.append("step/start", { turn: 1, step: 1 });\n      const gatewayResult = await ctx.tools.execute({\n        callId: \`coexistence-routing-gateway-\${preset}\`,\n        name: "odai_context_capability",\n        arguments: { capability: "routing-config" },\n        agent,\n        signal,\n      });\n      if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed for \${preset}: \${JSON.stringify(gatewayResult)}\`);\n      const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedActivatedNames = ["odai_context_capability", "odai_responsibility_gap", "odai_routing_config"].sort();\n      if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {\n        throw new Error(\`activated Odai tool schema mismatch for \${preset}: \${JSON.stringify(activatedNames)}\`);\n      }\n      const routingResult = await ctx.tools.execute({\n        callId: \`coexistence-visible-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (routingResult.isError) throw new Error(\`visible Odai routing tool was not executable for \${preset}: \${JSON.stringify(routingResult)}\`);\n      const canonical = activatedAssembly.sections.filter((section) => section.name === "odai:canonical-governance");\n      const selection = sharedSkillSelection(agent);\n      const text = canonical[0]?.text ?? "";\n      const promptDigest = text.match(/digest: ([a-f0-9]{64})\\./u)?.[1];\n      results[preset] = {\n        canonicalSectionCount: canonical.length,\n        mode: selection?.mode,\n        source: selection?.bundle?.source,\n        skillVersion: selection?.bundle?.manifest?.skillVersion,\n        digest: selection?.bundle?.digest,\n        promptDigest,\n        promptHasProjectMarker: text.includes("COEXISTENCE_SKILL_MARKER"),\n        roleHasProjectMarker: selection?.bundle?.roleContracts?.planner?.includes("COEXISTENCE_PLANNER_MARKER") === true,\n        toolExposureSynchronized: true,\n      };\n      if (results.standard && results.odai) writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");\n    }).catch((error) => {\n      writeFileSync(config.markerPath, JSON.stringify({ probeError: error.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  });\n}\n`;
+  const probe = `import { writeFileSync } from "node:fs";\nimport { sharedSkillSelection } from ${JSON.stringify(pathToFileURL(sharedStateModule).href)};\n\nexport const name = "odai-coexistence-probe";\nexport const inject = ["systemPrompt", "tools"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {\n      const preset = agent.session?.header?.agentPreset;\n      if (preset !== "standard" && preset !== "odai") return;\n      const signal = new AbortController().signal;\n      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const coldNames = assembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedColdNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap"];\n      if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {\n        throw new Error(\`cold Odai tool schema mismatch for \${preset}: \${JSON.stringify(coldNames)}\`);\n      }\n      const hiddenResult = await ctx.tools.execute({\n        callId: \`coexistence-hidden-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (!hiddenResult.isError || !/unknown tool/u.test(hiddenResult.error?.message ?? "")) {\n        throw new Error(\`hidden Odai routing tool remained executable for \${preset}: \${JSON.stringify(hiddenResult)}\`);\n      }\n      agent.session.append("turn/start", { turn: 1 });\n      agent.session.append("step/start", { turn: 1, step: 1 });\n      const gatewayResult = await ctx.tools.execute({\n        callId: \`coexistence-routing-gateway-\${preset}\`,\n        name: "odai_context_capability",\n        arguments: { capability: "routing-config" },\n        agent,\n        signal,\n      });\n      if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed for \${preset}: \${JSON.stringify(gatewayResult)}\`);\n      const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedActivatedNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap", "odai_routing_config"].sort();\n      if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {\n        throw new Error(\`activated Odai tool schema mismatch for \${preset}: \${JSON.stringify(activatedNames)}\`);\n      }\n      const routingResult = await ctx.tools.execute({\n        callId: \`coexistence-visible-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (routingResult.isError) throw new Error(\`visible Odai routing tool was not executable for \${preset}: \${JSON.stringify(routingResult)}\`);\n      const canonical = activatedAssembly.sections.filter((section) => section.name === "odai:canonical-governance");\n      const selection = sharedSkillSelection(agent);\n      const text = canonical[0]?.text ?? "";\n      const promptDigest = text.match(/digest: ([a-f0-9]{64})\\./u)?.[1];\n      results[preset] = {\n        canonicalSectionCount: canonical.length,\n        mode: selection?.mode,\n        source: selection?.bundle?.source,\n        skillVersion: selection?.bundle?.manifest?.skillVersion,\n        digest: selection?.bundle?.digest,\n        promptDigest,\n        promptHasProjectMarker: text.includes("COEXISTENCE_SKILL_MARKER"),\n        roleHasProjectMarker: selection?.bundle?.roleContracts?.planner?.includes("COEXISTENCE_PLANNER_MARKER") === true,\n        toolExposureSynchronized: true,\n      };\n      if (results.standard && results.odai) writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");\n    }).catch((error) => {\n      writeFileSync(config.markerPath, JSON.stringify({ probeError: error.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  });\n}\n`;
   await writeFile(probePluginPath, probe, "utf8");
   await writeFile(patchPath, [
     "- id: odai-governance",
@@ -247,6 +219,7 @@ try {
   child = spawnDsh(dsh, [
     "--profile", profileName,
     "--patch", patchPath,
+    "--no-open",
     "--host", "127.0.0.1",
     "--port", String(port),
   ], {
@@ -257,14 +230,14 @@ try {
   child.stdout.on("data", (chunk) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk) => { output += chunk.toString(); });
 
-  await waitForServer(baseUrl);
-  const roster = await rpc(baseUrl, "agentPreset.list", {});
+  const browserCookie = await waitForDshWeb(baseUrl, child, () => output, 30_000);
+  const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
   const presetIds = roster.presets.map((preset) => preset.id);
   if (!presetIds.includes("standard") || !presetIds.includes("odai")) {
     throw new Error(`expected standard and odai presets, got ${JSON.stringify(presetIds)}`);
   }
-  await rpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "standard" });
-  await rpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "odai" });
+  await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "standard" }, browserCookie);
+  await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "odai" }, browserCookie);
   const results = await waitForMarker();
   assertResults(results);
   finalReport = {

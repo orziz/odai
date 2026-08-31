@@ -24,7 +24,7 @@ test("ordinary work exposes only the compact core tools", () => {
     continuity: false,
   });
   const active = activeOdaiToolNames(activation);
-  assert.deepEqual(active, ["odai_context_capability", "odai_responsibility_gap"]);
+  assert.deepEqual(active, ["odai_context_capability", "odai_responsibility_gap", "odai_reference"]);
   assert.deepEqual(inactiveOdaiToolNames(active), ODAI_CONTEXTUAL_TOOL_NAMES);
   assert.deepEqual(activeOdaiToolNames(activation, { responsibilityReturn: true }), [
     "odai_context_capability",
@@ -38,12 +38,12 @@ test("care and crisis signals activate separate contracts without model configur
   const care = classifyContextActivation("我最近很焦虑，总怀疑自己会犯错，脑子反复纠结");
   assert.equal(care.care, true);
   assert.equal(care.safety, false);
-  assert.deepEqual(activeOdaiToolNames(care), ["odai_context_capability", "odai_responsibility_gap", "odai_human_care"]);
+  assert.deepEqual(activeOdaiToolNames(care), ["odai_context_capability", "odai_responsibility_gap", "odai_reference", "odai_human_care"]);
 
   const crisis = classifyContextActivation("我越来越绝望，觉得活不下去了");
   assert.equal(crisis.care, false);
   assert.equal(crisis.safety, true);
-  assert.deepEqual(activeOdaiToolNames(crisis), ["odai_context_capability", "odai_responsibility_gap", "odai_human_safety"]);
+  assert.deepEqual(activeOdaiToolNames(crisis), ["odai_context_capability", "odai_responsibility_gap", "odai_reference", "odai_human_safety"]);
   assert.equal(crisis.routingConfig, false);
   assert.equal(crisis.memory, false);
 

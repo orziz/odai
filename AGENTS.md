@@ -15,12 +15,18 @@
 - 即使用户或 IDE 指向打包期间临时出现的 `cli/skills/`，也要把对应修改落到仓库根 `skills/<name>/`。
 - source 修改完成后，运行 `node scripts/validate-odai-skill.mjs` 验证 canonical skills。
 - canonical references 按单一所有权维护：`references/planning.md` 只负责正式计划、可执行合同与跨轮续作，`references/craft.md` 只负责已决定结果的制作工艺，`references/leverage.md` 只负责能力与责任选择、调度和交接；角色合同只引用对应 owner，不复制另一层的清单或宿主机制。
-- 发布相关修改还需运行 `npm --prefix cli run pack:dry-run`，确认产物与当前声明的打包范围一致，且命令结束后没有遗留 `cli/skills/`。
+- odai-cli 未冻结时，发布相关修改还需运行 `npm --prefix cli run pack:dry-run`，确认产物与当前声明的打包范围一致，且命令结束后没有遗留 `cli/skills/`；冻结期间遵循下节边界。
+
+## odai-cli 冻结边界
+
+- `cli/`、`plans/odai-cli-plan.md` 与 `plans/odai-cli-runtime-canary.md` 当前冻结，不属于 active canonical / DSH 维护与验收范围。除非用户明确重新开放，不修改、测试、打包、升版或发布 odai-cli，也不为兼容它改变 canonical 或 DSH 路线。
+- 冻结期间，canonical / DSH 变更不运行 CLI tests 或 `npm --prefix cli run pack:dry-run`；只记录可能影响未来恢复的已知差异。`cli/skills/` 仍不得作为可编辑 source 或遗留在仓库中。
 
 ## 版本发布约束
 
 - 从本约束生效后的首个候选版本起，本仓库自有的任何新版本标识都不得包含数字字符 `4`；npm package version、skill version 与 runtime contract version 均受约束，版本序列遇到含 `4` 的候选值时必须直接跳过。已发布历史版本及其兼容记录必须按事实保留，不因本约束改写；上游依赖版本不属于本仓库自有版本，不受此规则限制。
 - 禁止只靠人工记忆执行本约束。所有发布入口与版本事实源必须调用仓库的统一版本策略校验；新增版本载体时必须同时纳入该校验，命中禁用字符即 fail-closed。
+- 同一 npm 候选从未发生过 registry publish，且未废弃或经用户明确拆分时，后续改动继续归入该候选；不得仅因新一轮任务、canonical / runtime contract 变化或新增 changelog 内容另起包版本，也不得把当前候选写成历史。版本一旦曾发布，即使后来 unpublish 或 deprecate，该标识也视为已消耗，不得复用。改版本前先核对 package metadata、当前唯一 Unreleased owner 与真实 registry 发布事实。
 
 ## DSH 集成修改边界
 

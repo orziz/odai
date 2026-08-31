@@ -14,14 +14,13 @@ process.on("uncaughtException", (error) => {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const supportedRoles = new Set(["controller", "researcher", "planner", "executor", "reviewer", "frontend"]);
+const supportedRoles = new Set(["controller", "researcher", "planner", "reviewer", "frontend"]);
 
 if (args.help) {
   console.log(`Usage:
-  node .codex/odai-run-role.mjs --role <controller|researcher|planner|executor|reviewer|frontend> \\
+  node .codex/odai-run-role.mjs --role <controller|researcher|planner|reviewer|frontend> \\
     [--input FILE] [--output FILE] [--evidence FILE] [--cwd PATH] [--manifest FILE] \\
-    [--codex-bin FILE] [--sandbox MODE] [--session-id ID] [--planner-may-complete-direct] \\
-    [--route-card | --closeout-ids A1,A2]
+    [--codex-bin FILE] [--sandbox MODE] [--session-id ID] [--closeout-ids A1,A2]
 
 从 odai 托管清单取得当前 Codex 宿主的角色、模型与推理档，运行一次实际责任并记录可核对证据。`);
   process.exit(0);
@@ -48,17 +47,14 @@ const started = Date.now();
 mkdirSync(path.dirname(outputFile), { recursive: true });
 
 try {
-  const readOnly = args.routeCard || args.role === "researcher" || args.role === "reviewer" || (args.role === "planner" && !args.plannerMayCompleteDirect);
+  const readOnly = args.role === "researcher" || args.role === "planner" || args.role === "reviewer";
   const closeoutIds = parseCloseoutIds(args.closeoutIds);
-  if (args.routeCard && closeoutIds.length > 0) fail("--route-card 与 --closeout-ids 不能同时使用");
-  const schemaFile = args.routeCard
-    ? writeRouteSchema(temporary)
-    : closeoutIds.length > 0 ? writeCloseoutSchema(temporary, closeoutIds) : "";
+  const schemaFile = closeoutIds.length > 0 ? writeCloseoutSchema(temporary, closeoutIds) : "";
   const hostOwnsRouting = process.env.ODAI_ROUTING_ACTIVE === "1";
   const shared = [
     "--json", "--model", mapping.model,
     ...effortArgs(mapping.reasoning_effort),
-    ...(hostOwnsRouting || args.routeCard ? ["-c", "features.multi_agent=false"] : []),
+    ...(hostOwnsRouting ? ["-c", "features.multi_agent=false"] : []),
     ...(args.sessionId ? ["-c", `sandbox_mode=${JSON.stringify(readOnly ? "read-only" : args.sandbox)}`] : []),
     "-c", `developer_instructions=${JSON.stringify(contract)}`,
     ...(schemaFile ? ["--output-schema", schemaFile] : []),
@@ -79,8 +75,7 @@ try {
   const raw = `${child.stdout || ""}${child.stderr || ""}`;
   if (child.status !== 0) fail(`Codex ${args.role} 调用失败：${tail(raw)}`);
   if (!existsSync(outputFile) || !readFileSync(outputFile, "utf8").trim()) fail("角色没有形成输出");
-  if (args.routeCard) writeFileSync(outputFile, renderRouteCard(readFileSync(outputFile, "utf8")), "utf8");
-  else if (closeoutIds.length > 0) writeFileSync(outputFile, renderCloseout(readFileSync(outputFile, "utf8"), closeoutIds), "utf8");
+  if (closeoutIds.length > 0) writeFileSync(outputFile, renderCloseout(readFileSync(outputFile, "utf8"), closeoutIds), "utf8");
   const events = parseJsonLines(raw);
   const threadId = String(events.find((event) => event.type === "thread.started")?.thread_id || args.sessionId || "");
   if (args.sessionId && threadId !== args.sessionId) fail(`Codex 恢复了错误线程：期望 ${args.sessionId}，实际 ${threadId || "unknown"}`);
@@ -213,7 +208,7 @@ function lastDefined(values) { return [...values].reverse().find((value) => valu
 function readJson(file, label) { if (!existsSync(file)) fail(`缺少${label}：${file}`); return JSON.parse(readFileSync(file, "utf8")); }
 
 function parseArgs(values) {
-  const result = { role: "", input: "", output: "", evidence: "", cwd: "", manifest: "", codexBin: "", sandbox: "workspace-write", sessionId: "", closeoutIds: "", timeout: 900, plannerMayCompleteDirect: false, routeCard: false, help: false };
+  const result = { role: "", input: "", output: "", evidence: "", cwd: "", manifest: "", codexBin: "", sandbox: "workspace-write", sessionId: "", closeoutIds: "", timeout: 900, help: false };
   const fields = new Map([
     ["--role", "role"], ["--input", "input"], ["--output", "output"], ["--evidence", "evidence"], ["--cwd", "cwd"],
     ["--manifest", "manifest"], ["--codex-bin", "codexBin"], ["--sandbox", "sandbox"], ["--session-id", "sessionId"], ["--closeout-ids", "closeoutIds"], ["--timeout", "timeout"],
@@ -221,8 +216,6 @@ function parseArgs(values) {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value === "--help" || value === "-h") result.help = true;
-    else if (value === "--planner-may-complete-direct") result.plannerMayCompleteDirect = true;
-    else if (value === "--route-card") result.routeCard = true;
     else if (fields.has(value)) {
       const next = values[++index] || "";
       if (!next || next.startsWith("--")) fail(`${value} 需要一个值`);
@@ -231,26 +224,6 @@ function parseArgs(values) {
   }
   if (!Number.isFinite(result.timeout) || result.timeout <= 0) fail("--timeout 必须是正数秒数");
   return result;
-}
-
-function writeRouteSchema(directory) {
-  const file = path.join(directory, "route-card.schema.json");
-  const text = { type: "string" };
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      mode: { type: "string", enum: ["direct", "planned"] }, delivery: text,
-      target: text, evidence: text, scope: text, decision: text,
-      execute: { type: "string", enum: ["none", "controller", "executor"] },
-      review_ids: { type: "array", items: { type: "string", pattern: "^A[1-9][0-9]{0,2}$" } },
-      accept: { type: "array", items: { type: "object", additionalProperties: false, properties: { id: { type: "string", pattern: "^A[1-9][0-9]{0,2}$" }, condition: text }, required: ["id", "condition"] } },
-      stop: text, steps: { type: "array", items: text },
-    },
-    required: ["mode", "delivery", "target", "evidence", "scope", "decision", "execute", "review_ids", "accept", "stop", "steps"],
-  };
-  writeFileSync(file, `${JSON.stringify(schema, null, 2)}\n`, "utf8");
-  return file;
 }
 
 function writeCloseoutSchema(directory, ids) {
@@ -306,30 +279,6 @@ function renderCloseout(source, ids) {
     if (report.status !== "verified" && !next) fail(`结构化执行回交中 ${id} 未闭合却缺少继续条件`);
   }
   return `${delivery}\n\n<odai_closeout>${JSON.stringify(value.acceptance)}</odai_closeout>\n`;
-}
-
-function renderRouteCard(source) {
-  let value;
-  try { value = JSON.parse(String(source || "").trim()); }
-  catch { fail("结构化路由卡不是有效 JSON"); }
-  if (value.mode === "direct") {
-    if (!String(value.delivery || "").trim()) fail("direct 路由缺少完整交付");
-    return `mode: direct\n\n${String(value.delivery).trim()}\n`;
-  }
-  for (const key of ["target", "evidence", "scope", "decision", "stop"]) if (!String(value[key] || "").trim()) fail(`planned 路由缺少 ${key}`);
-  if (!new Set(["controller", "executor"]).has(value.execute)) fail("planned 路由只能交给 controller 或 executor");
-  if (!Array.isArray(value.accept) || value.accept.length === 0) fail("planned 路由缺少验收条件");
-  const acceptance = value.accept.map((item) => {
-    const id = String(item?.id || "").trim();
-    const condition = String(item?.condition || "").trim();
-    if (!id || !condition) fail("planned 路由包含空验收条件");
-    return `- ${id}: ${condition}`;
-  });
-  const reviewIds = Array.isArray(value.review_ids) ? value.review_ids.map((item) => String(item).trim()).filter(Boolean) : [];
-  const lines = ["mode: planned", `target: ${String(value.target).trim()}`, `evidence: ${String(value.evidence).trim()}`, `scope: ${String(value.scope).trim()}`, `decision: ${String(value.decision).trim()}`, `execute: ${value.execute}`, `review: ${reviewIds.length > 0 ? `reviewer ${reviewIds.join(" ")}` : "none"}`, "accept:", ...acceptance, `stop: ${String(value.stop).trim()}`];
-  const steps = Array.isArray(value.steps) ? value.steps.map((item) => String(item).trim()).filter(Boolean) : [];
-  if (steps.length > 0) lines.push("steps:", ...steps.map((item) => `- ${item}`));
-  return `${lines.join("\n")}\n`;
 }
 
 function tail(value) { return String(value || "").trim().slice(-2000); }

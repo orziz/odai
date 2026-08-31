@@ -9,19 +9,19 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const mappings = new Map([["odai_researcher", "researcher"], ["odai_planner", "planner"], ["odai_executor", "executor"], ["odai_reviewer", "reviewer"], ["odai_frontend", "frontend"]]);
+const mappings = new Map([["odai_researcher", "researcher"], ["odai_planner", "planner"], ["odai_reviewer", "reviewer"], ["odai_frontend", "frontend"]]);
 
 if (args.help) {
   console.log(`Usage:
   node odai-verify-routing.mjs --host codex --project <directory> \\
-    --role <odai_researcher|odai_planner|odai_executor|odai_reviewer|odai_frontend> --after <ISO timestamp> \\
+    --role <odai_researcher|odai_planner|odai_reviewer|odai_frontend> --after <ISO timestamp> \\
     [--agent-path </root/task>] [--sessions <directory>]
 
 只读取近期 Codex rollout metadata，把实际角色、模型与推理档和 odai 托管清单对账。`);
   process.exit(0);
 }
 if (args.host !== "codex") fail(`不支持的 host：${args.host || "(missing)"}`);
-if (!mappings.has(args.role)) fail("--role 必须是 odai_researcher、odai_planner、odai_executor、odai_reviewer 或 odai_frontend");
+if (!mappings.has(args.role)) fail("--role 必须是 odai_researcher、odai_planner、odai_reviewer 或 odai_frontend");
 if (!args.project || !args.after) fail("缺少 --project 或 --after");
 const after = Date.parse(args.after);
 if (!Number.isFinite(after)) fail(`无效的 --after：${args.after}`);

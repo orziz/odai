@@ -381,7 +381,6 @@ export function latestRouteReceipt(events: readonly DshEvent[]): Readonly<Unknow
         step: data.step,
         responsibility: data.responsibility,
         ...(data.responsibilityScopeId ? { responsibilityScopeId: data.responsibilityScopeId } : {}),
-        ...(data.routeCardId ? { routeCardId: data.routeCardId } : {}),
         status: "fallback",
         taskStatus: "fallback",
         routeMode: data.routeMode,
@@ -398,7 +397,6 @@ export function latestRouteReceipt(events: readonly DshEvent[]): Readonly<Unknow
         step: data.step,
         responsibility: data.responsibility,
         ...(data.responsibilityScopeId ? { responsibilityScopeId: data.responsibilityScopeId } : {}),
-        ...(data.routeCardId ? { routeCardId: data.routeCardId } : {}),
         status: data.status,
         routeMode: data.routeMode,
         routeSource: data.routeSource,
@@ -445,7 +443,7 @@ export function routedRoleOf(agent: DshAgent): string | undefined {
     if (event?.type !== "subagent/descriptor") continue;
     const label = event.data?.label;
     if (typeof label !== "string") return undefined;
-    const match = /^odai-(researcher|planner|executor|reviewer|frontend)(?:$|[\s:])/u.exec(label.trim());
+    const match = /^odai-(researcher|planner|reviewer|frontend)(?:$|[\s:])/u.exec(label.trim());
     return match && (ROUTED_ROLES as readonly string[]).includes(match[1]) ? match[1] : undefined;
   }
   return undefined;

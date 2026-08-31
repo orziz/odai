@@ -1,34 +1,75 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
+const manifest = JSON.parse(readFileSync(path.join(skillRoot, "manifest.json"), "utf8"));
+if (manifest?.schemaVersion !== 2 || !manifest.roleFiles || !manifest.referenceFiles || !Array.isArray(manifest.requiredFiles)) {
+  throw new Error("Odai manifest owner topology is unavailable");
+}
+const ownerNames = Object.freeze({
+  roleFiles: ["controller", "researcher", "planner", "reviewer", "frontend"],
+  referenceFiles: ["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety"],
+});
+for (const [group, expectedNames] of Object.entries(ownerNames)) {
+  const entries = manifest[group];
+  if (entries === null || typeof entries !== "object" || Array.isArray(entries)
+    || JSON.stringify(Object.keys(entries).sort()) !== JSON.stringify([...expectedNames].sort())) {
+    throw new Error(`Invalid manifest owner set: ${group}`);
+  }
+  const paths = Object.values(entries);
+  if (new Set(paths).size !== paths.length) throw new Error(`Duplicate manifest owner path: ${group}`);
+}
+const ownedPaths = [...Object.values(manifest.roleFiles), ...Object.values(manifest.referenceFiles)];
+if (new Set(ownedPaths).size !== ownedPaths.length) throw new Error("Role and reference owners must use distinct paths");
+
+const canonicalRoot = realpathSync(skillRoot);
+const requiredFiles = new Set(manifest.requiredFiles);
+
+function ownerFilePath(group, name) {
+  const relativeSource = manifest[group]?.[name];
+  if (typeof relativeSource !== "string" || relativeSource.trim() === "" || relativeSource.includes("\\")
+    || path.isAbsolute(relativeSource) || /^[A-Za-z]:/u.test(relativeSource)
+    || relativeSource.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`Unsafe manifest owner path: ${group}.${name}`);
+  }
+  if (!requiredFiles.has(relativeSource)) throw new Error(`Manifest owner is undeclared: ${group}.${name}`);
+  const source = realpathSync(path.resolve(skillRoot, relativeSource));
+  const nested = path.relative(canonicalRoot, source);
+  if (nested === "" || nested === ".." || nested.startsWith(`..${path.sep}`) || path.isAbsolute(nested)) {
+    throw new Error(`Manifest owner escapes the canonical root: ${group}.${name}`);
+  }
+  return source;
+}
+for (const [group, names] of Object.entries(ownerNames)) {
+  for (const name of names) ownerFilePath(group, name);
+}
+
 const argv = process.argv.slice(2);
 
 if (argv.includes("--help") || argv.includes("-h")) {
   console.log(`Usage:
   node skills/odai/scripts/build-routing.mjs --host <codex|claude|copilot> --out <directory> \\
-    --controller-model <model> --planner-model <model> [--executor-model <model>] --reviewer-model <model> \\
-    [--researcher-model <model>] [--frontend-model <model>] [--planning-policy <auto|stage>] [--controller-effort <effort>] \\
-    [--researcher-effort <effort>] [--planner-effort <effort>] [--executor-effort <effort>] [--reviewer-effort <effort>] \\
+    --controller-model <model> --planner-model <model> --reviewer-model <model> \\
+    [--researcher-model <model>] [--frontend-model <model>] [--controller-effort <effort>] \\
+    [--researcher-effort <effort>] [--planner-effort <effort>] [--reviewer-effort <effort>] \\
     [--frontend-effort <effort>] [--verifier-command <command>]
 
-生成 odai 的可选宿主路由适配器。auto 保留一个持续总控，只在多源证据压缩、独立规划、有界执行、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。stage 仅生成从任务起点显式运行的 Codex 实验 runner，不注入每轮 Hook。这里不跨 provider 、不增加第二总控。`);
+生成 odai 的可选宿主 auto 路由适配器。一个持续总控持有实施与最终交付，只在多源证据压缩、独立规划、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。这里不跨 provider、不增加第二总控或隐藏的每轮前置流程。`);
   process.exit(0);
 }
 
+assertKnownArgs();
 const host = option("--host");
 const out = option("--out");
-const requestedPolicy = option("--planning-policy") || "auto";
 const models = {
   controller: option("--controller-model"),
   researcher: option("--researcher-model"),
   planner: option("--planner-model"),
-  executor: option("--executor-model") || option("--controller-model"),
   reviewer: option("--reviewer-model"),
   frontend: option("--frontend-model"),
 };
@@ -36,12 +77,11 @@ const efforts = {
   controller: option("--controller-effort"),
   researcher: option("--researcher-effort"),
   planner: option("--planner-effort"),
-  executor: option("--executor-effort") || option("--controller-effort"),
   reviewer: option("--reviewer-effort"),
   frontend: option("--frontend-effort"),
 };
 const verifierCommand = option("--verifier-command") || "node .codex/odai-verify-routing.mjs";
-const requiredRoles = ["controller", "planner", "executor", "reviewer"];
+const requiredRoles = ["controller", "planner", "reviewer"];
 const roles = Object.freeze([
   ...requiredRoles,
   ...(models.researcher ? ["researcher"] : []),
@@ -51,7 +91,6 @@ const descriptions = {
   controller: "持续持有用户目标、全局状态、修正回路与最终交付。",
   researcher: "只在多源决定证据压缩有实测收益时返回可追溯来源账本。",
   planner: "只在独立判断能改变路线时形成有界的证据化规划。",
-  executor: "只按冻结方案实施，不重新解释请求、选路或批准交付。",
   reviewer: "只在独立判断能改变放行结果时依据真实证据验收。",
   frontend: "只在界面设计或前端制作存在专业缺口时形成可验证成品。",
 };
@@ -61,13 +100,11 @@ if (!out) throw new Error("--out requires a directory");
 for (const role of requiredRoles) if (!models[role]) throw new Error(`--${role}-model is required`);
 if (efforts.researcher && !models.researcher) throw new Error("--researcher-effort requires --researcher-model");
 if (efforts.frontend && !models.frontend) throw new Error("--frontend-effort requires --frontend-model");
-if (!new Set(["auto", "stage"]).has(requestedPolicy)) throw new Error(`Unsupported --planning-policy: ${requestedPolicy}`);
-if (requestedPolicy === "stage" && host !== "codex") throw new Error("stage routing currently requires Codex");
 if (host === "copilot" && Object.values(efforts).some(Boolean)) {
   throw new Error("Copilot custom-agent profiles do not provide a portable reasoning-effort field");
 }
 
-const policy = requestedPolicy === "stage" ? "stage" : "conditional";
+const policy = "conditional";
 const target = path.resolve(out, host);
 mkdirSync(target, { recursive: true });
 if (host === "codex") buildCodex(target);
@@ -78,7 +115,7 @@ const metadata = {
   id: `odai-routing-${host}`,
   host,
   generatedFrom: "skills/odai/scripts/build-routing.mjs",
-  mode: policy === "stage" ? "single-controller-stage-routing" : "single-controller-conditional-routing",
+  mode: "single-controller-conditional-routing",
   mapping: Object.fromEntries(roles.map((role) => [role, {
     provider: host,
     model: models[role],
@@ -86,22 +123,18 @@ const metadata = {
   }])),
   routing_policy: {
     mode: policy,
-    requested_mode: requestedPolicy,
     controller_identity: "persistent-task-thread",
     controller_owns_final_delivery: true,
     researcher_activation: models.researcher
       ? "only-when-multi-source-decision-evidence-compression-has-measured-net-benefit"
       : "unconfigured",
     planner_activation: "only-when-independent-judgment-can-change-route",
-    executor_activation: "only-after-plan-is-frozen-and-handoff-has-net-value",
     reviewer_activation: "only-when-independent-judgment-can-change-release",
     frontend_activation: models.frontend
       ? "only-when-interface-design-or-production-needs-specialist-capability"
       : "unconfigured",
-    bounded_fresh_execution_context: policy === "stage",
-    controller_reentry_on_failure: policy === "stage",
+    controller_owns_implementation: true,
     sufficient_controller_defaults_to_single_pass: true,
-    shared_evidence_chain: policy === "stage",
   },
   runtime_verification: host === "codex"
     ? { mode: "post-run-executable", command: verifierCommand }
@@ -134,9 +167,6 @@ function buildCodex(root) {
   }
   copyScript("verify-routing.mjs", path.join(configRoot, "odai-verify-routing.mjs"));
   copyScript("run-role.mjs", path.join(configRoot, "odai-run-role.mjs"));
-  if (policy === "stage") {
-    copyScript("run-routing.mjs", path.join(configRoot, "odai-run-routing.mjs"));
-  }
   for (const role of roles) writeFileSync(path.join(contractsRoot, `odai-${role}.md`), roleBody(role, "codex"), "utf8");
 }
 
@@ -183,16 +213,15 @@ function buildCopilot(root) {
 }
 
 function roleBody(role, hostName) {
-  const source = path.join(skillRoot, "assets", "routing-roles", `${role}.md`);
+  const source = ownerFilePath("roleFiles", role);
   if (!existsSync(source)) throw new Error(`Missing canonical routing role body: ${source}`);
   const names = hostName === "codex"
-    ? { researcher: "odai_researcher", planner: "odai_planner", executor: "odai_executor", reviewer: "odai_reviewer", frontend: "odai_frontend" }
-    : { researcher: "odai-researcher", planner: "odai-planner", executor: "odai-executor", reviewer: "odai-reviewer", frontend: "odai-frontend" };
+    ? { researcher: "odai_researcher", planner: "odai_planner", reviewer: "odai_reviewer", frontend: "odai_frontend" }
+    : { researcher: "odai-researcher", planner: "odai-planner", reviewer: "odai-reviewer", frontend: "odai-frontend" };
   const rendered = renderText(readFileSync(source, "utf8"), {
     __ODAI_POLICY__: policy,
     __ODAI_RESEARCHER_ROLE__: models.researcher ? names.researcher : "researcher（当前适配器未配置映射，不能调用）",
     __ODAI_PLANNER_ROLE__: names.planner,
-    __ODAI_EXECUTOR_ROLE__: names.executor,
     __ODAI_REVIEWER_ROLE__: names.reviewer,
     __ODAI_FRONTEND_ROLE__: models.frontend ? names.frontend : "frontend（当前适配器未配置映射，不能调用）",
     __ODAI_RUNTIME_VERIFICATION__: hostName === "codex"
@@ -201,7 +230,7 @@ function roleBody(role, hostName) {
     __ODAI_HOST_NOTE__: hostName === "copilot" ? "Copilot Auto 会覆盖角色模型选择；需要区分角色时不使用 Auto。" : "",
   }, source);
   const craft = role === "frontend"
-    ? readFileSync(path.join(skillRoot, "references", "craft.md"), "utf8").trim()
+    ? readFileSync(ownerFilePath("referenceFiles", "craft"), "utf8").trim()
     : "";
   if (hostName !== "codex") {
     return [rendered, ...(craft ? ["## Canonical 制作工艺", craft] : [])].join("\n\n");
@@ -237,9 +266,7 @@ function activation(value) {
     limitation: "Copilot Auto 会覆盖角色模型选择。",
   };
   return {
-    main: policy === "stage"
-      ? "通过生成的 odai-run-routing.mjs 从任务起点运行一次显式 stage 实验；日常会话不由隐藏 Hook 接管。"
-      : "普通会话由托管配置选择单一总控，其余责任按真实缺口调用。",
+    main: "普通会话由托管配置选择单一总控，其余责任按真实缺口调用。",
     reload: "修改后开启新的 Codex 会话。",
   };
 }
@@ -248,6 +275,20 @@ function copyScript(name, targetFile) {
   const source = path.join(skillRoot, "scripts", name);
   if (!existsSync(source)) throw new Error(`Missing canonical routing script: ${source}`);
   writeFileSync(targetFile, readFileSync(source), "utf8");
+}
+
+function assertKnownArgs() {
+  const known = new Set([
+    "--host", "--out", "--controller-model", "--researcher-model", "--planner-model",
+    "--reviewer-model", "--frontend-model", "--controller-effort", "--researcher-effort",
+    "--planner-effort", "--reviewer-effort", "--frontend-effort", "--verifier-command",
+  ]);
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index];
+    if (!known.has(name)) throw new Error(`Unknown option: ${name}`);
+    const value = argv[index + 1] || "";
+    if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+  }
 }
 
 function option(name) {
