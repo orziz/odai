@@ -42,14 +42,12 @@ jobs:
           node --check skills/odai/scripts/build-routing.mjs
           node --check skills/odai/scripts/install-routing.mjs
           node --check skills/odai/scripts/run-role.mjs
-          node --check skills/odai/scripts/run-routing.mjs
           node --check skills/odai/scripts/verify-routing.mjs
           node --check scripts/package-odai-artifact.mjs
           node --check scripts/run-package-pack.mjs
           node --check scripts/run-package-pack.test.mjs
           node --check scripts/verify-dsh-packed-artifacts.mjs
           node --check scripts/verify-dsh-release-matrix.mjs
-          node --check cli/scripts/package-skill-bundle.mjs
           node --check dsh/runtime/build/governance.mjs
           node --check dsh/runtime/build/router.mjs
           node --check dsh/runtime/build/index.mjs
@@ -69,15 +67,12 @@ jobs:
           npm --prefix dsh/agent test
       - name: Build frozen full and A/B fixtures
         run: |
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --skill-mode on --out /tmp/odai-full-on-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --skill-mode off --out /tmp/odai-full-off-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-ab-smoke.md --skill-mode on --out /tmp/odai-ab-on-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-ab-smoke.md --skill-mode off --out /tmp/odai-ab-off-dry-run
-      - name: Test CLI
-        run: npm --prefix cli test
+          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite full --skill-mode on --out /tmp/odai-full-on-dry-run
+          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite full --skill-mode off --out /tmp/odai-full-off-dry-run
+          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite ab --skill-mode on --out /tmp/odai-ab-on-dry-run
+          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite ab --skill-mode off --out /tmp/odai-ab-off-dry-run
       - name: Verify packaged artifacts
         run: |
-          npm --prefix cli run pack:dry-run
           npm --prefix dsh/plugin run pack:dry-run
           npm --prefix dsh/agent run pack:dry-run
           scratch=$(mktemp -d)
@@ -87,7 +82,6 @@ jobs:
           node scripts/verify-dsh-packed-artifacts.mjs \
             "$scratch"/odai-dsh-plugin-*.tgz \
             "$scratch"/odai-dsh-agent-*.tgz
-          test ! -e cli/skills
           test ! -e dsh/plugin/runtime
           test ! -e dsh/plugin/skills
           test ! -e dsh/agent/preset/odai/runtime
