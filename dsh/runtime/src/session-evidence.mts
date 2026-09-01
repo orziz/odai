@@ -358,6 +358,18 @@ export function resolveSessionEvidenceRoot(routingConfigPath: string): string {
   return resolve(dirname(routingConfigPath), "session-evidence");
 }
 
+export function storedSessionEvidenceRevision(root: string, sessionId: string): string {
+  if (typeof sessionId !== "string" || sessionId === "") return "0";
+  const path = evidencePath(resolve(root), sessionId);
+  try {
+    const snapshot = statSync(path);
+    return `${snapshot.size}:${snapshot.mtimeMs}`;
+  } catch (error) {
+    if (isUnknownRecord(error) && error.code === "ENOENT") return "0";
+    throw error;
+  }
+}
+
 export function readStoredSessionEvidence(
   root: string,
   sessionId: string,

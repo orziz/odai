@@ -7,9 +7,9 @@ import {
   promptForControlCenterInstall,
 } from "../src/control-center-prompt.mjs";
 
-test("Control Center install consent accepts only explicit yes", () => {
-  assert.equal(acceptsControlCenterInstall(""), false);
-  assert.equal(acceptsControlCenterInstall("   "), false);
+test("Control Center install consent defaults an interactive empty answer to yes", () => {
+  assert.equal(acceptsControlCenterInstall(""), true);
+  assert.equal(acceptsControlCenterInstall("   "), true);
   assert.equal(acceptsControlCenterInstall("y"), true);
   assert.equal(acceptsControlCenterInstall("YES"), true);
   assert.equal(acceptsControlCenterInstall("n"), false);
@@ -17,13 +17,13 @@ test("Control Center install consent accepts only explicit yes", () => {
   assert.equal(acceptsControlCenterInstall("later"), false);
 });
 
-test("Control Center prompt displays y/N and rejects Enter", async () => {
+test("Control Center prompt displays Y/n and accepts Enter", async () => {
   const output = new PassThrough();
   let displayed = "";
   output.setEncoding("utf8");
   output.on("data", (chunk: string) => { displayed += chunk; });
-  assert.equal(await promptForControlCenterInstall(Readable.from(["\n"]), output), false);
-  assert.match(displayed, /profile “web”.*输入 y\/yes 确认 \[y\/N\]/u);
+  assert.equal(await promptForControlCenterInstall(Readable.from(["\n"]), output), true);
+  assert.match(displayed, /profile “web”.*回车或 y\/yes 确认.*\[Y\/n\]/u);
 });
 
 test("Control Center prompt accepts explicit y and rejects n or EOF", async () => {

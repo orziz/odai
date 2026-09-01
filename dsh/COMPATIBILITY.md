@@ -4,7 +4,8 @@
 
 | odai-dsh-plugin | odai-dsh-agent | 支持的 @deepseek-ai/dsh | 说明 |
 | --- | --- | --- | --- |
-| `0.2.17` | `0.2.17` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 当前未发布候选；修复 Agent Control Center 来源/版本误判，改为显式 `y/yes` 授权并为失败 profile 变更提供回滚 |
+| `0.2.18` | `0.2.18` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 当前未发布候选；Control Center 可见交互提示恢复 `[Y/n]`，直接回车默认同意，EOF 与非交互仍拒绝 |
+| `0.2.17` | `0.2.17` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；修复 Agent Control Center 来源/版本误判，要求显式 `y/yes` 授权并为失败 profile 变更提供回滚 |
 | `0.2.16` | `0.2.16` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；在 0.2.15 契约上增加 Agent/Plugin 共享中文 Control Center、受 loopback 保护的真实 evidence/routing RPC、Agent `[Y/n]` 安装入口，以及单装和双装共存；其 Agent 状态检查会把已有本地 dependency 误报为 installed |
 | `0.2.15` | `0.2.15` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；以 alpha.2 Standard 为 source 并为 rc.2 精确回渲染，集成 canonical 0.3.7 / runtime contract 6，以 manifest owner 拓扑和 controller-only reference bridge 按需读取 canonical references；独立 Executor 与 route-card/stage 已移除，实施归 controller |
 | `0.2.13` | `0.2.13` | `0.1.1-rc.2` | 已发布；修复 economy ceiling 下的会话解锁与截断续作死循环，保持 canonical 0.3.5 |
@@ -36,7 +37,7 @@
 ## 使用规则
 
 1. 从同一行选择版本组合，不要混用不同版本的 Plugin 与 Agent。`0.0.10` 及之后的两个包必须保持相同版本。
-2. “支持的 DSH”是精确白名单。`0.2.15`、`0.2.16` 与 `0.2.17` 仅支持 `0.1.1-rc.2` 与 `0.1.2-alpha.2`，不自动承诺兼容其他 rc、alpha 或 `0.1.2` 版本。
+2. “支持的 DSH”是精确白名单。`0.2.15`、`0.2.16`、`0.2.17` 与 `0.2.18` 仅支持 `0.1.1-rc.2` 与 `0.1.2-alpha.2`，不自动承诺兼容其他 rc、alpha 或 `0.1.2` 版本。
 3. 后续版本可以只对应一个 DSH 版本；届时该行只会列出一个精确版本，不再默认保留旧版兼容。
 4. 运行时兼容不等于 DSH 自有数据可以跨版本迁移。特别是 rc.8 的 SQLite 存储格式与旧版本不兼容，切换 DSH 版本前应按上游说明备份和迁移宿主数据。
 5. 从 `0.2.5` 起，本仓库自有的新版本标识不得包含数字字符 `4`；历史版本（如 `0.0.4`）按事实保留，上游 DSH 版本不受该规则限制。

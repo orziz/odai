@@ -10,6 +10,8 @@ interface ClientTesting {
     currentRoles: Record<string, { state: string } | undefined>;
   };
   shouldOwnSurface(): boolean;
+  traceFingerprint(events: unknown[]): string;
+  windowTurnItems<T extends { key: string }>(items: T[], limit: number, selectedKey?: string): T[];
 }
 
 interface ClientRegistration {
@@ -48,6 +50,22 @@ test("shared client projection separates proposal, same-turn, child, and handbac
   assert.deepEqual(Array.from(trace.items, (item) => item.state), ["proposal", "same-turn", "child", "handback"]);
   assert.equal(trace.currentRoles.planner?.state, "handback");
   assert.equal(trace.currentRoles.reviewer?.state, "child");
+});
+
+test("timeline helpers skip unchanged append-only evidence and bound mounted rows", async () => {
+  const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
+  const events = [
+    { seq: 1, time: 100, type: "odai/route-decided" },
+    { seq: 2, time: 200, type: "odai/route-result" },
+  ];
+  assert.equal(client.traceFingerprint(events), client.traceFingerprint(events.map((event) => ({ ...event }))));
+  assert.notEqual(client.traceFingerprint(events), client.traceFingerprint([...events, { seq: 3, time: 300, type: "odai/responsibility-returned" }]));
+
+  const items = Array.from({ length: 250 }, (_, index) => ({ key: `event-${index}` }));
+  assert.deepEqual(Array.from(client.windowTurnItems(items, 100), (item) => item.key), items.slice(150).map((item) => item.key));
+  const selectedWindow = client.windowTurnItems(items, 100, "event-40");
+  assert.equal(selectedWindow.length, 100);
+  assert.ok(selectedWindow.some((item) => item.key === "event-40"));
 });
 
 test("each package owns the surface when installed alone", async () => {

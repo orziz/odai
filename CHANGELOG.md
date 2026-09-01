@@ -2,13 +2,20 @@
 
 本文只记当前唯一 Unreleased 候选与已冻结版本的对外能力、架构、迁移和评测口径。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.17 Control Center installation recovery
+## Unreleased — DSH 0.2.18 Control Center default confirmation
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.17` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.18` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- Agent Control Center 的可见交互提示恢复为 `[Y/n]`：直接回车、`y` 或 `yes` 同意当前已明确展示的安装、升级、替换或修复；`n`、`no` 与其他文本拒绝。EOF、非 TTY 和 JSON 仍不推断同意，自动化必须显式使用 `--with-control-center`。
+- Control Center 长会话改用稳定工作区：当前轮次板、时间线与事件检查器不再共享整页滚动，时间线和检查器分别滚动；闭合轮次不挂载事件行，展开轮次默认仅挂载最近 100 条并可逐批读取更早证据。追加式证据指纹跳过无变化轮询的 React 更新，host 通过文件 revision 在未变化时只返回 `unchanged`，不再重复读取、解析和传输最多 2000 条 JSON；事件 raw 裁剪与脱敏延迟到选中项。时间线分区与检查器信息提高到 11–13px，JSON 提高到 12px / 18px 行高。
+- DSH strict build、Agent `22/22`、Plugin/runtime `217 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过。两个真实 `0.2.18` tgz 在临时 rc.2 Web profile 中共存启动；Chromium 以 2000 条 evidence 在 1280×800 与 390×844 验证固定工作区无重叠，初始/展开事件 DOM 为 5/100，静态轮询 DOM mutation 为 0，稳定态 unchanged RPC 响应为 168 bytes。候选尚未发布。
+
+## 2026-09-01 — DSH 0.2.17 Control Center installation recovery
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.17`，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`。registry `gitHead` 均为 `ca336348fcb610e5fe4aaf6ec7d015ef41241b4c`；冻结的 CLI 保持 `0.0.2`。
 - Agent Control Center 不再把任意 profile dependency 视为已安装：状态检查同时核对精确 registry 版本、bundle 唯一性、实际解析版本及 host/runtime/client 必需文件，并明确区分 absent、current、registry upgrade、本地 `file:`/`link:`、partial drift、较新版本和未知来源。已发布 `0.2.16.tgz` 经 registry 清单复核包含完整 Control Center runtime；本次修复针对旧本地源码 dependency 被误报 current 后加载已清理 artifact 的故障。
 - 集成 `install` 只有显式输入 `y`/`yes` 才新增、升级、替换或修复 Web profile；空输入、`n`、其他文本、EOF、非 TTY 与 JSON 默认均不修改，自动化继续使用显式 `--with-control-center`。current 状态明确报告精确 registry 版本且不运行包管理器，较新版本禁止静默降级。
 - profile 修改固定写入精确 registry 版本；失败时执行逆向包管理动作并恢复原 package/lock/workspace 元数据，回滚失败则在 `$DSH_HOME/odai/control-center-backups/` 保留审计副本。独立 Agent preset、既有 Plugin dependency/bundle 与其他 profile 内容不属于替换范围。
-- DSH strict build、Agent `22/22`、Plugin/runtime `216 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过；两个真实 `0.2.17` tgz 在临时 rc.2 Web profile 中共存启动，Agent preset、两个 client manifest、唯一 Control Center RPC 与 Standard/Odai canonical 隔离均通过。候选未执行 npm publish。
+- DSH strict build、Agent `22/22`、Plugin/runtime `216 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过；两个真实 `0.2.17` tgz 在临时 rc.2 Web profile 中共存启动，Agent preset、两个 client manifest、唯一 Control Center RPC 与 Standard/Odai canonical 隔离均通过；双包随后从同一 commit 发布。
 
 ## 2026-09-01 — DSH 0.2.16 Control Center
 

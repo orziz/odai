@@ -23,7 +23,8 @@ test("Control Center uses one process-wide loopback RPC registration across Cord
   const scratch = await mkdtemp(resolve(tmpdir(), "odai-control-center-runtime-"));
   const configPath = resolve(scratch, "routing.json");
   const evidenceRoot = resolve(scratch, "evidence");
-  createSessionEvidence({ root: evidenceRoot }).append({
+  const evidenceStore = createSessionEvidence({ root: evidenceRoot });
+  evidenceStore.append({
     session: { header: { id: "session-one" } },
   } as unknown as DshAgent, "odai/responsibility-gap", {
     turn: 1,
@@ -92,6 +93,28 @@ test("Control Center uses one process-wide loopback RPC registration across Cord
     assert.equal(evidence.value.ok, true);
     assert.equal(evidence.value.events?.length, 1);
     assert.equal(evidence.value.events?.[0]?.type, "odai/responsibility-gap");
+    assert.equal(evidence.value.unchanged, false);
+    assert.equal(typeof evidence.value.revision, "string");
+    const unchangedEvidence = await handler(CONTROL_CENTER_EVIDENCE_ENDPOINT, {
+      sessionId: "session-one",
+      revision: evidence.value.revision,
+    }, new AbortController().signal);
+    assert.equal(unchangedEvidence.value.ok, true);
+    assert.equal(unchangedEvidence.value.unchanged, true);
+    assert.equal(unchangedEvidence.value.events, undefined);
+    evidenceStore.append({ session: { header: { id: "session-one" } } } as unknown as DshAgent, "odai/route-result", {
+      turn: 1,
+      step: 3,
+      responsibility: "planner",
+      status: "completed",
+    });
+    const changedEvidence = await handler(CONTROL_CENTER_EVIDENCE_ENDPOINT, {
+      sessionId: "session-one",
+      revision: evidence.value.revision,
+    }, new AbortController().signal);
+    assert.equal(changedEvidence.value.unchanged, false);
+    assert.equal(changedEvidence.value.events?.length, 2);
+    assert.notEqual(changedEvidence.value.revision, evidence.value.revision);
     const invalidEvidence = await handler(CONTROL_CENTER_EVIDENCE_ENDPOINT, { sessionId: "session-one", root: "/tmp" }, new AbortController().signal);
     assert.equal(invalidEvidence.value.error?.code, "bad-request");
 

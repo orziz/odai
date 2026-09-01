@@ -4,7 +4,11 @@ import {
   type RoleRoutes,
   type RoutingConfigResult,
 } from "./routing-config.mjs";
-import { readStoredSessionEvidence, resolveSessionEvidenceRoot } from "./session-evidence.mjs";
+import {
+  readStoredSessionEvidence,
+  resolveSessionEvidenceRoot,
+  storedSessionEvidenceRevision,
+} from "./session-evidence.mjs";
 import type { SessionEvidenceEvent } from "./session-evidence.mjs";
 import type { DshRuntimeContext, RuntimeLogger, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
@@ -23,6 +27,8 @@ export interface ControlCenterResponse {
   ok: boolean;
   config?: Omit<RoutingConfigResult, "configPath" | "latestRoute">;
   events?: readonly SessionEvidenceEvent[];
+  revision?: string;
+  unchanged?: boolean;
   error?: RpcFailure;
 }
 
@@ -93,12 +99,16 @@ function publicResult(result: RoutingConfigResult): Omit<RoutingConfigResult, "c
   return visible as Omit<RoutingConfigResult, "configPath" | "latestRoute">;
 }
 
-function evidenceSessionId(payload: unknown): string {
-  if (!isUnknownRecord(payload) || Object.keys(payload).some((key) => key !== "sessionId")
-    || typeof payload.sessionId !== "string" || payload.sessionId === "" || payload.sessionId.length > 512) {
-    throw new TypeError("evidence request requires only a non-empty sessionId");
+function evidenceRequest(payload: unknown): { sessionId: string; revision?: string } {
+  if (!isUnknownRecord(payload) || Object.keys(payload).some((key) => key !== "sessionId" && key !== "revision")
+    || typeof payload.sessionId !== "string" || payload.sessionId === "" || payload.sessionId.length > 512
+    || (payload.revision !== undefined && (typeof payload.revision !== "string" || payload.revision.length > 128))) {
+    throw new TypeError("evidence request requires a non-empty sessionId and optional revision");
   }
-  return payload.sessionId;
+  return {
+    sessionId: payload.sessionId,
+    ...(typeof payload.revision === "string" ? { revision: payload.revision } : {}),
+  };
 }
 
 function failureFor(error: unknown): RpcFailure {
@@ -151,13 +161,18 @@ export function installControlCenterRuntime(
     const active = effectiveOptions(owners);
     try {
       if (endpoint === CONTROL_CENTER_EVIDENCE_ENDPOINT) {
-        const sessionId = evidenceSessionId(payload);
+        const request = evidenceRequest(payload);
+        const evidenceRoot = active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath);
+        const revision = storedSessionEvidenceRevision(evidenceRoot, request.sessionId);
+        if (request.revision === revision) {
+          return { ok: true, value: { ok: true, revision, unchanged: true } };
+        }
         const events = readStoredSessionEvidence(
-          active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath),
-          sessionId,
+          evidenceRoot,
+          request.sessionId,
           { warn: (message) => active.logger?.warn(message) },
         ).slice(-MAX_EVIDENCE_EVENTS);
-        return { ok: true, value: { ok: true, events } };
+        return { ok: true, value: { ok: true, events, revision, unchanged: false } };
       }
       const config = await applyRoutingConfigAction(active.configPath, payload, {
         configuredRoles: active.configuredRoles,

@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-Plugin 安装命令要求 `pnpm` 已在 `PATH` 中；当前 `0.2.17` Plugin 与 Agent 候选严格支持 `dsh@0.1.1-rc.2` 与 `dsh@0.1.2-alpha.2`；已发布的 `0.2.16` 首次加入 Control Center。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 会说明现有 profile 的来源和版本，并在 `[y/N]` 要求显式输入 `y/yes`；直接回车、EOF、`n` 或其他文本都不修改 Web profile。非交互安装必须显式传 `--with-control-center` 才会修改 profile。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
+Plugin 安装命令要求 `pnpm` 已在 `PATH` 中；当前 `0.2.18` Plugin 与 Agent 候选严格支持 `dsh@0.1.1-rc.2` 与 `dsh@0.1.2-alpha.2`；已发布的 `0.2.17` 加入来源/版本修复与回滚。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 会说明现有 profile 的来源和版本，并在 `[Y/n]` 询问；直接回车、`y` 或 `yes` 确认，EOF、`n`、`no` 或其他文本不修改 Web profile。非交互安装必须显式传 `--with-control-center` 才会修改 profile。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
 
 两个 DSH 包都默认使用**软精简**输出。用户可以显式切换到正常模式，或启用可选的**经济模式**：它在软精简基础上增加可调的 provider 输出 ceiling；用户只说“经济模式”而未给其他值时默认使用 `500`。该 ceiling 不会影响子代理、compaction、checkpoint 或内部上下文预算，provider 仍可能超过或忽略它。完整三档契约见 [`dsh/README.md`](dsh/README.md#install-and-use)。
 
