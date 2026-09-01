@@ -31,7 +31,7 @@ With DSH already installed, run the single Agent package command below. The pack
 npx odai-dsh-agent install
 ```
 
-The installer checks `dsh -V`; the `0.2.16` candidate accepts exactly `0.1.1-rc.2` and `0.1.2-alpha.2` and rejects every other developer-preview release. It records the detected version in the managed manifest and renders the Standard composition for that exact release. In an interactive terminal it then asks `同时把 Odai 控制中心安装到 DSH profile “web”？[Y/n]`; Enter or `y` installs it, while `n` leaves the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
+The installer checks `dsh -V`; the `0.2.17` candidate accepts exactly `0.1.1-rc.2` and `0.1.2-alpha.2` and rejects every other developer-preview release. It records the detected version in the managed manifest and renders the Standard composition for that exact release. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair requires explicit `y/yes` confirmation at `[y/N]`; Enter, EOF, `n`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
 
 `DSH_HOME` is honored. An explicit location can be supplied without changing the environment:
 
@@ -59,7 +59,7 @@ npx odai-dsh-agent control-center status [--profile web]
 npx odai-dsh-agent control-center uninstall [--profile web]
 ```
 
-A Control Center profile change requires one normal DSH Web process restart. Removing it does not remove the Agent preset, routing configuration, or session evidence.
+A Control Center profile change requires one normal DSH Web process restart. Removing it does not remove the Agent preset, routing configuration, or session evidence. Status is current only when the dependency is the installer package's exact registry version, the resolved package reports that same version, the bundle entry occurs exactly once, and the shipped host/runtime/client artifacts exist. A stale `file:` or `link:` dependency is reported with its concrete source and can be replaced only after explicit consent. Failed changes invoke the inverse DSH package-manager action and restore the prior profile metadata; an uncompleted rollback retains evidence under `$DSH_HOME/odai/control-center-backups/` and stops.
 
 ## Responsibility models
 

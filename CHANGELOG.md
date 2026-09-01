@@ -2,13 +2,21 @@
 
 本文只记当前唯一 Unreleased 候选与已冻结版本的对外能力、架构、迁移和评测口径。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.16 Control Center
+## Unreleased — DSH 0.2.17 Control Center installation recovery
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.16` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`。CLI 保持 `0.0.2` 并冻结，本次不修改、测试、打包或发布。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.17` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- Agent Control Center 不再把任意 profile dependency 视为已安装：状态检查同时核对精确 registry 版本、bundle 唯一性、实际解析版本及 host/runtime/client 必需文件，并明确区分 absent、current、registry upgrade、本地 `file:`/`link:`、partial drift、较新版本和未知来源。已发布 `0.2.16.tgz` 经 registry 清单复核包含完整 Control Center runtime；本次修复针对旧本地源码 dependency 被误报 current 后加载已清理 artifact 的故障。
+- 集成 `install` 只有显式输入 `y`/`yes` 才新增、升级、替换或修复 Web profile；空输入、`n`、其他文本、EOF、非 TTY 与 JSON 默认均不修改，自动化继续使用显式 `--with-control-center`。current 状态明确报告精确 registry 版本且不运行包管理器，较新版本禁止静默降级。
+- profile 修改固定写入精确 registry 版本；失败时执行逆向包管理动作并恢复原 package/lock/workspace 元数据，回滚失败则在 `$DSH_HOME/odai/control-center-backups/` 保留审计副本。独立 Agent preset、既有 Plugin dependency/bundle 与其他 profile 内容不属于替换范围。
+- DSH strict build、Agent `22/22`、Plugin/runtime `216 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过；两个真实 `0.2.17` tgz 在临时 rc.2 Web profile 中共存启动，Agent preset、两个 client manifest、唯一 Control Center RPC 与 Standard/Odai canonical 隔离均通过。候选未执行 npm publish。
+
+## 2026-09-01 — DSH 0.2.16 Control Center
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.16`，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`。registry `gitHead` 均为 `e8612e64b4570f923843eb56ade27823477f0313`；CLI 保持 `0.0.2` 并冻结。
 - Agent 与 Plugin 由同一份 `dsh/client/src/index.mts` 严格类型源码生成中文 Odai Control Center，展示真实当前轮职责图、session evidence 时间线、结构化事件检查器与四职责路由；总控保持宿主管理且只读，配置不冒充执行证据。浏览器 `client.js` 仅为构建制品，不再作为手写 source。
 - Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 在 preset 发布后以 `[Y/n]` 询问是否把同包 Control Center 加到指定 Web profile，回车默认安装、`n` 跳过，非交互与 JSON 模式必须显式传 `--with-control-center`。两包允许单装或同时安装；共存时 Plugin client 优先拥有唯一界面，host RPC 进程内去重，配置与 evidence 共享，移除任一包不删除另一包仍使用的持久状态。
 - Control Center 的 routing 写入经 loopback RPC 复用已有 provider/model 校验、owned lock 与原子 routing action；evidence 从 `$DSH_HOME/odai/session-evidence/` 读取，未新增 DSH 私有 session event。用户界面职责名为调查、规划、审查、设计，内部稳定契约仍为 researcher、planner、reviewer、frontend。
-- 发布前统一版本策略、兼容矩阵校验、canonical validator、DSH strict typecheck、完整 Plugin/runtime 与 Agent 测试、双包 dry-run 均通过；source release matrix 在 rc.2（188 包）与 alpha.2（215 包）纯依赖图上通过 session compatibility、Plugin/Agent load，以及两个真实 `0.2.16` tarball 的同 profile 共存，确认两个 client manifest、唯一可用 Control Center RPC 与 Standard/Odai 各自唯一 canonical section。候选尚未执行 npm publish。
+- 发布前统一版本策略、兼容矩阵校验、canonical validator、DSH strict typecheck、完整 Plugin/runtime 与 Agent 测试、双包 dry-run 均通过；source release matrix 在 rc.2（188 包）与 alpha.2（215 包）纯依赖图上通过 session compatibility、Plugin/Agent load，以及两个真实 `0.2.16` tarball 的同 profile 共存，确认两个 client manifest、唯一可用 Control Center RPC 与 Standard/Odai 各自唯一 canonical section。
 
 ## 2026-08-31 — DSH 0.2.15 alpha.2 compatibility and controller-owned implementation
 

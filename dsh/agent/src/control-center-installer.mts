@@ -1,8 +1,11 @@
 import { execFileSync } from "node:child_process";
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { parse as parseYaml } from "yaml";
 
 import { resolveDshHome } from "./installer.mjs";
 
@@ -16,11 +19,27 @@ interface ProfileMetadata {
   dsh?: { profile?: { bundles?: string[] } };
 }
 
+interface ResolvedPackage {
+  root?: string;
+  version?: string;
+  complete: boolean;
+  issues: string[];
+}
+
 type CommandExecutor = (
   command: string,
   args: string[],
   options: ExecFileSyncOptionsWithStringEncoding,
 ) => string;
+
+export type AgentControlCenterStatus =
+  | "absent"
+  | "current"
+  | "registry-upgrade"
+  | "local-link"
+  | "partial-drift"
+  | "newer"
+  | "unknown-source";
 
 export interface AgentControlCenterOptions {
   dshHome?: string;
@@ -32,12 +51,20 @@ export interface AgentControlCenterOptions {
 }
 
 export interface AgentControlCenterInspection {
-  status: "absent" | "installed" | "drifted";
+  status: AgentControlCenterStatus;
   issues: string[];
   dshHome: string;
   profile: string;
   target: string;
+  targetVersion: string;
   dependency?: string;
+  installedVersion?: string;
+  resolvedRoot?: string;
+}
+
+interface FileSnapshot {
+  path: string;
+  content?: Buffer;
 }
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -47,9 +74,19 @@ if (!isRecord(parsedMetadata) || typeof parsedMetadata.name !== "string" || type
   throw new Error("odai-dsh-agent package metadata is invalid for Control Center management");
 }
 const packageMetadata: PackageMetadata = { name: parsedMetadata.name, version: parsedMetadata.version };
+const PROFILE_STATE_FILES = Object.freeze(["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]);
+const EXACT_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorCode(error: unknown): string | undefined {
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function assertProfile(value: string): string {
@@ -59,15 +96,19 @@ function assertProfile(value: string): string {
   return value;
 }
 
-async function profileMetadata(path: string): Promise<ProfileMetadata | undefined> {
-  let source: string;
+async function optionalFile(path: string): Promise<Buffer | undefined> {
   try {
-    source = await readFile(path, "utf8");
+    return await readFile(path);
   } catch (error) {
-    if (isRecord(error) && error.code === "ENOENT") return undefined;
+    if (errorCode(error) === "ENOENT") return undefined;
     throw error;
   }
-  const parsed: unknown = JSON.parse(source);
+}
+
+async function profileMetadata(path: string): Promise<ProfileMetadata | undefined> {
+  const source = await optionalFile(path);
+  if (!source) return undefined;
+  const parsed: unknown = JSON.parse(source.toString("utf8"));
   if (!isRecord(parsed)) throw new TypeError(`DSH profile package metadata ${path} must be an object`);
   const dependencies = isRecord(parsed.dependencies)
     ? Object.fromEntries(Object.entries(parsed.dependencies).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
@@ -80,6 +121,99 @@ async function profileMetadata(path: string): Promise<ProfileMetadata | undefine
   return { dependencies, dsh };
 }
 
+async function lockDependencyIssues(target: string, dependency: string): Promise<string[]> {
+  const source = await optionalFile(resolve(target, "pnpm-lock.yaml"));
+  if (!source) return [];
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(source.toString("utf8"));
+  } catch (error) {
+    return [`profile lockfile is invalid YAML: ${errorMessage(error)}`];
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.importers) || !isRecord(parsed.importers["."])) {
+    return ["profile lockfile is missing the root importer"];
+  }
+  const importer = parsed.importers["."];
+  const dependencies = isRecord(importer.dependencies) ? importer.dependencies : undefined;
+  const entry = dependencies?.[packageMetadata.name];
+  if (!isRecord(entry)) return [`profile lockfile is missing ${packageMetadata.name}`];
+  const specifier = typeof entry.specifier === "string" ? entry.specifier : undefined;
+  const version = typeof entry.version === "string" ? entry.version : undefined;
+  const issues: string[] = [];
+  if (specifier !== dependency) issues.push(`lockfile specifier ${specifier ?? "<missing>"} does not match dependency ${dependency}`);
+  if (!version || !version.startsWith(dependency)) {
+    issues.push(`lockfile version ${version ?? "<missing>"} does not resolve dependency ${dependency}`);
+  }
+  return issues;
+}
+
+function localDependency(dependency: string): boolean {
+  return /^(?:file|link|workspace):/iu.test(dependency)
+    || /^\.{0,2}[/\\]/u.test(dependency)
+    || /^[A-Za-z]:[/\\]/u.test(dependency)
+    || dependency.endsWith(".tgz");
+}
+
+function exactRegistryVersion(dependency: string): string | undefined {
+  return EXACT_VERSION_PATTERN.test(dependency) ? dependency : undefined;
+}
+
+function compareVersions(left: string, right: string): number {
+  const parse = (value: string): readonly [number, number, number, string | undefined] => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/u.exec(value);
+    if (!match) throw new TypeError(`invalid exact package version ${value}`);
+    return [Number(match[1]), Number(match[2]), Number(match[3]), match[4]];
+  };
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (a[index] as number) - (b[index] as number);
+    if (difference !== 0) return difference;
+  }
+  if (a[3] === b[3]) return 0;
+  if (a[3] === undefined) return 1;
+  if (b[3] === undefined) return -1;
+  return a[3].localeCompare(b[3]);
+}
+
+async function resolvedPackage(target: string): Promise<ResolvedPackage | undefined> {
+  const manifestPath = resolve(target, "node_modules", packageMetadata.name, "package.json");
+  const source = await optionalFile(manifestPath);
+  if (!source) return undefined;
+  const issues: string[] = [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source.toString("utf8"));
+  } catch (error) {
+    return { complete: false, issues: [`resolved package metadata is invalid JSON: ${errorMessage(error)}`] };
+  }
+  if (!isRecord(parsed) || parsed.name !== packageMetadata.name || typeof parsed.version !== "string") {
+    return { complete: false, issues: ["resolved package metadata has the wrong name or version"] };
+  }
+  let root: string | undefined;
+  try {
+    root = await realpath(dirname(manifestPath));
+  } catch (error) {
+    issues.push(`cannot resolve installed package root: ${errorMessage(error)}`);
+  }
+  for (const relativePath of [
+    "build/src/installer.mjs",
+    "preset/odai/runtime/control-center-host.mjs",
+    "preset/odai/runtime/control-center-runtime.mjs",
+    "client/client.js",
+  ]) {
+    if (!await optionalFile(resolve(dirname(manifestPath), relativePath))) {
+      issues.push(`resolved package is missing ${relativePath}`);
+    }
+  }
+  return {
+    ...(root ? { root } : {}),
+    version: parsed.version,
+    complete: issues.length === 0,
+    issues,
+  };
+}
+
 export async function inspectAgentControlCenter(
   options: AgentControlCenterOptions = {},
 ): Promise<AgentControlCenterInspection> {
@@ -87,21 +221,49 @@ export async function inspectAgentControlCenter(
   const profile = assertProfile(options.profile ?? "web");
   const target = resolve(dshHome, "profiles", profile);
   const metadata = await profileMetadata(resolve(target, "package.json"));
-  if (!metadata) return { status: "absent", issues: [], dshHome, profile, target };
-  const dependency = metadata.dependencies?.[packageMetadata.name];
-  const bundled = metadata.dsh?.profile?.bundles?.includes(packageMetadata.name) === true;
-  if (!dependency && !bundled) return { status: "absent", issues: [], dshHome, profile, target };
+  const dependency = metadata?.dependencies?.[packageMetadata.name];
+  const bundleCount = metadata?.dsh?.profile?.bundles?.filter((entry) => entry === packageMetadata.name).length ?? 0;
+  const base = { dshHome, profile, target, targetVersion: packageMetadata.version };
+  if (!dependency && bundleCount === 0) return { status: "absent", issues: [], ...base };
+
   const issues: string[] = [];
   if (!dependency) issues.push(`missing ${packageMetadata.name} profile dependency`);
-  if (!bundled) issues.push(`missing ${packageMetadata.name} profile bundle entry`);
-  return {
-    status: issues.length === 0 ? "installed" : "drifted",
-    issues,
-    dshHome,
-    profile,
-    target,
+  if (bundleCount === 0) issues.push(`missing ${packageMetadata.name} profile bundle entry`);
+  if (bundleCount > 1) issues.push(`duplicate ${packageMetadata.name} profile bundle entries`);
+  const installed = await resolvedPackage(target);
+  if (!installed) issues.push(`resolved ${packageMetadata.name} package is missing from the profile install tree`);
+  else issues.push(...installed.issues);
+  const detail = {
+    ...base,
     ...(dependency ? { dependency } : {}),
+    ...(installed?.version ? { installedVersion: installed.version } : {}),
+    ...(installed?.root ? { resolvedRoot: installed.root } : {}),
   };
+
+  if (!dependency || bundleCount !== 1) return { status: "partial-drift", issues, ...detail };
+  if (localDependency(dependency)) {
+    issues.unshift(`profile dependency uses local source ${dependency}`);
+    return { status: "local-link", issues, ...detail };
+  }
+  const declaredVersion = exactRegistryVersion(dependency);
+  if (!declaredVersion) {
+    issues.unshift(`profile dependency is not an exact registry version: ${dependency}`);
+    return { status: "unknown-source", issues, ...detail };
+  }
+  const lockIssues = await lockDependencyIssues(target, dependency);
+  if (lockIssues.length > 0) return { status: "partial-drift", issues: [...lockIssues, ...issues], ...detail };
+  if (!installed?.version || !installed.complete) return { status: "partial-drift", issues, ...detail };
+  if (installed.version !== declaredVersion) {
+    issues.unshift(`resolved package version ${installed.version} does not match dependency ${declaredVersion}`);
+    return { status: "partial-drift", issues, ...detail };
+  }
+  const order = compareVersions(installed.version, packageMetadata.version);
+  if (order < 0) return { status: "registry-upgrade", issues, ...detail };
+  if (order > 0) {
+    issues.unshift(`installed registry version ${installed.version} is newer than this installer ${packageMetadata.version}`);
+    return { status: "newer", issues, ...detail };
+  }
+  return { status: "current", issues: [], ...detail };
 }
 
 function runPluginCommand(
@@ -118,26 +280,112 @@ function runPluginCommand(
     env: { ...process.env, DSH_HOME: resolveDshHome(options.dshHome) },
     ...(platform === "win32" ? { shell: true } : {}),
   };
-  execute(command, ["plugin", "--profile", assertProfile(options.profile ?? "web"), action, operand], processOptions);
+  const args = ["plugin", "--profile", assertProfile(options.profile ?? "web"), action, operand];
+  if (action === "add") args.push("--save-exact");
+  execute(command, args, processOptions);
+}
+
+async function captureProfile(target: string): Promise<FileSnapshot[]> {
+  return Promise.all(PROFILE_STATE_FILES.map(async (relativePath) => ({
+    path: resolve(target, relativePath),
+    content: await optionalFile(resolve(target, relativePath)),
+  })));
+}
+
+async function restoreProfile(snapshot: readonly FileSnapshot[]): Promise<void> {
+  for (const file of snapshot) {
+    if (file.content === undefined) await rm(file.path, { force: true });
+    else {
+      await mkdir(dirname(file.path), { recursive: true });
+      await writeFile(file.path, file.content);
+    }
+  }
+}
+
+function previousOperand(inspection: AgentControlCenterInspection): string | undefined {
+  const dependency = inspection.dependency;
+  if (!dependency) return undefined;
+  return localDependency(dependency) ? dependency : `${packageMetadata.name}@${dependency}`;
+}
+
+async function retainRollbackEvidence(
+  dshHome: string,
+  snapshot: readonly FileSnapshot[],
+  failure: string,
+): Promise<string> {
+  const root = resolve(dshHome, "odai", "control-center-backups", `${Date.now()}-${randomUUID()}`);
+  await mkdir(root, { recursive: true });
+  for (const file of snapshot) {
+    if (file.content !== undefined) await writeFile(resolve(root, file.path.split(/[\\/]/u).at(-1) ?? "state"), file.content);
+  }
+  await writeFile(resolve(root, "failure.txt"), `${failure}\n`, "utf8");
+  return root;
+}
+
+async function rollbackProfile(
+  before: AgentControlCenterInspection,
+  snapshot: readonly FileSnapshot[],
+  options: AgentControlCenterOptions,
+): Promise<void> {
+  const operand = previousOperand(before);
+  if (operand) runPluginCommand("add", operand, options);
+  else runPluginCommand("remove", packageMetadata.name, options);
+  await restoreProfile(snapshot);
 }
 
 export async function installAgentControlCenter(
   options: AgentControlCenterOptions = {},
-): Promise<Readonly<{ operation: "installed" | "unchanged"; target: string; profile: string; dependency: string }>> {
+): Promise<Readonly<{
+    operation: "installed" | "updated" | "repaired" | "unchanged";
+    target: string;
+    profile: string;
+    dependency: string;
+    previousStatus: AgentControlCenterStatus;
+  }>> {
   const current = await inspectAgentControlCenter(options);
-  if (current.status === "drifted") {
-    throw new Error(`refusing to replace drifted Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
+  if (current.status === "current") {
+    return Object.freeze({
+      operation: "unchanged",
+      target: current.target,
+      profile: current.profile,
+      dependency: current.dependency ?? "",
+      previousStatus: current.status,
+    });
   }
-  if (current.status === "installed") {
-    return Object.freeze({ operation: "unchanged", target: current.target, profile: current.profile, dependency: current.dependency ?? "" });
+  if (current.status === "newer") {
+    throw new Error(`refusing to downgrade Agent Control Center at ${current.target}: ${current.issues.join("; ")}`);
   }
+
+  const snapshot = await captureProfile(current.target);
   const packageSpec = options.packageSpec ?? `${packageMetadata.name}@${packageMetadata.version}`;
-  runPluginCommand("add", packageSpec, options);
-  const installed = await inspectAgentControlCenter(options);
-  if (installed.status !== "installed" || !installed.dependency) {
-    throw new Error(`DSH plugin manager did not install the Agent Control Center completely: ${installed.issues.join("; ") || installed.status}`);
+  try {
+    runPluginCommand("add", packageSpec, options);
+    const installed = await inspectAgentControlCenter(options);
+    if (installed.status !== "current" || !installed.dependency) {
+      throw new Error(`DSH plugin manager did not install the exact Agent Control Center package: ${installed.issues.join("; ") || installed.status}`);
+    }
+    const operation = current.status === "absent"
+      ? "installed"
+      : current.status === "registry-upgrade"
+        ? "updated"
+        : "repaired";
+    return Object.freeze({
+      operation,
+      target: installed.target,
+      profile: installed.profile,
+      dependency: installed.dependency,
+      previousStatus: current.status,
+    });
+  } catch (error) {
+    try {
+      await rollbackProfile(current, snapshot, options);
+    } catch (rollbackError) {
+      const detail = `install failed: ${errorMessage(error)}\nrollback failed: ${errorMessage(rollbackError)}`;
+      const backupPath = await retainRollbackEvidence(current.dshHome, snapshot, detail);
+      throw new Error(`${detail}\nprofile recovery evidence retained at ${backupPath}`);
+    }
+    throw new Error(`${errorMessage(error)}; previous Control Center profile state was restored`);
   }
-  return Object.freeze({ operation: "installed", target: installed.target, profile: installed.profile, dependency: installed.dependency });
 }
 
 export async function uninstallAgentControlCenter(
@@ -145,8 +393,8 @@ export async function uninstallAgentControlCenter(
 ): Promise<Readonly<{ operation: "uninstalled" | "absent"; target: string; profile: string }>> {
   const current = await inspectAgentControlCenter(options);
   if (current.status === "absent") return Object.freeze({ operation: "absent", target: current.target, profile: current.profile });
-  if (current.status === "drifted") {
-    throw new Error(`refusing to remove drifted Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
+  if (current.status === "partial-drift") {
+    throw new Error(`refusing to remove partially owned Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
   }
   runPluginCommand("remove", packageMetadata.name, options);
   const removed = await inspectAgentControlCenter(options);

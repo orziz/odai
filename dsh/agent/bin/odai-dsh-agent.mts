@@ -95,7 +95,7 @@ try {
   } else if (args.command === "control-center" && args.controlCenterCommand === "status") {
     const result = await inspectAgentControlCenter({ dshHome: args.dshHome, profile: args.profile });
     print(result, args.json);
-    if (result.status === "drifted") process.exitCode = 2;
+    if (result.status !== "absent" && result.status !== "current") process.exitCode = 2;
   } else if (args.command === "control-center" && args.controlCenterCommand === "uninstall") {
     print(await uninstallAgentControlCenter({ dshHome: args.dshHome, profile: args.profile }), args.json);
   } else {
@@ -108,19 +108,28 @@ try {
 
 async function shouldInstallControlCenter(args: CliArguments): Promise<boolean> {
   if (args.controlCenter !== undefined) return args.controlCenter;
-  if (args.json || !process.stdin.isTTY || !process.stdout.isTTY) return false;
   const current = await inspectAgentControlCenter({ dshHome: args.dshHome, profile: args.profile });
-  if (current.status === "installed") {
-    process.stdout.write(`Control Center 已安装：${current.target}\n`);
+  if (current.status === "current") {
+    process.stdout.write(`Control Center registry ${current.installedVersion} 已准确安装，未修改：${current.target}\n`);
     return false;
   }
-  if (current.status === "drifted") {
-    process.stdout.write(`Control Center profile 状态存在漂移，已跳过：${current.target}\n`);
-    for (const issue of current.issues) process.stdout.write(`- ${issue}\n`);
+  if (current.status === "newer") {
+    process.stdout.write(`Control Center ${current.installedVersion ?? current.dependency ?? "<unknown>"} 高于当前安装器 ${current.targetVersion}，禁止静默降级：${current.target}\n`);
     return false;
   }
-  const accepted = await promptForControlCenterInstall(process.stdin, process.stdout, args.profile ?? "web");
-  if (!accepted) process.stdout.write("已跳过 Control Center；稍后可运行 odai-dsh-agent control-center install。\n");
+  if (args.json || !process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stdout.write(`Control Center 状态为 ${current.status}，非交互安装未修改 Web profile；需要时显式传 --with-control-center。\n`);
+    return false;
+  }
+  const action = current.status === "absent"
+    ? `把 Odai Control Center registry ${current.targetVersion} 安装到 DSH profile “${current.profile}”`
+    : current.status === "registry-upgrade"
+      ? `把 DSH profile “${current.profile}” 的 Control Center 从 registry ${current.installedVersion ?? current.dependency ?? "<unknown>"} 升级到 ${current.targetVersion}`
+      : current.status === "local-link"
+        ? `把 DSH profile “${current.profile}” 的本地 Control Center 来源 ${current.dependency ?? current.resolvedRoot ?? "<unknown>"} 替换为 registry ${current.targetVersion}`
+        : `修复 DSH profile “${current.profile}” 的 Control Center ${current.status} 状态并固定到 registry ${current.targetVersion}（${current.issues.join("；") || "来源无法确认"}）`;
+  const accepted = await promptForControlCenterInstall(process.stdin, process.stdout, current.profile, action);
+  if (!accepted) process.stdout.write("已跳过 Control Center，Web profile 未修改；稍后可运行 odai-dsh-agent control-center install。\n");
   return accepted;
 }
 
