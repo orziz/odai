@@ -8,6 +8,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 await Promise.all([
   "dsh/build",
   "dsh/runtime/build",
+  "dsh/client/build",
   "dsh/plugin/build",
   "dsh/agent/build",
 ].map((path) => rm(resolve(repoRoot, path), { recursive: true, force: true })));

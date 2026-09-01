@@ -17,12 +17,15 @@ cli/skills/
 node_modules/
 dsh/build/
 dsh/runtime/build/
+dsh/client/build/
 dsh/plugin/build/
 dsh/agent/build/
 dsh/plugin/runtime/
 dsh/plugin/skills/
+dsh/plugin/client/
 dsh/agent/preset/odai/runtime/
 dsh/agent/preset/odai/skills/
+dsh/agent/client/
 
 plans/odai-*-runs
 

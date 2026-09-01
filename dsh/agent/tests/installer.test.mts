@@ -221,11 +221,19 @@ test("uninstall refuses to leave an invalid default preset", async () => {
 test("published metadata describes complete DSH capabilities in Chinese", async () => {
   const packageMetadata = jsonRecord(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
   const presetMetadata = await readFile(resolve(import.meta.dirname, "../preset/odai/preset.yml"), "utf8");
+  const controlCenterPatch = await readFile(resolve(import.meta.dirname, "../control-center.cordis.patch.yml"), "utf8");
 
   assert.ok(typeof packageMetadata.description === "string");
   assert.ok(isRecord(packageMetadata.engines));
   assert.match(packageMetadata.description, /完整继承 DSH 标准模式 全部能力/u);
   assert.equal(packageMetadata.engines.node, ">=22.15.0");
+  assert.ok(isRecord(packageMetadata.exports));
+  assert.equal(packageMetadata.exports["./client"], "./client/client.js");
+  assert.equal(packageMetadata.exports["./control-center-host"], "./preset/odai/runtime/control-center-host.mjs");
+  assert.ok(isRecord(packageMetadata.dsh) && isRecord(packageMetadata.dsh.client));
+  assert.equal(packageMetadata.dsh.client.platform, "web");
+  assert.match(controlCenterPatch, /^\s+name: odai-dsh-agent$/mu);
+  assert.doesNotMatch(controlCenterPatch, /control-center-host/u);
   assert.match(presetMetadata, /^name: odai 治理模式$/mu);
   assert.match(presetMetadata, /^description: 完整继承 DSH 标准模式 全部能力，并叠加 odai 治理、证据与自动路由，以 odai 为总控。$/mu);
 });

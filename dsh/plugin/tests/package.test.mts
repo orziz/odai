@@ -21,6 +21,9 @@ test("bundle patch resolves the packaged runtime through the package export", as
   assert.equal(metadata.name, "odai-dsh-plugin");
   assert.equal(metadata.main, "./runtime/index.mjs");
   assert.equal(metadata.dsh.bundle.patch, "./cordis.patch.yml");
+  assert.equal(metadata.exports["./client"], "./client/client.js");
+  assert.equal(metadata.dsh.client.platform, "web");
+  assert.ok(metadata.files.includes("client"));
   assert.match(patch, /name: odai-dsh-plugin/u);
   assert.match(patch, /mode: auto/u);
   assert.doesNotMatch(patch, /roles:|planner:|executor:|reviewer:|model:|reasoningEffort:|maxTokens:/u);

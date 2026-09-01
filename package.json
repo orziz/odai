@@ -5,11 +5,12 @@
   "scripts": {
     "clean:dsh": "node scripts/clean-dsh-runtime-build.mjs",
     "emit:dsh-runtime": "tsc -p dsh/runtime/tsconfig.json",
+    "emit:dsh-client": "tsc -p dsh/client/tsconfig.json && node scripts/render-dsh-client.mjs",
     "emit:dsh-plugin": "tsc -p dsh/plugin/tsconfig.json",
     "emit:dsh-agent": "tsc -p dsh/agent/tsconfig.json",
     "emit:dsh-release": "tsc -p dsh/tsconfig.json",
     "build:dsh-runtime": "npm run clean:dsh && npm run emit:dsh-runtime",
-    "build:dsh": "npm run clean:dsh && npm run emit:dsh-runtime && npm run emit:dsh-plugin && npm run emit:dsh-agent && npm run emit:dsh-release",
+    "build:dsh": "npm run clean:dsh && npm run emit:dsh-runtime && npm run emit:dsh-client && npm run emit:dsh-plugin && npm run emit:dsh-agent && npm run emit:dsh-release",
     "typecheck:dsh-runtime": "npm run build:dsh-runtime && tsc -p dsh/runtime/tsconfig.tests.json",
     "typecheck:dsh": "npm run build:dsh && tsc -p dsh/runtime/tsconfig.tests.json && tsc -p dsh/plugin/tsconfig.tests.json && tsc -p dsh/agent/tsconfig.tests.json"
   },

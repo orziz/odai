@@ -1,0 +1,3 @@
+- insert:
+    - id: odai-control-center
+      name: odai-dsh-agent

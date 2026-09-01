@@ -71,6 +71,18 @@ export const MANIFEST_FILE = ".odai-agent.json";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(moduleDirectory, moduleDirectory.endsWith(`${sep}build${sep}src`) ? "../.." : "..");
+
+export const inject = ["connection", "llm"];
+
+export async function apply(ctx: unknown, rawConfig: unknown = {}): Promise<void> {
+  const moduleUrl = pathToFileURL(resolve(packageRoot, "preset/odai/runtime/control-center-host.mjs")).href;
+  const host: unknown = await import(moduleUrl);
+  if (!isRecord(host) || typeof host.apply !== "function") {
+    throw new Error("odai-dsh-agent Control Center host artifact is invalid");
+  }
+  await host.apply(ctx, rawConfig);
+}
+
 const defaultSourceRoot = resolve(packageRoot, "preset/odai");
 const parsedPackageMetadata: unknown = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
 if (!isRecord(parsedPackageMetadata) || typeof parsedPackageMetadata.name !== "string"

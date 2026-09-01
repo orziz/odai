@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-agent",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "完整继承 DSH 标准模式 全部能力的 Odai Agent preset。主要用于治理、规划、测试、验证 等，可当成默认总控使用。",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,9 @@
   "main": "./build/src/installer.mjs",
   "exports": {
     ".": "./build/src/installer.mjs",
+    "./control-center": "./build/src/control-center-installer.mjs",
+    "./control-center-host": "./preset/odai/runtime/control-center-host.mjs",
+    "./client": "./client/client.js",
     "./package.json": "./package.json"
   },
   "bin": {
@@ -28,21 +31,37 @@
   "files": [
     "build/bin",
     "build/src",
+    "client",
     "preset",
+    "control-center.cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
+  "dsh": {
+    "bundle": {
+      "patch": "./control-center.cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
   "scripts": {
     "build:dsh": "npm --prefix ../.. run build:dsh",
     "typecheck:dsh": "npm --prefix ../.. run typecheck:dsh",
     "check": "npm run typecheck:dsh && npm run build:dsh && find ../runtime/build build/bin build/src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root preset/odai/skills --runtime-root preset/odai/runtime",
-    "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root preset/odai/skills --runtime-root preset/odai/runtime",
+    "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root preset/odai/skills --runtime-root preset/odai/runtime --client-root client --client-package odai-dsh-agent",
+    "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root preset/odai/skills --runtime-root preset/odai/runtime --client-root client --client-package odai-dsh-agent",
     "prepare": "npm run prepare:artifact",
     "verify:version": "node ../../scripts/verify-dsh-package-versions.mjs",
     "prepack": "npm run verify:version && node ../../scripts/validate-odai-skill.mjs",
     "postpack": "npm run clean:artifact",
-    "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean preset/odai/runtime --clean preset/odai/skills -- --dry-run",
+    "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean preset/odai/runtime --clean preset/odai/skills --clean client -- --dry-run",
     "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ./tests/*.test.mts",
     "verify:dsh": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/verify-agent-load.mts"
   },

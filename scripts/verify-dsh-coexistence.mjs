@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   cp,
@@ -154,6 +155,55 @@ async function installPlugin() {
   }
 }
 
+async function installAgentControlCenterPackage() {
+  run(npm, ["pack", "--pack-destination", scratch], { cwd: agentRoot });
+  const tarballs = (await readdir(scratch)).filter((entry) => /^odai-dsh-agent-.*\.tgz$/u.test(entry));
+  if (tarballs.length !== 1) throw new Error(`expected one Agent tarball, found: ${tarballs.join(", ")}`);
+  run(dsh, ["plugin", "--profile", profileName, "add", resolve(scratch, tarballs[0])], { cwd: workspace });
+
+  const profilePath = resolve(home, "profiles", profileName, "package.json");
+  const profile = JSON.parse(await readFile(profilePath, "utf8"));
+  for (const packageName of ["odai-dsh-plugin", "odai-dsh-agent"]) {
+    if (typeof profile.dependencies?.[packageName] !== "string"
+      || !profile.dsh?.profile?.bundles?.includes(packageName)) {
+      throw new Error(`coexistence profile does not own ${packageName} completely: ${JSON.stringify(profile)}`);
+    }
+  }
+}
+
+async function readControlCenterBoot(baseUrl, browserCookie) {
+  const response = await fetch(baseUrl, {
+    headers: browserCookie ? { cookie: browserCookie } : {},
+  });
+  if (!response.ok) throw new Error(`Control Center boot fetch failed: HTTP ${response.status}`);
+  const html = await response.text();
+  const match = html.match(/globalThis\["__DSH_BOOT__"\]\s*=\s*(\{.*?\});?\s*<\/script>/su);
+  if (!match) throw new Error("DSH Web boot payload is missing");
+  const boot = JSON.parse(match[1]);
+  const odaiEntries = (boot.entries ?? []).filter((entry) => entry.id === "odai-dsh-plugin" || entry.id === "odai-dsh-agent");
+  const ids = odaiEntries.map((entry) => entry.id).sort();
+  if (JSON.stringify(ids) !== JSON.stringify(["odai-dsh-agent", "odai-dsh-plugin"])) {
+    throw new Error(`coexistence boot graph does not contain both clients exactly once: ${JSON.stringify(ids)}`);
+  }
+  return ids;
+}
+
+async function probeControlCenterRpc(baseUrl, browserCookie) {
+  const rpcId = randomUUID();
+  const response = await fetch(`${baseUrl}/odai-control-center/routing`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(browserCookie ? { cookie: browserCookie } : {}),
+    },
+    body: JSON.stringify({ type: "client-request", rpcId, method: "routing", payload: { action: "show" } }),
+  });
+  const body = await response.json();
+  if (!response.ok || body.rpcId !== rpcId || body.result?.ok !== true) {
+    throw new Error(`coexistence Control Center RPC failed: HTTP ${response.status} ${JSON.stringify(body)}`);
+  }
+}
+
 async function prepareProbe() {
   const probe = `import { writeFileSync } from "node:fs";\nimport { sharedSkillSelection } from ${JSON.stringify(pathToFileURL(sharedStateModule).href)};\n\nexport const name = "odai-coexistence-probe";\nexport const inject = ["systemPrompt", "tools"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {\n      const preset = agent.session?.header?.agentPreset;\n      if (preset !== "standard" && preset !== "odai") return;\n      const signal = new AbortController().signal;\n      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const coldNames = assembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedColdNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap"];\n      if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {\n        throw new Error(\`cold Odai tool schema mismatch for \${preset}: \${JSON.stringify(coldNames)}\`);\n      }\n      const hiddenResult = await ctx.tools.execute({\n        callId: \`coexistence-hidden-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (!hiddenResult.isError || !/unknown tool/u.test(hiddenResult.error?.message ?? "")) {\n        throw new Error(\`hidden Odai routing tool remained executable for \${preset}: \${JSON.stringify(hiddenResult)}\`);\n      }\n      agent.session.append("turn/start", { turn: 1 });\n      agent.session.append("step/start", { turn: 1, step: 1 });\n      const gatewayResult = await ctx.tools.execute({\n        callId: \`coexistence-routing-gateway-\${preset}\`,\n        name: "odai_context_capability",\n        arguments: { capability: "routing-config" },\n        agent,\n        signal,\n      });\n      if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed for \${preset}: \${JSON.stringify(gatewayResult)}\`);\n      const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });\n      const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n      const expectedActivatedNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap", "odai_routing_config"].sort();\n      if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {\n        throw new Error(\`activated Odai tool schema mismatch for \${preset}: \${JSON.stringify(activatedNames)}\`);\n      }\n      const routingResult = await ctx.tools.execute({\n        callId: \`coexistence-visible-routing-\${preset}\`,\n        name: "odai_routing_config",\n        arguments: { action: "show" },\n        agent,\n        signal,\n      });\n      if (routingResult.isError) throw new Error(\`visible Odai routing tool was not executable for \${preset}: \${JSON.stringify(routingResult)}\`);\n      const canonical = activatedAssembly.sections.filter((section) => section.name === "odai:canonical-governance");\n      const selection = sharedSkillSelection(agent);\n      const text = canonical[0]?.text ?? "";\n      const promptDigest = text.match(/digest: ([a-f0-9]{64})\\./u)?.[1];\n      results[preset] = {\n        canonicalSectionCount: canonical.length,\n        mode: selection?.mode,\n        source: selection?.bundle?.source,\n        skillVersion: selection?.bundle?.manifest?.skillVersion,\n        digest: selection?.bundle?.digest,\n        promptDigest,\n        promptHasProjectMarker: text.includes("COEXISTENCE_SKILL_MARKER"),\n        roleHasProjectMarker: selection?.bundle?.roleContracts?.planner?.includes("COEXISTENCE_PLANNER_MARKER") === true,\n        toolExposureSynchronized: true,\n      };\n      if (results.standard && results.odai) writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");\n    }).catch((error) => {\n      writeFileSync(config.markerPath, JSON.stringify({ probeError: error.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  });\n}\n`;
   await writeFile(probePluginPath, probe, "utf8");
@@ -212,6 +262,7 @@ try {
     "utf8",
   );
   await installPlugin();
+  await installAgentControlCenterPackage();
   await prepareProbe();
 
   const port = await freePort();
@@ -231,6 +282,8 @@ try {
   child.stderr.on("data", (chunk) => { output += chunk.toString(); });
 
   const browserCookie = await waitForDshWeb(baseUrl, child, () => output, 30_000);
+  const controlCenterClientIds = await readControlCenterBoot(baseUrl, browserCookie);
+  await probeControlCenterRpc(baseUrl, browserCookie);
   const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
   const presetIds = roster.presets.map((preset) => preset.id);
   if (!presetIds.includes("standard") || !presetIds.includes("odai")) {
@@ -242,7 +295,10 @@ try {
   assertResults(results);
   finalReport = {
     profilePluginInstalled: true,
+    profileAgentControlCenterInstalled: true,
     agentPresetInstalled: true,
+    controlCenterClientIds,
+    controlCenterRpcAvailable: true,
     presetIds,
     results,
   };

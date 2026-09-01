@@ -14,7 +14,8 @@ The bundle contributes:
 - local, scoped long-term semantic memory with automatic high-confidence candidate discovery, inert pending candidates, bounded relevant recall, provenance, conflict/supersession handling, and physical forget/clear controls without hidden model calls;
 - separate non-crisis care and crisis-safety contracts plus an explicit, user-controlled cross-session continuity record that never profiles current mood or reaches child agents;
 - adaptive agent-scoped prompt/tool exposure with a compact capability gateway, preserving uncommon-intent recovery while removing low-frequency control schemas from ordinary requests;
-- task-state responsibility gaps, inline same-model planner reuse, controller-owned implementation after planner handback, complete current reviewer evidence with controller-local incomplete-packet fallback, formal model-route preflight, and buffered compaction fallback without partial-output contamination.
+- task-state responsibility gaps, inline same-model planner reuse, controller-owned implementation after planner handback, complete current reviewer evidence with controller-local incomplete-packet fallback, formal model-route preflight, and buffered compaction fallback without partial-output contamination;
+- one Chinese DSH Web Control Center for the real current-turn responsibility graph, stored session evidence, structured event inspection, and validated routing configuration.
 
 ## Install
 
@@ -24,9 +25,13 @@ Install the package into only the profile that should receive Odai. DSH's plugin
 dsh plugin --profile web add odai-dsh-plugin
 ```
 
-The package declares `dsh.bundle`, so DSH adds it to that profile's bundle stack. It already contains the canonical Odai skill and runtime; a separate skill install is optional and remains inactive until the user explicitly changes the source mode. Do not install the Agent package separately for ordinary Plugin use. Start a new DSH process after installation. Agent-only users should install `odai-dsh-agent` instead; that package is self-contained and does not activate this bundle.
+The package declares `dsh.bundle`, so DSH adds it to that profile's bundle stack and exposes Control Center without another package or command. It already contains the canonical Odai skill and runtime; a separate skill install is optional and remains inactive until the user explicitly changes the source mode. Start a new DSH process after installation. Agent-only users may install `odai-dsh-agent` instead; users may also keep both packages when they need profile-wide governance plus the selectable Agent preset. Coexistence still renders one Plugin-owned Control Center surface.
 
 Odai audit evidence is stored under `$DSH_HOME/odai/session-evidence/`, not as private event types in DSH's core session log. This keeps every session written by the current Plugin readable when the Plugin is removed or upgraded.
+
+## Control Center
+
+Control Center is part of `odai-dsh-plugin`. Its Chinese Web UI shows only persisted responsibility evidence in the current-turn graph and session timeline, exposes the raw structured record in the event inspector, and keeps truthful empty/error states when no evidence exists. The routing view manages researcher, planner, reviewer, and frontend model/dispatch mappings; the user-facing labels are 调查、规划、审查、设计. The host controller remains read-only. Every write crosses DSH's loopback RPC authority and reuses the same provider/model validation, owned lock, invalid-store preservation, and atomic routing action as the conversation tool. Changes apply on the next user turn.
 
 ## Long-term semantic memory
 
@@ -122,7 +127,7 @@ A generic subagent is not a responsibility route and does not inherit a responsi
 
 ## Coexistence
 
-The Plugin and Agent packages are independently installable and self-contained. Plugin is profile-wide; Agent is one dedicated preset. Installing both is normally redundant and is not the default recommendation. Use both only when the deliberate design is profile-wide Plugin behavior plus an Agent-scoped preset in the same profile. In that case, a process-shared per-agent/per-turn skill snapshot keeps the prompt and role contracts identical across both runtimes, shared session-evidence identities deduplicate each tool observation and turn/step route, DSH shadows the canonical prompt section by scope, and tool denials remain monotonic. Removing either package does not remove the compatibility-safe evidence store or make the DSH session log depend on that package.
+The Plugin and Agent packages are independently installable, self-contained, and supported together. Plugin is profile-wide; Agent is one selectable preset. In coexistence, the Plugin client owns the single Control Center surface, process-shared per-agent/per-turn skill snapshots keep prompt governance and role contracts identical across both runtimes, shared session-evidence identities deduplicate each tool observation and turn/step route, DSH shadows the canonical prompt section by scope, RPC registration is reference-counted, and tool denials remain monotonic. Removing either package does not remove the other package, the shared routing/evidence stores, or make the DSH session log depend on the removed package.
 
 ## Development
 
@@ -170,4 +175,4 @@ The probe reports both compaction and exactly matched cache reads. `--ordinary-o
 
 A provider cache is still best-effort: even identical calls can miss because of upstream writes, expiry, or routing. Changing compaction to a low controller ceiling is not a valid cache fix because it risks an incomplete checkpoint; the first controller request after a landed summary must also build the new summary prefix because it no longer matches the replaced history.
 
-The `0.2.15` candidate accepts exactly `@deepseek-ai/dsh@0.1.1-rc.2` and `0.1.2-alpha.2`; every other rc, alpha, or `0.1.2` release remains unsupported until its own isolated real-load contract is added.
+The `0.2.16` candidate, like published `0.2.15`, accepts exactly `@deepseek-ai/dsh@0.1.1-rc.2` and `0.1.2-alpha.2`; every other rc, alpha, or `0.1.2` release remains unsupported until its own isolated real-load contract is added.

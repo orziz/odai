@@ -201,6 +201,7 @@ export interface DshSessionsService {
 
 export interface DshRuntimeContext {
   on(event: string, handler: CallableFunction, options?: UnknownRecord): void;
+  effect?(effect: () => (() => void | Promise<void>) | void, label?: string): void;
   logger?(name: string): RuntimeLogger;
   tools: DshToolsService;
   systemPrompt: {

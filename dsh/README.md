@@ -5,8 +5,8 @@ The DSH integration has two independently published user surfaces and one intern
 | Directory | Package | Scope | Installs |
 |---|---|---|---|
 | `runtime/` | none | canonical DSH implementation source | nothing |
-| `plugin/` | `odai-dsh-plugin` | every agent in one DSH profile | profile bundle |
-| `agent/` | `odai-dsh-agent` | sessions selecting the Odai preset | user agent preset |
+| `plugin/` | `odai-dsh-plugin` | every agent in one DSH profile | profile bundle with Control Center |
+| `agent/` | `odai-dsh-agent` | sessions selecting the Odai preset | user agent preset; optional confirmed Control Center profile entry |
 
 The provider-neutral `cli/` remains a separate product and is not part of this subtree.
 
@@ -16,7 +16,7 @@ A planner route identical to the current controller remains inline and does not 
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the `0.2.15` Agent installer candidate supports exactly `dsh@0.1.1-rc.2` and `dsh@0.1.2-alpha.2`.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the `0.2.16` Agent installer candidate supports exactly `dsh@0.1.1-rc.2` and `dsh@0.1.2-alpha.2`.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -26,7 +26,9 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-For Plugin, start a new DSH process after installation and use that profile normally. The Agent preserves every capability from the pinned DSH Standard preset and adds Odai as a scoped extension; open a new DSH session and select `Odai` from the Agent preset picker. Then submit ordinary task requests; neither surface requires a routing command or special trigger wording. Current releases keep Odai audit evidence outside DSH's core event vocabulary. Before updating or removing an older Plugin, stop every DSH process and run `npx odai-dsh-plugin repair-sessions --yes` once so recognized historical Odai audit events receive DSH's official ignorable marker and a verified backup is retained; unknown Odai event types fail closed. The repair additionally refuses when local process inspection fails or finds DSH still running; keep DSH stopped until it exits.
+For Plugin, start a new DSH process after installation and use that profile normally; Control Center is included automatically. The Agent preserves every capability from the pinned DSH Standard preset and adds Odai as a scoped extension. Its interactive installer asks `同时把 Odai 控制中心安装到 DSH profile “web”？[Y/n]`; Enter or `y` adds the same package's Control Center, while `n` installs only the preset. Non-interactive installs require the explicit `--with-control-center` flag to add it. Open a new DSH session and select `Odai` from the Agent preset picker. Then submit ordinary task requests; neither surface requires a routing command or special trigger wording. Current releases keep Odai audit evidence outside DSH's core event vocabulary. Before updating or removing an older Plugin, stop every DSH process and run `npx odai-dsh-plugin repair-sessions --yes` once so recognized historical Odai audit events receive DSH's official ignorable marker and a verified backup is retained; unknown Odai event types fail closed. The repair additionally refuses when local process inspection fails or finds DSH still running; keep DSH stopped until it exits.
+
+Both packages render one shared MTS-authored Chinese Control Center client. It presents the current-turn execution graph, session evidence timeline, structured event inspector, and optional responsibility routing. User-facing role names are 调查、规划、审查、设计; persisted contracts remain `researcher`, `planner`, `reviewer`, and `frontend`. The host-managed controller is read-only, and a configured model is never presented as proof that a responsibility ran.
 
 Configure optional responsibility models by speaking naturally, for example:
 
@@ -37,7 +39,7 @@ Configure optional responsibility models by speaking naturally, for example:
 研究和验收职责改成 same-turn。
 ```
 
-Odai persists only the model mapping or dispatch override the user explicitly names. `odai_routing_config` supports `set`/`remove` for model mappings and `set-dispatch`/`reset-dispatch` for dispatch overrides. A change applies from the next user turn. The runtime resolves a merged effective mapping snapshot whenever routing needs it; only an explicit mapping-management request places that snapshot in the model prompt. `odai_routing_config show` distinguishes persisted and deployment sources and includes the latest actual route receipt. Configuration is not proof of use, and a route receipt proves only the effective model request, not continuing responsibility ownership or completion. In-place responsibility requests are checked against DSH's effective request header; a mismatch closes the scope, restores the preserved controller route, and makes the controller read-only. Responsibility children cannot complete without matching route evidence. Generic subagents remain generic unless explicitly labeled `odai-<responsibility> ...`. The Plugin already includes the canonical skill and runtime; the Agent also includes both and does not require the Plugin. Installing both is normally redundant.
+Odai persists only the model mapping or dispatch override the user explicitly names. `odai_routing_config` supports `set`/`remove` for model mappings and `set-dispatch`/`reset-dispatch` for dispatch overrides. A change applies from the next user turn. The runtime resolves a merged effective mapping snapshot whenever routing needs it; only an explicit mapping-management request places that snapshot in the model prompt. `odai_routing_config show` distinguishes persisted and deployment sources and includes the latest actual route receipt. Configuration is not proof of use, and a route receipt proves only the effective model request, not continuing responsibility ownership or completion. In-place responsibility requests are checked against DSH's effective request header; a mismatch closes the scope, restores the preserved controller route, and makes the controller read-only. Responsibility children cannot complete without matching route evidence. Generic subagents remain generic unless explicitly labeled `odai-<responsibility> ...`. The Plugin already includes the canonical skill and runtime; the Agent also includes both and does not require the Plugin. They may be installed independently or together. In coexistence, Plugin owns the single Control Center client surface while process-shared runtime state deduplicates governance, routing, and evidence.
 
 An independently installed complete Odai skill bundle can update faster than either package without changing existing defaults. The user must explicitly ask to set the source to `auto` or `user`; `odai_skill_source_config` persists that choice in `$DSH_HOME/odai/source.json`. Project `.dsh/skills/odai` and `.agents/skills/odai` bundles participate only in `auto` and remain scoped to the current session cwd. The package READMEs define the complete precedence, manifest, compatibility, and fallback contract.
 
@@ -77,15 +79,15 @@ An explicitly configured compaction `reasoningEffort` overrides reasoning only f
 
 - `skills/odai/` is the only editable governance and role-contract source.
 - `dsh/runtime/src/` is the only editable DSH adapter, guard, evidence, and automatic-routing implementation.
-- `scripts/package-odai-artifact.mjs` generates package-local runtime and skill copies during lifecycle packaging.
+- `scripts/package-odai-artifact.mjs` generates package-local runtime, skill, and rendered browser-client copies during lifecycle packaging.
 - `scripts/run-package-pack.mjs` removes declared generated roots in `finally`, including when a dry-run pack fails before `postpack`.
-- Generated copies under `dsh/plugin/{runtime,skills}` and `dsh/agent/preset/odai/{runtime,skills}` are ignored and never tracked.
+- Generated copies under `dsh/plugin/{runtime,skills,client}`, `dsh/agent/preset/odai/{runtime,skills}`, and `dsh/agent/client` are ignored and never tracked.
 
 No user-facing package depends on another Odai package:
 
 - Plugin-only installation contains its canonical skill and runtime; no separate skill or Agent install is required.
-- Agent-only installation contains its canonical skill and runtime, needs no Plugin, and does not edit a profile.
-- Plugin is profile-wide; Agent is preset-scoped. Installing both is normally redundant and should be reserved for a deliberate combination of those scopes. Shared evidence under `$DSH_HOME/odai/session-evidence/` deduplicates that case without adding private event types to DSH's core session log.
+- Agent-only installation contains its canonical skill and runtime and needs no Plugin. Its installer changes a DSH profile only after `[Y/n]` confirmation or an explicit non-interactive flag, solely to expose the Agent package's own Control Center.
+- Plugin is profile-wide; Agent is preset-scoped. Both single-package layouts and deliberate or accidental coexistence are supported. Plugin owns the one Control Center surface when both clients are present; process-shared snapshots, routing state, and evidence under `$DSH_HOME/odai/session-evidence/` deduplicate runtime behavior without adding private event types to DSH's core session log.
 
 Users configure optional responsibilities by speaking normally, for example, `规划用 provider/model，推理档 high` or `验收模型改成 provider/model-review`. The controller calls `odai_routing_config`; it must not choose a model that the user did not specify. Mappings persist in `$DSH_HOME/odai/routing.json`, outside both managed package artifacts, and take effect on the next user turn. Users never edit that file directly. A legacy Executor mapping is ignored without invalidating the remaining routes and disappears on the next configuration write. If the store is otherwise invalid, governance still loads; a needed route fails closed, and the next explicit natural-language `set` preserves the invalid copy and repairs the store.
 
@@ -121,8 +123,8 @@ npm --prefix dsh/agent run pack:dry-run
 
 The release-matrix runner defaults to every contract in `release-contracts.json`; pass `--version <exact-version>` to focus one release, or pass both `--plugin-tgz <path>` and `--agent-tgz <path>` to probe installed artifacts instead of source packages. Run it explicitly when the supported DSH set, composition contract, or compatibility implementation changes; the interactive publisher does not repeat this expensive matrix. It installs only into a temporary dependency graph and never publishes.
 
-The coexistence probe uses a temporary `DSH_HOME`: it packs and installs the real Plugin into a temporary Web profile, installs the Agent preset into the same home, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
+The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The `0.2.15` candidate accepts exactly `@deepseek-ai/dsh@0.1.1-rc.2` and `0.1.2-alpha.2`; it does not imply compatibility with another rc, alpha, or `0.1.2` release. The Agent source follows the alpha.2 Standard composition from `@deepseek-ai/dsh-agent-presets` and deterministically renders the rc.2-only differences during installation. Each release contract owns its Standard path and digest, so a moved package or changed row fails the matrix instead of silently reusing another release's composition.
+The `0.2.16` candidate, like published `0.2.15`, accepts exactly `@deepseek-ai/dsh@0.1.1-rc.2` and `0.1.2-alpha.2`; it does not imply compatibility with another rc, alpha, or `0.1.2` release. The Agent source follows the alpha.2 Standard composition from `@deepseek-ai/dsh-agent-presets` and deterministically renders the rc.2-only differences during installation. Each release contract owns its Standard path and digest, so a moved package or changed row fails the matrix instead of silently reusing another release's composition.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.

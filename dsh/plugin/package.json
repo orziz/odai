@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-plugin",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Profile-wide odai governance and routing bundle for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -21,6 +21,7 @@
     ".": "./runtime/index.mjs",
     "./router": "./runtime/router.mjs",
     "./governance": "./runtime/governance.mjs",
+    "./client": "./client/client.js",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -31,6 +32,7 @@
     "build/bin",
     "runtime",
     "skills",
+    "client",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -38,19 +40,28 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
     }
   },
   "scripts": {
     "build:dsh": "npm --prefix ../.. run build:dsh",
     "typecheck:dsh": "npm --prefix ../.. run typecheck:dsh",
     "check": "npm run typecheck:dsh && npm run build:dsh && find ../runtime/build build/bin -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root skills --runtime-root runtime",
-    "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root skills --runtime-root runtime",
+    "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root skills --runtime-root runtime --client-root client --client-package odai-dsh-plugin",
+    "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root skills --runtime-root runtime --client-root client --client-package odai-dsh-plugin",
     "prepare": "npm run prepare:artifact",
     "verify:version": "node ../../scripts/verify-dsh-package-versions.mjs",
     "prepack": "npm run verify:version && node ../../scripts/validate-odai-skill.mjs",
     "postpack": "npm run clean:artifact",
-    "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean runtime --clean skills -- --dry-run",
+    "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean runtime --clean skills --clean client -- --dry-run",
     "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ../runtime/tests/*.test.mts ./tests/*.test.mts ../../scripts/dsh-web-rpc.test.mjs",
     "verify:dsh": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/verify-session-compat.mts && npm --prefix ../.. exec -- tsx ./tests/verify-dsh-load.mts",
     "smoke:live": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/live-routing-smoke.mts",

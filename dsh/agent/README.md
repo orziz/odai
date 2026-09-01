@@ -1,6 +1,6 @@
 # odai dsh agent
 
-`odai-dsh-agent` installs a selectable, session-scoped Odai Agent preset for DeepSeek Harness (`dsh`). It is independent from the profile-wide `odai-dsh-plugin`: installing this package does not edit any DSH profile or activate a global bundle.
+`odai-dsh-agent` installs a selectable, session-scoped Odai Agent preset for DeepSeek Harness (`dsh`). It is independent from the profile-wide `odai-dsh-plugin`: the preset install does not activate global governance. In an interactive terminal, the command separately offers to add the same package's Control Center to the Web profile and performs that profile change only after confirmation.
 
 The installed preset is self-contained:
 
@@ -31,7 +31,7 @@ With DSH already installed, run the single Agent package command below. The pack
 npx odai-dsh-agent install
 ```
 
-The installer checks `dsh -V`; the `0.2.15` candidate accepts exactly `0.1.1-rc.2` and `0.1.2-alpha.2` and rejects every other developer-preview release. It records the detected version in the managed manifest and renders the Standard composition for that exact release.
+The installer checks `dsh -V`; the `0.2.16` candidate accepts exactly `0.1.1-rc.2` and `0.1.2-alpha.2` and rejects every other developer-preview release. It records the detected version in the managed manifest and renders the Standard composition for that exact release. In an interactive terminal it then asks `同时把 Odai 控制中心安装到 DSH profile “web”？[Y/n]`; Enter or `y` installs it, while `n` leaves the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
 
 `DSH_HOME` is honored. An explicit location can be supplied without changing the environment:
 
@@ -46,6 +46,20 @@ In the supported DSH 0.1.1-rc.2 release, the one-shot `--profile headless` drive
 The installer copies through a mode-tightened staging directory and atomically publishes the preset. Updates verify every previously managed file first, refuse to overwrite local edits, and always change the composition generation key so new sessions in a running DSH process do not reuse stale runtime code. If install or update finds recognized historical Odai audit records, it refuses to change the preset until every DSH process is stopped and the command is rerun with `--yes`. The confirmed migration adds DSH's official `ignorable: true` envelope marker, covers both plaintext and concatenated-frame Zstandard session artifacts, verifies each replacement, and retains a content-addressed backup without deleting messages or evidence. Confirmation alone is insufficient: migration also refuses when local process inspection fails or finds any active DSH process. Keep DSH stopped until the installer exits because historical runtimes do not participate in a migration lock. An unknown unmarked `odai/*` type blocks the operation instead of being assumed safe to ignore.
 
 DSH classifies this as a `trust: user` preset. User presets have the same privileges as shell access, so install only reviewed package versions; the installer repeats this trust notice in both plain and JSON output.
+
+## Control Center
+
+The optional profile entry ships inside `odai-dsh-agent`; it is not a third package. It adds one Chinese Control Center launcher to DSH Web with a real current-turn responsibility graph, session evidence timeline, structured event inspector, and routing controls for the four optional responsibilities. The controller remains host-managed and read-only. Routing writes use the same validated, locked, atomic routing action as the conversation tool and apply on the next user turn. Configured models alone are never displayed as execution evidence.
+
+The main `install` prompt is the recommended entry. These lifecycle commands remain available for inspection, recovery, and automation:
+
+```sh
+npx odai-dsh-agent control-center install [--profile web]
+npx odai-dsh-agent control-center status [--profile web]
+npx odai-dsh-agent control-center uninstall [--profile web]
+```
+
+A Control Center profile change requires one normal DSH Web process restart. Removing it does not remove the Agent preset, routing configuration, or session evidence.
 
 ## Responsibility models
 
@@ -120,13 +134,13 @@ npx odai-dsh-agent uninstall
 
 ## Plugin versus Agent
 
-Use only the surface that matches the desired scope:
+Choose either package or install both when their scopes are useful:
 
 - `odai-dsh-plugin`: profile-wide governance for every preset in that profile.
-- `odai-dsh-agent`: selectable Odai governance for only sessions using this preset.
-- both: supported only for a deliberate combination of profile-wide and Agent-scoped behavior; normally redundant, so it is not the default recommendation.
+- `odai-dsh-agent`: selectable Odai governance for sessions using this preset.
+- both: supported even when users arrive at the combination independently; Plugin provides the single Control Center surface while the Agent preset remains selectable.
 
-When both are deliberate, a process-shared per-agent/per-turn skill snapshot keeps prompt governance and role contracts identical, the compatibility-safe evidence store deduplicates tool and route records, and denials remain monotonic. Neither package installs or changes the provider-neutral `odai-cli`.
+When both are present, a process-shared per-agent/per-turn skill snapshot keeps prompt governance and role contracts identical, the compatibility-safe evidence store deduplicates tool and route records, host RPC registration is reference-counted, and denials remain monotonic. Removing either package leaves the other package and shared routing/evidence stores usable. Neither package installs or changes the provider-neutral `odai-cli`.
 
 ## Development
 

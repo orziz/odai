@@ -349,6 +349,114 @@ export interface RoutingConfigToolOptions {
   resolveCallConfig?: ResolveCallConfig;
 }
 
+export interface RoutingConfigActionOptions {
+  configuredRoles?: Readonly<RoleRoutes>;
+  configuredDispatch?: Readonly<RoleDispatches>;
+  latestRoute?: LatestRouteReceipt;
+  outputPolicy?: OutputPolicy;
+  resolveCallConfig?: ResolveCallConfig;
+  signal?: AbortSignal;
+  onConfigured?(event: RoutingConfiguredEvent): void;
+}
+
+export async function applyRoutingConfigAction(
+  configPath: string,
+  arguments_: unknown,
+  options: RoutingConfigActionOptions = {},
+): Promise<RoutingConfigResult> {
+  if (!isUnknownRecord(arguments_)) throw new TypeError("arguments must be an object");
+  const action = arguments_.action;
+  if (!["show", "set", "remove", "set-dispatch", "reset-dispatch"].includes(String(action))) {
+    throw new TypeError("action must be show, set, remove, set-dispatch, or reset-dispatch");
+  }
+
+  const routingAction = action as RoutingConfigAction;
+  const configuredRoles = options.configuredRoles ?? {};
+  const configuredDispatch = options.configuredDispatch ?? {};
+  if (routingAction === "show") {
+    return resultFor(
+      configPath,
+      "show",
+      effectiveRoutingSnapshot(configPath, configuredRoles, configuredDispatch),
+      undefined,
+      false,
+      options.latestRoute,
+      options.outputPolicy,
+    );
+  }
+  if (!isConfigurableRole(arguments_.responsibility)) {
+    throw new TypeError("responsibility must be researcher, planner, reviewer, or frontend for configuration changes");
+  }
+  const responsibility = arguments_.responsibility;
+  const proposedRoute = routingAction === "set" ? resolveRoleRoute({
+    provider: arguments_.provider,
+    model: arguments_.model,
+    ...(arguments_.reasoningEffort === undefined ? {} : { reasoningEffort: arguments_.reasoningEffort }),
+    ...(arguments_.maxTokens === undefined ? {} : { maxTokens: arguments_.maxTokens }),
+  }, responsibility) : undefined;
+  const proposedDispatch = routingAction === "set-dispatch"
+    ? resolveRoleDispatch(arguments_.dispatch, responsibility)
+    : undefined;
+
+  if (routingAction === "set" && proposedRoute) {
+    await requireModelRoute(
+      options.resolveCallConfig,
+      proposedRoute,
+      options.signal,
+      `${responsibility} responsibility route`,
+    );
+  }
+
+  const releaseLock = acquireOwnedStoreLock(configPath, "Odai routing configuration");
+  try {
+    let current: Pick<RoutingStore, "roles" | "dispatch">;
+    let recoveredInvalidStore = false;
+    try {
+      current = readRoutingStore(configPath);
+    } catch (error) {
+      if (routingAction !== "set") {
+        throw new Error("Odai routing configuration is invalid; set a responsibility mapping to repair it automatically", { cause: error });
+      }
+      preserveInvalidRoutingStore(configPath);
+      current = { roles: {}, dispatch: {} };
+      recoveredInvalidStore = true;
+    }
+
+    const roles: RoleRoutes = { ...current.roles };
+    const dispatch: RoleDispatches = { ...current.dispatch };
+    if (routingAction === "remove") {
+      delete roles[responsibility];
+    } else if (routingAction === "set" && proposedRoute) {
+      roles[responsibility] = proposedRoute;
+    } else if (routingAction === "set-dispatch" && proposedDispatch) {
+      dispatch[responsibility] = proposedDispatch;
+    } else if (routingAction === "reset-dispatch") {
+      delete dispatch[responsibility];
+    }
+    writeRoutingStore(configPath, roles, dispatch);
+    const event: RoutingConfiguredEvent = {
+      action: routingAction,
+      responsibility,
+      ...(roles[responsibility] ? { route: roles[responsibility] } : {}),
+      ...(dispatch[responsibility] ? { dispatch: dispatch[responsibility] } : {}),
+      validationStatus: routingAction === "set" && proposedRoute ? "verified" : undefined,
+      ...(recoveredInvalidStore ? { recoveredInvalidStore: true } : {}),
+    };
+    options.onConfigured?.(event);
+    return resultFor(
+      configPath,
+      routingAction,
+      effectiveRoutingSnapshot(configPath, configuredRoles, configuredDispatch),
+      responsibility,
+      recoveredInvalidStore,
+      undefined,
+      options.outputPolicy,
+    );
+  } finally {
+    releaseLock();
+  }
+}
+
 export function createRoutingConfigTool(
   configPath: string,
   options: RoutingConfigToolOptions = {},
@@ -492,96 +600,15 @@ export function createRoutingConfigTool(
       if (header?.origin === "subagent" || (Number.isSafeInteger(header?.delegationDepth) && (header?.delegationDepth ?? 0) > 0)) {
         throw new Error("child agents may not change Odai routing configuration");
       }
-      if (!isUnknownRecord(arguments_)) throw new TypeError("arguments must be an object");
-      const action = arguments_.action;
-      if (!["show", "set", "remove", "set-dispatch", "reset-dispatch"].includes(String(action))) {
-        throw new TypeError("action must be show, set, remove, set-dispatch, or reset-dispatch");
-      }
-
-      const routingAction = action as RoutingConfigAction;
-      if (routingAction === "show") {
-        return Promise.resolve(resultFor(
-          configPath,
-          "show",
-          effectiveRoutingSnapshot(configPath, configuredRoles, configuredDispatch),
-          undefined,
-          false,
-          latestRouteFor(agent),
-          outputPolicyFor(),
-        ));
-      }
-      if (!isConfigurableRole(arguments_.responsibility)) {
-        throw new TypeError("responsibility must be researcher, planner, reviewer, or frontend for configuration changes");
-      }
-      const responsibility = arguments_.responsibility;
-      const proposedRoute = routingAction === "set" ? resolveRoleRoute({
-        provider: arguments_.provider,
-        model: arguments_.model,
-        ...(arguments_.reasoningEffort === undefined ? {} : { reasoningEffort: arguments_.reasoningEffort }),
-        ...(arguments_.maxTokens === undefined ? {} : { maxTokens: arguments_.maxTokens }),
-      }, responsibility) : undefined;
-      const proposedDispatch = routingAction === "set-dispatch"
-        ? resolveRoleDispatch(arguments_.dispatch, responsibility)
-        : undefined;
-
-      const commit = (validationStatus?: string): RoutingConfigResult => {
-        const releaseLock = acquireOwnedStoreLock(configPath, "Odai routing configuration");
-        try {
-          let current: Pick<RoutingStore, "roles" | "dispatch">;
-          let recoveredInvalidStore = false;
-          try {
-            current = readRoutingStore(configPath);
-          } catch (error) {
-            if (routingAction !== "set") {
-              throw new Error("Odai routing configuration is invalid; set a responsibility mapping to repair it automatically", { cause: error });
-            }
-            preserveInvalidRoutingStore(configPath);
-            current = { roles: {}, dispatch: {} };
-            recoveredInvalidStore = true;
-          }
-
-          const roles: RoleRoutes = { ...current.roles };
-          const dispatch: RoleDispatches = { ...current.dispatch };
-          if (routingAction === "remove") {
-            delete roles[responsibility];
-          } else if (routingAction === "set" && proposedRoute) {
-            roles[responsibility] = proposedRoute;
-          } else if (routingAction === "set-dispatch" && proposedDispatch) {
-            dispatch[responsibility] = proposedDispatch;
-          } else if (routingAction === "reset-dispatch") {
-            delete dispatch[responsibility];
-          }
-          writeRoutingStore(configPath, roles, dispatch);
-          onConfigured(agent, {
-            action: routingAction,
-            responsibility,
-            ...(roles[responsibility] ? { route: roles[responsibility] } : {}),
-            ...(dispatch[responsibility] ? { dispatch: dispatch[responsibility] } : {}),
-            ...(validationStatus === "verified" ? { validationStatus } : {}),
-            ...(recoveredInvalidStore ? { recoveredInvalidStore: true } : {}),
-          });
-          return resultFor(
-            configPath,
-            routingAction,
-            effectiveRoutingSnapshot(configPath, configuredRoles, configuredDispatch),
-            responsibility,
-            recoveredInvalidStore,
-            undefined,
-            outputPolicyFor(),
-          );
-        } finally {
-          releaseLock();
-        }
-      };
-      if (routingAction === "set" && proposedRoute) {
-        return requireModelRoute(
-          resolveCallConfig,
-          proposedRoute,
-          execution.signal,
-          `${responsibility} responsibility route`,
-        ).then((validation) => commit(validation.status));
-      }
-      return Promise.resolve(commit());
+      return applyRoutingConfigAction(configPath, arguments_, {
+        configuredRoles,
+        configuredDispatch,
+        latestRoute: latestRouteFor(agent),
+        outputPolicy: outputPolicyFor(),
+        resolveCallConfig,
+        signal: execution.signal,
+        onConfigured: (event) => onConfigured(agent, event),
+      });
     },
   };
 }

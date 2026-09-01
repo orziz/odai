@@ -2,16 +2,24 @@
 
 本文只记当前唯一 Unreleased 候选与已冻结版本的对外能力、架构、迁移和评测口径。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.15 alpha.2 compatibility and controller-owned implementation
+## Unreleased — DSH 0.2.16 Control Center
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 保持同一个未发布 `0.2.15` 候选，精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 因 manifest 与 reference 读取契约实质变化升为 `0.3.7`、runtime contract 升为 `6`。CLI 保持 `0.0.2` 并冻结，本次不修改、测试、打包或发布。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.16` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`。CLI 保持 `0.0.2` 并冻结，本次不修改、测试、打包或发布。
+- Agent 与 Plugin 由同一份 `dsh/client/src/index.mts` 严格类型源码生成中文 Odai Control Center，展示真实当前轮职责图、session evidence 时间线、结构化事件检查器与四职责路由；总控保持宿主管理且只读，配置不冒充执行证据。浏览器 `client.js` 仅为构建制品，不再作为手写 source。
+- Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 在 preset 发布后以 `[Y/n]` 询问是否把同包 Control Center 加到指定 Web profile，回车默认安装、`n` 跳过，非交互与 JSON 模式必须显式传 `--with-control-center`。两包允许单装或同时安装；共存时 Plugin client 优先拥有唯一界面，host RPC 进程内去重，配置与 evidence 共享，移除任一包不删除另一包仍使用的持久状态。
+- Control Center 的 routing 写入经 loopback RPC 复用已有 provider/model 校验、owned lock 与原子 routing action；evidence 从 `$DSH_HOME/odai/session-evidence/` 读取，未新增 DSH 私有 session event。用户界面职责名为调查、规划、审查、设计，内部稳定契约仍为 researcher、planner、reviewer、frontend。
+- 发布前统一版本策略、兼容矩阵校验、canonical validator、DSH strict typecheck、完整 Plugin/runtime 与 Agent 测试、双包 dry-run 均通过；source release matrix 在 rc.2（188 包）与 alpha.2（215 包）纯依赖图上通过 session compatibility、Plugin/Agent load，以及两个真实 `0.2.16` tarball 的同 profile 共存，确认两个 client manifest、唯一可用 Control Center RPC 与 Standard/Odai 各自唯一 canonical section。候选尚未执行 npm publish。
+
+## 2026-08-31 — DSH 0.2.15 alpha.2 compatibility and controller-owned implementation
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.15`，精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 升为 `0.3.7`、runtime contract 升为 `6`。registry `gitHead` 均为 `91806e02194507fc54f37d1f1c92d7dc65a61093`；该已发布制品不含后续 `0.2.16` Control Center。
 - canonical 总体架构调整为 manifest schema 2 机器 owner 拓扑：五个角色与八份 reference 由唯一 map 驱动 validator 和 DSH bundle；kernel 只保留跨场景高注意门，planning 独占主任务状态与续作，support 不再复制状态或 reviewer 流程。DSH 新增 controller-only、只读 `odai_reference`，从当前 turn 已选 bundle 按 digest 读取 reference，不依赖项目 filesystem，也不向 responsibility scope 或 child 暴露。
 - canonical 内核把版本、候选、阶段、完成、提交和发布统一视为须由权威事实与真实事件证明的状态；前一状态未结束时原位更新，不再因任务批次、命名或文档叙述制造后继状态。validator 与仓库版本规则机械保持该边界。
 - release contract 为每版分别固定真实 registry 截止时间、纯 DSH 依赖图包数、Standard composition 路径与 SHA-256；Agent 以 alpha.2 Standard 为 source，保留其 goal command、spawn 子代理模型选择与 Web fetch 设置，安装到 rc.2 时只逆向移除该版不存在的行并恢复 rc.2 设置。
 - 兼容探针按宿主公开合同选择旧 `resolveSessionPreset` 或新 projection，并为 alpha.2 执行 launch-token cookie 交换与生成式 Remote endpoint 映射；rc.2 继续走原无鉴权 `/api/<method>`，共享 helper 的两条路径均有单测。
 - 独立 Executor、route card 与 Codex stage runner 退役；controller 继续持有实施、修正与最终交付，planner 只回交有界计划。旧 routing store 中的 Executor 映射在读取时忽略、下一次配置写入时清除，不使仍有效的 planner/reviewer 等映射失效。历史 Executor 对照显示同质量下 runner token `+59.4%`、墙钟约 `3.5x`、估算成本 `+6.0%`，未证明独立责任净收益。
 - C01-C34 合并到 `plans/odai-canary.md` 单一事实源，以 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification`、`all` suite 选择；默认仍为 C01-C19，显式 `--cases` 可跨 suite，六份重复活动题本删除。
-- canonical validator、三宿主路由生命周期、版本策略与 DSH typecheck 通过；Plugin/runtime `214/214`、Agent `14/14`、harness suite/旧计划兼容测试、本机 rc.2 official session / Plugin / Agent source probes 及双包 dry-run packaging 通过，临时 bundled source 与 tgz 无残留。候选尚未发布；最终真实 Plugin/Agent tgz 的联网双版本 release matrix 已通过 rc.2（188 包）与 alpha.2（215 包）纯依赖图、Standard digest、official session compatibility、Plugin load 及 Agent scope/child guard。
+- 发布前 canonical validator、三宿主路由生命周期、版本策略与 DSH typecheck 通过；Plugin/runtime `214/214`、Agent `14/14`、harness suite/旧计划兼容测试、本机 rc.2 official session / Plugin / Agent source probes、双包 dry-run packaging，以及 rc.2（188 包）与 alpha.2（215 包）真实 tgz release matrix 均通过。
 - 压缩复核恢复“低成本或可撤回不能替代对齐”，并要求方向性改进先完整呈现范围分歧、对齐真实结果、非目标与不可接受退化；最终 GPT-5.6 Sol/high intent C25-C31 为 `7/7`、`52/52`，同 fingerprint 的高风险 C04 为 `4/4`、`12/12`。其余 suite 未按该 fingerprint 重跑，不标完成。
 
 ## 2026-08-28 — DSH 0.2.13 session output recovery
