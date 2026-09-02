@@ -8,7 +8,7 @@ import { basename, dirname, resolve } from "node:path";
 
 import { acquireOwnedStoreLock } from "./store-lock.mjs";
 import type { DshAgent, DshMessage, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 export const MEMORY_STORE_SCHEMA_VERSION = 1;
 export const MEMORY_EXTRACTOR_VERSION = 1;
@@ -257,7 +257,7 @@ export function projectMemoryScope(cwd: unknown): Readonly<MemoryScope> | undefi
   return Object.freeze({ kind: "project", key: hash(canonical), label: basename(canonical) || "project" });
 }
 function eventSeqFor(agent: DshAgent, messageId: string): number | undefined {
-  const events = agent?.session?.events; if (!Array.isArray(events)) return undefined;
+  const events = sessionEvents(agent?.session);
   for (let index = events.length - 1; index >= 0; index -= 1) { const event = events[index]; if (event?.type === "user/message" && event.data?.id === messageId && Number.isSafeInteger(event.seq)) return event.seq; }
   return undefined;
 }

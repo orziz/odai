@@ -106,7 +106,7 @@ export const SUPPORTED_DSH_VERSIONS = Object.freeze(
 if (SUPPORTED_DSH_VERSIONS.length === 0 || SUPPORTED_DSH_VERSIONS.some((version) => !DSH_VERSION_PATTERN.test(version))) {
   throw new Error("odai-dsh-agent peer dependency must list exact supported DSH versions");
 }
-const SOURCE_DSH_VERSION = "0.1.2-alpha.2";
+const SOURCE_DSH_VERSION = "0.1.2-alpha.4";
 const LEGACY_DSH_VERSION = "0.1.1-rc.2";
 if (!SUPPORTED_DSH_VERSIONS.includes(SOURCE_DSH_VERSION)
   || !SUPPORTED_DSH_VERSIONS.includes(LEGACY_DSH_VERSION)
@@ -157,15 +157,24 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
     "# resolves `goals` on the host and an entry-local realm here would hide it. The",
     "# registry is keyed by session anyway, so one host instance serves every",
     "# session. What a preset chooses is whether its agent can call the goal tool.",
-  ].join("\n") + "\n", "alpha.2 goal command block");
-  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.2 spawn model selection setting");
+  ].join("\n") + "\n", "alpha.4 goal command block");
+  rendered = replaceRequired(rendered, "- id: delegation\n", [
+    "#",
+    "# `tool-subagent-report` is host-plane for the same reason as the registry,",
+    "# not because a preset may not want it: it registers a CONTINUABLE SETUP on",
+    "# that singleton rather than a tool this agent calls, and the setup list is",
+    "# not scope-aware — one copy per mounted preset means every child gets",
+    "# `report` registered once per live session, which throws on the second.",
+    "- id: delegation",
+  ].join("\n") + "\n", "alpha.4 send_message host guidance");
+  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.4 spawn model selection setting");
   rendered = replaceRequired(rendered, [
     "    # Fork omits model selection so provider/model stay equal to the parent and",
     "    # the inherited history remains eligible for KV Cache reuse. This preset",
-    "    # keeps fork continuable and accepts its child-scoped `report` additions invalidating",
-    "    # that prefix; issue #2124 tracks cache-preserving continuable fork.",
-  ].join("\n") + "\n", "", "alpha.2 fork cache guidance");
-  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.2 web fetch setting");
+    "    # keeps fork continuable; parent and child inherit the same messaging tool,",
+    "    # while the parent id and return guidance follow the inherited history.",
+  ].join("\n") + "\n", "", "alpha.4 fork messaging guidance");
+  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.4 web fetch setting");
   return rendered;
 }
 

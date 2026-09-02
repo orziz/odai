@@ -1,10 +1,10 @@
 # odai DSH 能力路由报告
 
-更新时间：2026-09-01
+更新时间：2026-09-02
 
 本报告只记录 DeepSeek Harness（DSH）能力路由的产品契约、机械验证和冻结对照。普通单模型全量与 A/B 结果见 [`evaluation-results.md`](evaluation-results.md)。单次路由样本用于证明真实换模、边界、质量和资源足迹，不用于宣称路由稳定优于单一充分能力总控。
 
-> 当前未发布候选为 canonical `0.3.7` / runtime contract `6` / DSH `0.2.18`：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。manifest schema 2 是角色/reference owner 拓扑，DSH 由 controller-only reference bridge 按当前 turn snapshot 读取 canonical references。独立 Executor、route card 与 Codex stage runner 已退役。下文含 Executor 或 stage 的数值全部是退役历史证据，保留用于解释删除决定，不是当前能力或配置说明。
+> 当前未发布候选为 canonical `0.3.7` / runtime contract `6` / DSH `0.2.19`：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。manifest schema 2 是角色/reference owner 拓扑，DSH 由 controller-only reference bridge 按当前 turn snapshot 读取 canonical references。独立 Executor、route card 与 Codex stage runner 已退役。下文含 Executor 或 stage 的数值全部是退役历史证据，保留用于解释删除决定，不是当前能力或配置说明。
 
 ## 当前候选契约
 

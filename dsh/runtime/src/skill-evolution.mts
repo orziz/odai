@@ -19,7 +19,7 @@ import { ODAI_RUNTIME_CONTRACT, loadSkillBundle, readSkillBundleFile } from "./s
 import type { SkillBundle, SkillManifest } from "./skill-bundle.mjs";
 import { acquireOwnedStoreLock } from "./store-lock.mjs";
 import type { DshAgent, DshEvent, RuntimeTool, ToolExecution, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 type EvolutionAction = "show" | "inspect" | "propose" | "validate" | "activate" | "rebase" | "rollback" | "deactivate";
 type StateAction = "activate" | "rollback" | "deactivate";
@@ -1206,8 +1206,8 @@ function requireHumanAuthorization<TAction extends AuthorizationAction>(
   phrase: string,
   action: TAction,
 ): Readonly<HumanAuthorization & { action: TAction }> {
-  const events = agent?.session?.events;
-  if (!Array.isArray(events)) throw new Error(`current open turn must contain exactly this direct human message: ${phrase}`);
+  const events = sessionEvents(agent?.session);
+  if (events.length === 0) throw new Error(`current open turn must contain exactly this direct human message: ${phrase}`);
   let boundaryIndex = -1;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]?.type === "turn/start" || events[index]?.type === "turn/end") {

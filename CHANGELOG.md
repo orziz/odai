@@ -2,12 +2,20 @@
 
 本文只记当前唯一 Unreleased 候选与已冻结版本的对外能力、架构、迁移和评测口径。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.18 Control Center default confirmation
+## Unreleased — DSH 0.2.19 alpha.4 compatibility
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.18` 候选，继续精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.19` 候选，精确支持正式 `@deepseek-ai/dsh@0.1.1-rc.2` 与 prerelease `0.1.2-alpha.4`；`0.1.2-alpha.2` 只保留为已发布 `0.2.15` 至 `0.2.18` 的历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- Agent source composition 跟随 alpha.4 Standard，保留 continuable spawn/fork 的父子双向 `send_message` 宿主能力；安装到 rc.2 时继续精确移除 goal command、spawn 模型选择与 alpha.4 fork messaging 说明，并恢复 rc.2 Web fetch 设置。rc.2 保留 parent-to-child `send_message` 与独立 child `report`，不冒充 alpha.4 的双向相邻 Agent 通信。
+- Runtime 的 session event 读取统一经过公开能力适配：alpha.4 使用 immutable `snapshotEvents()`，rc.2 继续使用 `events`。Odai 自有 durable evidence sidecar、legacy repair、职责选择、controller ownership、授权与验收合同保持不变；宿主原生通信和 Session API 不被冒充为这些治理语义。
+- Semantic memory 拒绝会持久压制事实纠正、重大风险、证据、安全或授权检查的偏好；旧 store 中此类记录仍可查看和物理删除，但不再召回、注入或确认。bounded retrieval miss 不再冒充“没有相关记忆”，controller 在要求用户重复既有上下文前须先 inspect/search；“不运行完整测试套件”等仍允许针对性验证的范围偏好保持可用。
+- Control Center 会话时间线按各组最新 evidence 从新到旧排列，数字轮次自然保持倒序；无 `turn` 的证据明确标为“轮次外事件”，若它最新则显示在顶部但保持折叠。默认选中并展开当前最新数字轮次，不再因末条轮次外 evidence 自动切换展开组；稳定轮次 key、事件窗口和 Inspector 保持原有边界。
+
+## 2026-09-01 — DSH 0.2.18 Control Center default confirmation
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.18`，精确支持 `@deepseek-ai/dsh@0.1.1-rc.2` 与 `0.1.2-alpha.2`；canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。registry `gitHead` 均为 `f2cdb96ce1f2037edd3e97c59ef414ffe42d3bb8`。
 - Agent Control Center 的可见交互提示恢复为 `[Y/n]`：直接回车、`y` 或 `yes` 同意当前已明确展示的安装、升级、替换或修复；`n`、`no` 与其他文本拒绝。EOF、非 TTY 和 JSON 仍不推断同意，自动化必须显式使用 `--with-control-center`。
 - Control Center 长会话改用稳定工作区：当前轮次板、时间线与事件检查器不再共享整页滚动，时间线和检查器分别滚动；闭合轮次不挂载事件行，展开轮次默认仅挂载最近 100 条并可逐批读取更早证据。追加式证据指纹跳过无变化轮询的 React 更新，host 通过文件 revision 在未变化时只返回 `unchanged`，不再重复读取、解析和传输最多 2000 条 JSON；事件 raw 裁剪与脱敏延迟到选中项。时间线分区与检查器信息提高到 11–13px，JSON 提高到 12px / 18px 行高。
-- DSH strict build、Agent `22/22`、Plugin/runtime `217 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过。两个真实 `0.2.18` tgz 在临时 rc.2 Web profile 中共存启动；Chromium 以 2000 条 evidence 在 1280×800 与 390×844 验证固定工作区无重叠，初始/展开事件 DOM 为 5/100，静态轮询 DOM mutation 为 0，稳定态 unchanged RPC 响应为 168 bytes。候选尚未发布。
+- 发布前 DSH strict build、Agent `22/22`、Plugin/runtime `217 pass / 3 skip`、版本策略、canonical validator 与双包 dry-pack 通过。两个真实 `0.2.18` tgz 在临时 rc.2 Web profile 中共存启动；Chromium 以 2000 条 evidence 在 1280×800 与 390×844 验证固定工作区无重叠，初始/展开事件 DOM 为 5/100，静态轮询 DOM mutation 为 0，稳定态 unchanged RPC 响应为 168 bytes。
 
 ## 2026-09-01 — DSH 0.2.17 Control Center installation recovery
 

@@ -4,11 +4,30 @@ import { resolve } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 
+interface TestingTraceItem {
+  key: string;
+  state: string;
+  role: string;
+  turn?: number;
+}
+
+interface TestingTraceGroup {
+  key: string;
+  turn?: number;
+  title: string;
+  items: TestingTraceItem[];
+}
+
+interface TestingTrace {
+  items: TestingTraceItem[];
+  turns: TestingTraceGroup[];
+  currentTurn?: TestingTraceGroup;
+  currentRoles: Record<string, TestingTraceItem | undefined>;
+}
+
 interface ClientTesting {
-  projectTrace(events: unknown[]): {
-    items: Array<{ state: string; role: string }>;
-    currentRoles: Record<string, { state: string } | undefined>;
-  };
+  defaultTraceItem(trace: TestingTrace): TestingTraceItem | undefined;
+  projectTrace(events: unknown[]): TestingTrace;
   shouldOwnSurface(): boolean;
   traceFingerprint(events: unknown[]): string;
   windowTurnItems<T extends { key: string }>(items: T[], limit: number, selectedKey?: string): T[];
@@ -50,6 +69,26 @@ test("shared client projection separates proposal, same-turn, child, and handbac
   assert.deepEqual(Array.from(trace.items, (item) => item.state), ["proposal", "same-turn", "child", "handback"]);
   assert.equal(trace.currentRoles.planner?.state, "handback");
   assert.equal(trace.currentRoles.reviewer?.state, "child");
+});
+
+test("timeline orders groups by recent evidence without defaulting to out-of-turn evidence", async () => {
+  const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
+  const trace = client.projectTrace([
+    { seq: 1, type: "odai/route-decided", data: { turn: 1, step: 1 } },
+    { seq: 2, type: "odai/routing-configured", data: {} },
+    { seq: 3, type: "odai/route-result", data: { turn: 2, step: 1, status: "completed" } },
+    { seq: 4, type: "odai/routing-configured", data: {} },
+  ]);
+  assert.deepEqual(Array.from(trace.turns, (turn) => turn.key), ["session", "turn-2", "turn-1"]);
+  assert.equal(trace.turns[0]?.title, "轮次外事件");
+  assert.equal(trace.currentTurn?.key, "turn-2");
+  assert.equal(client.defaultTraceItem(trace)?.key, "3:odai/route-result");
+
+  const sessionOnly = client.projectTrace([
+    { seq: 5, type: "odai/routing-configured", data: {} },
+  ]);
+  assert.equal(sessionOnly.currentTurn?.key, "session");
+  assert.equal(client.defaultTraceItem(sessionOnly)?.key, "5:odai/routing-configured");
 });
 
 test("timeline helpers skip unchanged append-only evidence and bound mounted rows", async () => {

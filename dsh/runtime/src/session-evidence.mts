@@ -14,7 +14,7 @@ import {
 import { dirname, resolve } from "node:path";
 
 import type { DshAgent, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 const STORE_SCHEMA_VERSION = 1;
 const GLOBAL_STATE_KEY = Symbol.for("odai.dsh.session-evidence.v2");
@@ -212,7 +212,7 @@ function stateFor(agent: DshAgent | undefined, root: string, logger: EvidenceLog
 
   const sessionId = sessionIdOf(agent);
   const state: EvidenceState = { events: [], ids: new Set(), sessionId };
-  const legacy = Array.isArray(session?.events) ? session.events.filter(isOdaiEvent) : [];
+  const legacy = sessionEvents(session).filter(isOdaiEvent);
   mergeUnique(state, legacy);
   if (sessionId) mergeUnique(state, readStoredState(root, sessionId, logger).events);
   roots.set(root, state);

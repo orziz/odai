@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
 import { classifyResponsibilityInterruptionText } from "./router.mjs";
-import type { DshEvent, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import type { DshEvent, DshSession, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 const DEFAULT_MAX_CHARS = 12_000;
 const DEFAULT_MAX_EVENTS = 80;
@@ -524,7 +524,7 @@ function coverageFor(currentTask: string, entries: readonly RoleContextEntry[]):
 }
 
 export interface RoleContextAgent {
-  readonly session?: { readonly events?: readonly DshEvent[] };
+  readonly session?: Pick<DshSession, "events" | "snapshotEvents">;
 }
 
 export function buildRoleContextPacket(
@@ -537,7 +537,7 @@ export function buildRoleContextPacket(
   const maxEvents = Number.isSafeInteger(options.maxEvents) && (options.maxEvents ?? 0) > 0 ? options.maxEvents as number : DEFAULT_MAX_EVENTS;
   const taskBudget = Math.max(32, Math.floor(maxChars / 3));
   const task = truncateText(String(taskText ?? "").trim(), taskBudget);
-  const events = Array.isArray(agent?.session?.events) ? agent.session.events : [];
+  const events = sessionEvents(agent?.session);
   const calls = nativeToolCalls(events);
   const mutableDiagnostics: MutableDiagnostics = {
     rawEventCount: events.length,

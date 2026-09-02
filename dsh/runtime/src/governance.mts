@@ -1,4 +1,5 @@
 import type { DshAgent, DshEvent, ToolExecution, ToolResult } from "./runtime-types.mjs";
+import { sessionEvents } from "./runtime-types.mjs";
 
 export const DEFAULT_CHILD_DENIED_TOOLS = Object.freeze([
   "write",
@@ -98,7 +99,7 @@ function asRouteProtection(event: DshEvent, turn: number): RouteProtection | und
 
 export function activeRouteProtection(
   agent: DshAgent | null | undefined,
-  recordedEvents: readonly DshEvent[] | undefined = agent?.session?.events,
+  recordedEvents: readonly DshEvent[] | undefined = sessionEvents(agent?.session),
 ): RouteProtection | undefined {
   if (isSubagent(agent)) return undefined;
   const events = recordedEvents;

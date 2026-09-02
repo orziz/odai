@@ -236,15 +236,22 @@ window.__ModuleLoader__.load({
       }
       const groups: TraceGroup[] = [...turns.values()].map((group) => Object.freeze({
         ...group,
-        title: group.turn === undefined ? "会话级事件" : `第 ${group.turn} 轮`,
+        title: group.turn === undefined ? "轮次外事件" : `第 ${group.turn} 轮`,
         items: Object.freeze(group.items),
-      })).sort((left, right) => (left.turn ?? -1) - (right.turn ?? -1));
-      const currentTurn = [...groups].reverse().find((group) => group.turn !== undefined) ?? groups.at(-1);
+      })).sort((left, right) => {
+        const byLatestEvidence = (right.items.at(-1)?.seq ?? -1) - (left.items.at(-1)?.seq ?? -1);
+        return byLatestEvidence || (right.turn ?? -1) - (left.turn ?? -1);
+      });
+      const currentTurn = groups.find((group) => group.turn !== undefined) ?? groups.at(0);
       const currentRoles = Object.fromEntries(ROLES.map((role): [Responsibility, TraceItem | undefined] => {
         const roleItems = currentTurn?.items.filter((item) => item.role === role) ?? [];
         return [role, roleItems.at(-1)];
       })) as Record<Responsibility, TraceItem | undefined>;
       return Object.freeze({ items: Object.freeze(items), turns: Object.freeze(groups), currentTurn, currentRoles: Object.freeze(currentRoles) });
+    }
+
+    function defaultTraceItem(trace: ProjectedTrace): TraceItem | undefined {
+      return trace.currentTurn?.items.at(-1) ?? trace.items.at(-1);
     }
 
     function formatTime(value: unknown): string {
@@ -387,15 +394,6 @@ window.__ModuleLoader__.load({
       const [expandedKey, setExpandedKey] = useState(() => trace.currentTurn?.key);
       const [visibleCount, setVisibleCount] = useState(EVENT_BATCH_SIZE);
       useEffect(() => {
-        if (!selectedKey) return;
-        const item = trace.items.find((entry) => entry.key === selectedKey);
-        const groupKey = item?.turn === undefined ? "session" : `turn-${item.turn}`;
-        if (item && groupKey !== expandedKey) {
-          setExpandedKey(groupKey);
-          setVisibleCount(EVENT_BATCH_SIZE);
-        }
-      }, [selectedKey]);
-      useEffect(() => {
         if (expandedKey && !trace.turns.some((turn) => turn.key === expandedKey)) {
           setExpandedKey(trace.currentTurn?.key);
           setVisibleCount(EVENT_BATCH_SIZE);
@@ -457,11 +455,11 @@ window.__ModuleLoader__.load({
     }
 
     function LiveView({ trace, evidenceError }: { trace: ProjectedTrace; evidenceError: string }) {
-      const [selectedKey, setSelectedKey] = useState(() => trace.items.at(-1)?.key);
+      const [selectedKey, setSelectedKey] = useState(() => defaultTraceItem(trace)?.key);
       useEffect(() => {
-        if (!trace.items.some((item) => item.key === selectedKey)) setSelectedKey(trace.items.at(-1)?.key);
-      }, [trace.items, selectedKey]);
-      const selected = trace.items.find((item) => item.key === selectedKey) ?? trace.items.at(-1);
+        if (!trace.items.some((item) => item.key === selectedKey)) setSelectedKey(defaultTraceItem(trace)?.key);
+      }, [trace.items, trace.currentTurn, selectedKey]);
+      const selected = trace.items.find((item) => item.key === selectedKey) ?? defaultTraceItem(trace);
       return h("div", { className: "odaiCC__live" },
         evidenceError ? h("div", { className: "odaiCC__alert is-error", role: "alert" }, evidenceError) : null,
         h(FlowBoard, { trace, onSelect: setSelectedKey }),
@@ -784,7 +782,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply;
     exports.inject = ["slots", "sessions", "conversationEvents", "conversationViews", "connection"];
-    exports.__testing = { projectTrace, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
+    exports.__testing = { defaultTraceItem, projectTrace, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
     return module.exports;
   },
 });

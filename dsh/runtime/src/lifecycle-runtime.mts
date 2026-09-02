@@ -66,6 +66,7 @@ import type {
   RuntimeLogger,
   UnknownRecord,
 } from "./runtime-types.mjs";
+import { sessionEvents } from "./runtime-types.mjs";
 
 interface AgentRequestEvent { agent: DshAgent; turn: number; step: number; signal: AbortSignal }
 interface AgentRequestErrorEvent extends AgentRequestEvent { provider: string; failure: UnknownRecord }
@@ -761,7 +762,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       if (step === 1 && claimSemanticMemoryTurn(agent, turn, step)) {
         const settings = memorySettingsFor(agent, turn);
         const message = directMessage;
-        const query = extractRoutingText(downstream.messages, agent?.session?.events).slice(0, config.routing.maxInputChars);
+        const query = extractRoutingText(downstream.messages, sessionEvents(agent?.session)).slice(0, config.routing.maxInputChars);
         let retrieved: readonly SemanticMemorySummary[] = [];
         let captured: readonly UnknownRecord[] = [];
         let error;
@@ -829,7 +830,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       if (routed.has(routeKey)) return downstream;
       routed.add(routeKey);
 
-      const taskText = extractRoutingText(downstream.messages, agent?.session?.events).slice(0, config.routing.maxInputChars);
+      const taskText = extractRoutingText(downstream.messages, sessionEvents(agent?.session)).slice(0, config.routing.maxInputChars);
       let routedDownstream = downstream;
       let researchPacketText = "";
       let sameTurnResearchDecision: RouteDecision | undefined;

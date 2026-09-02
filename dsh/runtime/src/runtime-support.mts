@@ -19,6 +19,7 @@ import type {
   ToolSchema,
   UnknownRecord,
 } from "./runtime-types.mjs";
+import { sessionEvents } from "./runtime-types.mjs";
 
 interface RoutedRunResult {
   stopReason: string;
@@ -26,7 +27,10 @@ interface RoutedRunResult {
 }
 
 interface RequestRouteAgent {
-  session?: { events?: readonly DshEvent[] };
+  session?: {
+    events?: readonly DshEvent[];
+    snapshotEvents?(): readonly DshEvent[];
+  };
 }
 
 interface RoutedRun {
@@ -165,8 +169,8 @@ export function sameRequestModelRoute(left?: Partial<ModelRoute>, right?: Partia
 }
 
 export function currentAgentStep(agent: DshAgent): number | undefined {
-  const events = agent?.session?.events;
-  if (!Array.isArray(events)) return undefined;
+  const events = sessionEvents(agent?.session);
+  if (events.length === 0) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]?.type === "step/start" && Number.isSafeInteger(events[index].data?.step)) return events[index].data.step;
   }
@@ -184,8 +188,8 @@ export function routeFromConfig(config: unknown): ModelRoute | undefined {
 }
 
 export function latestRequestRoute(localAgent: RequestRouteAgent | undefined): ModelRoute | undefined {
-  const events = localAgent?.session?.events;
-  if (!Array.isArray(events)) return undefined;
+  const events = sessionEvents(localAgent?.session);
+  if (events.length === 0) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type !== "request/header") continue;
@@ -436,8 +440,8 @@ export function isSubagentSession(agent: DshAgent): boolean {
 }
 
 export function routedRoleOf(agent: DshAgent): string | undefined {
-  const events = agent?.session?.events;
-  if (!Array.isArray(events)) return undefined;
+  const events = sessionEvents(agent?.session);
+  if (events.length === 0) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type !== "subagent/descriptor") continue;

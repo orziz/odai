@@ -175,4 +175,4 @@ The probe reports both compaction and exactly matched cache reads. `--ordinary-o
 
 A provider cache is still best-effort: even identical calls can miss because of upstream writes, expiry, or routing. Changing compaction to a low controller ceiling is not a valid cache fix because it risks an incomplete checkpoint; the first controller request after a landed summary must also build the new summary prefix because it no longer matches the replaced history.
 
-The `0.2.18` candidate, like published `0.2.15`, `0.2.16`, and `0.2.17`, accepts exactly `@deepseek-ai/dsh@0.1.1-rc.2` and `0.1.2-alpha.2`; every other rc, alpha, or `0.1.2` release remains unsupported until its own isolated real-load contract is added.
+The `0.2.19` candidate accepts exactly formal `@deepseek-ai/dsh@0.1.1-rc.2` and prerelease `0.1.2-alpha.4`; published `0.2.15` through `0.2.18` retain their historical alpha.2 contract. Every other rc, alpha, or `0.1.2` release remains unsupported until its own isolated real-load contract is added.

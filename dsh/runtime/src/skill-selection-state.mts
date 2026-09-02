@@ -1,5 +1,5 @@
 import type { DshAgent } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 const SHARED_SELECTION_STATE = Symbol.for("odai.dsh.skill-selection-state.v1");
 type SelectionGeneration = number | "unknown";
@@ -41,8 +41,8 @@ function sharedStore(): SharedSelectionStore {
 export function currentAgentTurn(agent: DshAgent | null | undefined): number | undefined {
   const phaseTurn = agent?.phase?.turn;
   if (Number.isSafeInteger(phaseTurn) && (phaseTurn ?? -1) >= 0) return phaseTurn;
-  const events = agent?.session?.events;
-  if (!Array.isArray(events)) return undefined;
+  const events = sessionEvents(agent?.session);
+  if (events.length === 0) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     const turn = event?.data?.turn;
