@@ -10,7 +10,8 @@ import { readDshVersion } from "../src/dsh-version.mjs";
 import {
   inspectAgentInstallation,
   installAgentPreset,
-  SUPPORTED_DSH_VERSIONS,
+  supportsDshVersion,
+  SUPPORTED_DSH_RANGE,
   uninstallAgentPreset,
 } from "../src/installer.mjs";
 import type { SessionCompatResult } from "../../runtime/build/session-compat.mjs";
@@ -139,10 +140,10 @@ function assertDshVersion(): string {
   try {
     actual = readDshVersion({ dsh });
   } catch (error) {
-    throw new Error(`cannot run ${dsh} -V; install one of ${SUPPORTED_DSH_VERSIONS.join(", ")} before installing the preset`);
+    throw new Error(`cannot run ${dsh} -V; install DSH ${SUPPORTED_DSH_RANGE} before installing the preset`);
   }
-  if (!SUPPORTED_DSH_VERSIONS.includes(actual)) {
-    throw new Error(`unsupported DSH version ${actual || "<empty>"}; expected one of ${SUPPORTED_DSH_VERSIONS.join(", ")}`);
+  if (!supportsDshVersion(actual)) {
+    throw new Error(`unsupported DSH version ${actual || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
   }
   return actual;
 }

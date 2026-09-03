@@ -1,10 +1,16 @@
 # Changelog
 
-本文只记当前唯一 Unreleased 候选与已冻结版本的对外能力、架构、迁移和评测口径。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
+本文只记当前已定稿发布版与已冻结版本的对外能力、架构、迁移和评测口径；npm registry 上架是后续独立步骤。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.19 alpha.4 compatibility
+## 2026-09-03 — DSH 0.2.20 alpha.5 range compatibility
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布 `0.2.19` 候选，精确支持正式 `@deepseek-ai/dsh@0.1.1-rc.2` 与 prerelease `0.1.2-alpha.4`；`0.1.2-alpha.2` 只保留为已发布 `0.2.15` 至 `0.2.18` 的历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 的同步发布版锁定为 `0.2.20`；peer 保留正式 `@deepseek-ai/dsh@0.1.1-rc.2`，并以 `>=0.1.2-alpha.5 <0.1.2` 接纳 alpha.5 起的同一 prerelease 线。release matrix 的当前实测锚点为 rc.2 与 alpha.5；已发布 `0.2.19` 的 alpha.4 兼容只保留在历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- Agent source composition 跟随 alpha.5 Standard；该 Standard SHA-256 与 alpha.4 相同。rc.2 继续使用精确 legacy renderer，范围内的 `0.1.2` prerelease 使用 alpha.5 source renderer。alpha.5 的上游变化集中在升级后的存储兼容与损坏记录备份跳过；Odai 使用的 Session event、持续子 Agent 与 `send_message` 契约无新增变化。
+- Control Center 提高品牌、导航、路由标签、模型值、调度控件与表单字号；宽屏路由页把模型映射和调度方式并排，900px 以下仍恢复堆叠，并缩减角色行纵向 padding，改善高分辨率下的可读性和信息密度，不改变路由写入与 evidence 行为。
+
+## 2026-09-02 — DSH 0.2.19 alpha.4 compatibility
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.19`，精确支持正式 `@deepseek-ai/dsh@0.1.1-rc.2` 与 prerelease `0.1.2-alpha.4`；`0.1.2-alpha.2` 只保留为已发布 `0.2.15` 至 `0.2.18` 的历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`；registry `gitHead` 均为 `853dade68ddd561568ffe430b540dfa64cff29ab`。
 - Agent source composition 跟随 alpha.4 Standard，保留 continuable spawn/fork 的父子双向 `send_message` 宿主能力；安装到 rc.2 时继续精确移除 goal command、spawn 模型选择与 alpha.4 fork messaging 说明，并恢复 rc.2 Web fetch 设置。rc.2 保留 parent-to-child `send_message` 与独立 child `report`，不冒充 alpha.4 的双向相邻 Agent 通信。
 - Runtime 的 session event 读取统一经过公开能力适配：alpha.4 使用 immutable `snapshotEvents()`，rc.2 继续使用 `events`。Odai 自有 durable evidence sidecar、legacy repair、职责选择、controller ownership、授权与验收合同保持不变；宿主原生通信和 Session API 不被冒充为这些治理语义。
 - Semantic memory 拒绝会持久压制事实纠正、重大风险、证据、安全或授权检查的偏好；旧 store 中此类记录仍可查看和物理删除，但不再召回、注入或确认。bounded retrieval miss 不再冒充“没有相关记忆”，controller 在要求用户重复既有上下文前须先 inspect/search；“不运行完整测试套件”等仍允许针对性验证的范围偏好保持可用。

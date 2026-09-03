@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { satisfies, validRange } from "semver";
 import { parse as parseYaml } from "yaml";
 
 import type {
@@ -97,21 +98,20 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const DSH_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
-if (!peerRange) throw new Error("odai-dsh-agent peer dependency is missing @deepseek-ai/dsh");
-export const SUPPORTED_DSH_VERSIONS = Object.freeze(
-  peerRange.split(/\s*\|\|\s*/u).filter(Boolean),
-);
-if (SUPPORTED_DSH_VERSIONS.length === 0 || SUPPORTED_DSH_VERSIONS.some((version) => !DSH_VERSION_PATTERN.test(version))) {
-  throw new Error("odai-dsh-agent peer dependency must list exact supported DSH versions");
-}
-const SOURCE_DSH_VERSION = "0.1.2-alpha.4";
+const EXPECTED_DSH_RANGE = "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2";
+const SOURCE_DSH_VERSION = "0.1.2-alpha.5";
 const LEGACY_DSH_VERSION = "0.1.1-rc.2";
-if (!SUPPORTED_DSH_VERSIONS.includes(SOURCE_DSH_VERSION)
-  || !SUPPORTED_DSH_VERSIONS.includes(LEGACY_DSH_VERSION)
-  || SUPPORTED_DSH_VERSIONS.length !== 2) {
-  throw new Error(`Odai Agent peer must target exactly ${LEGACY_DSH_VERSION} and source composition ${SOURCE_DSH_VERSION}`);
+const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
+  throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
+}
+export const SUPPORTED_DSH_RANGE = peerRange;
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, SOURCE_DSH_VERSION]);
+if (SUPPORTED_DSH_VERSIONS.some((version) => !satisfies(version, SUPPORTED_DSH_RANGE))) {
+  throw new Error(`Odai Agent tested DSH versions must satisfy ${SUPPORTED_DSH_RANGE}`);
+}
+export function supportsDshVersion(version: string): boolean {
+  return satisfies(version, SUPPORTED_DSH_RANGE);
 }
 export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 const requiredFiles = Object.freeze([
@@ -138,11 +138,11 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
   if (typeof composition !== "string" || composition.trim() === "") {
     throw new TypeError("agent composition must be a non-empty string");
   }
-  if (!SUPPORTED_DSH_VERSIONS.includes(dshVersion)) {
-    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected one of ${SUPPORTED_DSH_VERSIONS.join(", ")}`);
+  if (!supportsDshVersion(dshVersion)) {
+    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
   }
   let rendered = composition.replace(/\r\n/gu, "\n");
-  if (dshVersion === SOURCE_DSH_VERSION) return rendered;
+  if (dshVersion !== LEGACY_DSH_VERSION) return rendered;
 
   rendered = replaceRequired(rendered, [
     "# The goal service and session driver stay on the host plane, where the Gateway",
@@ -157,7 +157,7 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
     "# resolves `goals` on the host and an entry-local realm here would hide it. The",
     "# registry is keyed by session anyway, so one host instance serves every",
     "# session. What a preset chooses is whether its agent can call the goal tool.",
-  ].join("\n") + "\n", "alpha.4 goal command block");
+  ].join("\n") + "\n", "alpha.5 goal command block");
   rendered = replaceRequired(rendered, "- id: delegation\n", [
     "#",
     "# `tool-subagent-report` is host-plane for the same reason as the registry,",
@@ -166,15 +166,15 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
     "# not scope-aware — one copy per mounted preset means every child gets",
     "# `report` registered once per live session, which throws on the second.",
     "- id: delegation",
-  ].join("\n") + "\n", "alpha.4 send_message host guidance");
-  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.4 spawn model selection setting");
+  ].join("\n") + "\n", "alpha.5 send_message host guidance");
+  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.5 spawn model selection setting");
   rendered = replaceRequired(rendered, [
     "    # Fork omits model selection so provider/model stay equal to the parent and",
     "    # the inherited history remains eligible for KV Cache reuse. This preset",
     "    # keeps fork continuable; parent and child inherit the same messaging tool,",
     "    # while the parent id and return guidance follow the inherited history.",
-  ].join("\n") + "\n", "", "alpha.4 fork messaging guidance");
-  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.4 web fetch setting");
+  ].join("\n") + "\n", "", "alpha.5 fork messaging guidance");
+  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.5 web fetch setting");
   return rendered;
 }
 
@@ -202,8 +202,8 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
   const dshHome = resolveDshHome(options.dshHome);
   const sourceRoot = resolve(options.sourceRoot ?? defaultSourceRoot);
   const dshVersion = options.dshVersion ?? SUPPORTED_DSH_VERSION;
-  if (!SUPPORTED_DSH_VERSIONS.includes(dshVersion)) {
-    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected one of ${SUPPORTED_DSH_VERSIONS.join(", ")}`);
+  if (!supportsDshVersion(dshVersion)) {
+    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
   }
   const targetRoot = resolve(dshHome, ".agent-presets");
   const target = resolve(targetRoot, presetId);

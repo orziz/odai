@@ -16,7 +16,7 @@ A planner route identical to the current controller remains inline and does not 
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the `0.2.19` Agent installer candidate supports exactly formal `dsh@0.1.1-rc.2` and prerelease `dsh@0.1.2-alpha.4`.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the finalized `0.2.20` Agent release metadata supports formal `dsh@0.1.1-rc.2` plus `>=0.1.2-alpha.5 <0.1.2`. npm registry publication is a separate follow-up step.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -125,6 +125,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The `0.2.19` candidate accepts exactly formal `@deepseek-ai/dsh@0.1.1-rc.2` and prerelease `0.1.2-alpha.4`; published `0.2.15` through `0.2.18` retain their historical alpha.2 contract. It does not imply compatibility with another rc, alpha, or `0.1.2` release. The Agent source follows the alpha.4 Standard composition from `@deepseek-ai/dsh-agent-presets` and deterministically renders the rc.2-only differences during installation. Runtime session history reads use alpha.4 `snapshotEvents()` when present and the rc.2 `events` array otherwise. Each release contract owns its Standard path and digest, so a moved package or changed row fails the matrix instead of silently reusing another release's composition.
+The finalized `0.2.20` release metadata accepts formal `@deepseek-ai/dsh@0.1.1-rc.2` and the prerelease range `>=0.1.2-alpha.5 <0.1.2`; rc.2 and alpha.5 are the exact release-matrix anchors. npm registry publication is a separate follow-up step. Published `0.2.19` retains its exact alpha.4 contract, and `0.2.15` through `0.2.18` retain their historical alpha.2 contract. Alpha.4, other `0.1.1` previews, and stable `0.1.2` remain outside the current range; a later in-range prerelease is accepted under the upstream SemVer contract but is not represented as already tested. The Agent source follows the alpha.5 Standard composition from `@deepseek-ai/dsh-agent-presets` and deterministically renders the rc.2-only differences during installation. Runtime session history reads use `snapshotEvents()` when present and the rc.2 `events` array otherwise. Release contracts separately pin the current range, source version, and each tested anchor's Standard path and digest, so a moved package or changed row fails the matrix.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.

@@ -1,10 +1,11 @@
 # Odai DSH 版本兼容对照表
 
-本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。表中的 DSH 版本是逐项验证并明确声明的精确版本，不表示更早或更新的 DSH 版本也兼容。
+本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。历史行是逐项验证的精确版本；从 `0.2.20` 起，支持范围与 release matrix 实测锚点分别声明，不把范围内未来版本写成已经实测。
 
 | odai-dsh-plugin | odai-dsh-agent | 支持的 @deepseek-ai/dsh | 说明 |
 | --- | --- | --- | --- |
-| `0.2.19` | `0.2.19` | `0.1.1-rc.2`、`0.1.2-alpha.4` | 当前未发布候选；以 alpha.4 Standard 为 source，按公开 `snapshotEvents()` 适配 Session 读取，保留 rc.2 精确回渲染与默认行为 |
+| `0.2.20` | `0.2.20` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 发布元数据已定稿，registry 上架由后续步骤完成；实测锚点为 rc.2 与 alpha.5，以 alpha.5 Standard 为 source，范围内后续 `0.1.2` prerelease 共用该 renderer |
+| `0.2.19` | `0.2.19` | `0.1.1-rc.2`、`0.1.2-alpha.4` | 已发布；以 alpha.4 Standard 为 source，按公开 `snapshotEvents()` 适配 Session 读取，保留 rc.2 精确回渲染与默认行为 |
 | `0.2.18` | `0.2.18` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；Control Center 可见交互提示恢复 `[Y/n]`，直接回车默认同意，EOF 与非交互仍拒绝 |
 | `0.2.17` | `0.2.17` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；修复 Agent Control Center 来源/版本误判，要求显式 `y/yes` 授权并为失败 profile 变更提供回滚 |
 | `0.2.16` | `0.2.16` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；在 0.2.15 契约上增加 Agent/Plugin 共享中文 Control Center、受 loopback 保护的真实 evidence/routing RPC、Agent `[Y/n]` 安装入口，以及单装和双装共存；其 Agent 状态检查会把已有本地 dependency 误报为 installed |
@@ -38,9 +39,9 @@
 ## 使用规则
 
 1. 从同一行选择版本组合，不要混用不同版本的 Plugin 与 Agent。`0.0.10` 及之后的两个包必须保持相同版本。
-2. “支持的 DSH”是精确白名单。`0.2.15` 至 `0.2.18` 只支持 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持 `0.1.1-rc.2` 与 `0.1.2-alpha.4`。alpha.4 是上游 prerelease，rc.2 仍是当前正式支持；任何一行都不自动承诺兼容其他 rc、alpha 或 `0.1.2` 版本。
-3. 后续版本可以只对应一个 DSH 版本；届时该行只会列出一个精确版本，不再默认保留旧版兼容。
+2. `0.2.15` 至 `0.2.18` 只支持精确的 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持精确的 rc.2 与 alpha.4。`0.2.20` 改为保留精确 rc.2，并接纳 alpha.5 起、稳定版 `0.1.2` 之前的同一 prerelease 线；alpha.4 不属于当前范围。
+3. `dshVersions` 只表示 release matrix 完整跑过的精确锚点，`dshRange` 才是当前支持范围。范围内未来 prerelease 按上游 SemVer 兼容承诺共用 alpha.5 renderer，不得据此宣称已经跑过该未来版本。rc.2 仍是当前正式支持，alpha.5 仍是上游 prerelease。
 4. 运行时兼容不等于 DSH 自有数据可以跨版本迁移。特别是 rc.8 的 SQLite 存储格式与旧版本不兼容，切换 DSH 版本前应按上游说明备份和迁移宿主数据。
 5. 从 `0.2.5` 起，本仓库自有的新版本标识不得包含数字字符 `4`；历史版本（如 `0.0.4`）按事实保留，上游 DSH 版本不受该规则限制。
 
-DSH 包兼容关系的机器可读事实源是 [`compatibility.json`](./compatibility.json)；[`release-contracts.json`](./release-contracts.json) 进一步固定每个受支持 DSH release 的发布时间边界、纯依赖图包数、Standard composition 路径和摘要，`scripts/verify-dsh-release-matrix.mjs` 据此复现 source 或真实 tgz 的隔离 load。仓库自有版本规范的事实源是 [`../version-policy.json`](../version-policy.json)。发布前校验器会同时强制版本规范、当前双包 `peerDependencies`、对应矩阵行与 release contracts 完全一致；本文是供人查阅的展开视图。
+DSH 包兼容关系的机器可读事实源是 [`compatibility.json`](./compatibility.json)；[`release-contracts.json`](./release-contracts.json) 进一步固定当前范围、source 版本，以及每个实测锚点的发布时间边界、纯依赖图包数、Standard composition 路径和摘要，`scripts/verify-dsh-release-matrix.mjs` 据此复现 source 或真实 tgz 的隔离 load。仓库自有版本规范的事实源是 [`../version-policy.json`](../version-policy.json)。发布前校验器会同时强制版本规范、当前双包 `peerDependencies`、对应矩阵行与 release contracts 完全一致；本文是供人查阅的展开视图。

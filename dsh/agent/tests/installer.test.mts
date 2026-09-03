@@ -11,6 +11,8 @@ import {
   installAgentPreset,
   renderAgentCompositionForDsh,
   resolveDshHome,
+  supportsDshVersion,
+  SUPPORTED_DSH_RANGE,
   SUPPORTED_DSH_VERSIONS,
   uninstallAgentPreset,
 } from "../src/installer.mjs";
@@ -27,23 +29,29 @@ function jsonRecord(text: string): Record<string, unknown> {
   return value;
 }
 
-test("Agent composition targets only the supported DSH Standard contract", async () => {
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-alpha.4"]);
+test("Agent composition follows the supported DSH range and two renderer families", async () => {
+  assert.equal(SUPPORTED_DSH_RANGE, "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-alpha.5"]);
+  assert.equal(supportsDshVersion("0.1.2-alpha.6"), true);
+  assert.equal(supportsDshVersion("0.1.2-beta.1"), true);
+  for (const unsupported of ["0.1.1-rc.3", "0.1.2-alpha.4", "0.1.2", "0.1.3"]) {
+    assert.equal(supportsDshVersion(unsupported), false, unsupported);
+  }
+
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.4"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.5"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.6"), normalizedSource);
   const legacy = renderAgentCompositionForDsh(source, "0.1.1-rc.2");
   assert.doesNotMatch(legacy, /command-goal|modelSelectionSettings/u);
   assert.match(legacy, /fetch: false/u);
   assert.match(legacy, /id: tool-goal/u);
   assert.throws(
     () => renderAgentCompositionForDsh(source.replace("    fetch: true", "    fetch: false"), "0.1.1-rc.2"),
-    /missing alpha\.4 web fetch setting/u,
+    /missing alpha\.5 web fetch setting/u,
   );
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.0-rc.7"), /unsupported DSH version/u);
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.1"), /unsupported DSH version/u);
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.0-rc.6"), /unsupported DSH version/u);
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.0-rc.9"), /unsupported DSH version/u);
+  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.2-alpha.4"), /unsupported DSH version/u);
+  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.2"), /unsupported DSH version/u);
 });
 
 test("managed preset rejects removed DSH releases before writing", async () => {
@@ -52,7 +60,7 @@ test("managed preset rejects removed DSH releases before writing", async () => {
   const dshHome = resolve(scratch, "home");
   try {
     await writeFixture(sourceRoot, "runtime");
-    for (const dshVersion of ["0.1.0-rc.7", "0.1.1-rc.1"]) {
+    for (const dshVersion of ["0.1.0-rc.7", "0.1.1-rc.1", "0.1.2-alpha.4", "0.1.2"]) {
       await assert.rejects(
         installAgentPreset({ dshHome, sourceRoot, dshVersion }),
         /unsupported DSH version/u,

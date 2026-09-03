@@ -7,12 +7,20 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { satisfies, validRange } from "semver";
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contractsPath = resolve(repoRoot, "dsh/release-contracts.json");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const document = JSON.parse(await readFile(contractsPath, "utf8"));
-if (document.schemaVersion !== 1 || !Array.isArray(document.releases) || document.releases.length === 0) {
-  throw new Error("dsh/release-contracts.json must declare schemaVersion 1 and non-empty releases");
+if (document.schemaVersion !== 2
+  || typeof document.dshRange !== "string"
+  || validRange(document.dshRange) === null
+  || typeof document.sourceDshVersion !== "string"
+  || !Array.isArray(document.releases)
+  || document.releases.length === 0
+  || !document.releases.some((release) => release.version === document.sourceDshVersion)) {
+  throw new Error("dsh/release-contracts.json must declare schemaVersion 2, a valid range and source, and non-empty releases");
 }
 
 const options = parseArguments(process.argv.slice(2));
@@ -91,7 +99,7 @@ try {
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }
-process.stdout.write(`${JSON.stringify({ releases: results, verified: true }, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify({ dshRange: document.dshRange, sourceDshVersion: document.sourceDshVersion, releases: results, verified: true }, null, 2)}\n`);
 
 function parseArguments(arguments_) {
   const versions = [];
@@ -116,6 +124,7 @@ function requiredValue(arguments_, index, option) {
 
 function validateRelease(release) {
   if (!release || typeof release.version !== "string"
+    || !satisfies(release.version, document.dshRange)
     || typeof release.publishedBefore !== "string"
     || !Number.isSafeInteger(release.expectedDshPackages)
     || release.expectedDshPackages <= 0

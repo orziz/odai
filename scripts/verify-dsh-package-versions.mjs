@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { satisfies, validRange } from "semver";
+
 import { assertRepositoryVersionPolicy } from "./version-policy.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -14,13 +16,13 @@ const packages = [
   readPackage("dsh/agent/package.json", "odai-dsh-agent", "agent"),
 ];
 const versions = new Set(packages.map((entry) => entry.version));
-const dshVersions = new Set(packages.map((entry) => entry.dshVersion));
+const dshRanges = new Set(packages.map((entry) => entry.dshRange));
 
 if (versions.size !== 1) {
   throw new Error(`DSH package versions must match: ${packages.map((entry) => `${entry.name}@${entry.version}`).join(", ")}`);
 }
-if (dshVersions.size !== 1) {
-  throw new Error(`DSH peer versions must match: ${packages.map((entry) => `${entry.name}=>${entry.dshVersion}`).join(", ")}`);
+if (dshRanges.size !== 1) {
+  throw new Error(`DSH peer ranges must match: ${packages.map((entry) => `${entry.name}=>${entry.dshRange}`).join(", ")}`);
 }
 
 const matrix = readCompatibilityMatrix();
@@ -33,16 +35,17 @@ const currentSurfaces = packages.map((entry) => entry.surface).sort();
 if (JSON.stringify([...release.surfaces].sort()) !== JSON.stringify(currentSurfaces)) {
   throw new Error(`DSH package ${packageVersion} must map surfaces ${currentSurfaces.join(", ")}, found ${release.surfaces.join(", ")}`);
 }
-const expectedDshVersion = release.dshVersions.join(" || ");
-if (packages[0].dshVersion !== expectedDshVersion) {
-  throw new Error(`DSH package ${packageVersion} peer must match compatibility matrix: expected ${expectedDshVersion}, found ${packages[0].dshVersion}`);
+if (packages[0].dshRange !== release.dshRange) {
+  throw new Error(`DSH package ${packageVersion} peer must match compatibility matrix: expected ${release.dshRange}, found ${packages[0].dshRange}`);
 }
 const releaseContracts = readReleaseContracts();
-if (JSON.stringify(releaseContracts) !== JSON.stringify(release.dshVersions)) {
-  throw new Error(`dsh/release-contracts.json must exactly cover ${release.dshVersions.join(", ")}`);
+if (releaseContracts.dshRange !== release.dshRange
+  || releaseContracts.sourceDshVersion !== release.sourceDshVersion
+  || JSON.stringify(releaseContracts.dshVersions) !== JSON.stringify(release.dshVersions)) {
+  throw new Error(`dsh/release-contracts.json must match the ${packageVersion} range, source, and tested anchors`);
 }
 
-process.stdout.write(`DSH package versions match: ${packageVersion}; peer @deepseek-ai/dsh ${expectedDshVersion}; compatibility matrix verified\n`);
+process.stdout.write(`DSH package versions match: ${packageVersion}; peer @deepseek-ai/dsh ${release.dshRange}; tested ${release.dshVersions.join(", ")}; compatibility matrix verified\n`);
 
 function readPackage(relativePath, expectedName, surface) {
   const packageJson = JSON.parse(readFileSync(resolve(repoRoot, relativePath), "utf8"));
@@ -52,24 +55,28 @@ function readPackage(relativePath, expectedName, surface) {
   if (!VERSION_PATTERN.test(packageJson.version)) {
     throw new Error(`${relativePath} has an invalid version: ${packageJson.version || "(missing)"}`);
   }
-  const dshVersion = packageJson.peerDependencies?.["@deepseek-ai/dsh"];
-  const exactVersions = typeof dshVersion === "string" ? dshVersion.split(/\s*\|\|\s*/u).filter(Boolean) : [];
-  if (exactVersions.length === 0 || new Set(exactVersions).size !== exactVersions.length
-    || exactVersions.some((version) => !VERSION_PATTERN.test(version))) {
-    throw new Error(`${relativePath} must list exact @deepseek-ai/dsh versions joined by ||, found: ${dshVersion || "(missing)"}`);
+  const dshRange = packageJson.peerDependencies?.["@deepseek-ai/dsh"];
+  if (typeof dshRange !== "string" || validRange(dshRange) === null) {
+    throw new Error(`${relativePath} must declare a valid @deepseek-ai/dsh SemVer range, found: ${dshRange || "(missing)"}`);
   }
-  return { name: packageJson.name, version: packageJson.version, dshVersion, surface };
+  return { name: packageJson.name, version: packageJson.version, dshRange, surface };
 }
 
 function readReleaseContracts() {
   const relativePath = "dsh/release-contracts.json";
   const document = JSON.parse(readFileSync(resolve(repoRoot, relativePath), "utf8"));
-  if (document.schemaVersion !== 1 || !Array.isArray(document.releases) || document.releases.length === 0) {
-    throw new Error(`${relativePath} must declare schemaVersion 1 and non-empty releases`);
+  if (document.schemaVersion !== 2
+    || typeof document.dshRange !== "string"
+    || validRange(document.dshRange) === null
+    || !VERSION_PATTERN.test(document.sourceDshVersion)
+    || !Array.isArray(document.releases)
+    || document.releases.length === 0) {
+    throw new Error(`${relativePath} must declare schemaVersion 2, a valid range and source, and non-empty releases`);
   }
   const versions = document.releases.map((release, index) => {
     const label = `${relativePath} releases[${index}]`;
     if (!release || !VERSION_PATTERN.test(release.version)
+      || !satisfies(release.version, document.dshRange)
       || typeof release.publishedBefore !== "string"
       || !Number.isSafeInteger(release.expectedDshPackages)
       || release.expectedDshPackages <= 0
@@ -78,12 +85,13 @@ function readReleaseContracts() {
       || release.standardCompositionPath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
       || typeof release.standardCompositionSha256 !== "string"
       || !/^[a-f0-9]{64}$/u.test(release.standardCompositionSha256)) {
-      throw new Error(`${label} is invalid`);
+      throw new Error(`${label} is invalid or outside ${document.dshRange}`);
     }
     return release.version;
   });
   if (new Set(versions).size !== versions.length) throw new Error(`${relativePath} must list unique releases`);
-  return versions;
+  if (!versions.includes(document.sourceDshVersion)) throw new Error(`${relativePath} sourceDshVersion must be a tested release`);
+  return { dshRange: document.dshRange, sourceDshVersion: document.sourceDshVersion, dshVersions: versions };
 }
 
 function readCompatibilityMatrix() {
@@ -123,11 +131,20 @@ function readCompatibilityMatrix() {
       || exactDshVersions.some((version) => !VERSION_PATTERN.test(version))) {
       throw new Error(`${label} must list unique exact dshVersions`);
     }
+    const dshRange = entry.dshRange ?? exactDshVersions.join(" || ");
+    const sourceDshVersion = entry.sourceDshVersion ?? exactDshVersions.at(-1);
+    if (typeof dshRange !== "string" || validRange(dshRange) === null
+      || exactDshVersions.some((version) => !satisfies(version, dshRange))) {
+      throw new Error(`${label} must declare a valid dshRange containing every tested version`);
+    }
+    if (!exactDshVersions.includes(sourceDshVersion)) {
+      throw new Error(`${label} sourceDshVersion must be a tested version`);
+    }
     for (const version of packageVersions) {
       if (releases.has(version)) {
         throw new Error(`${relativePath} maps package version ${version} more than once`);
       }
-      releases.set(version, { surfaces: [...surfaces], dshVersions: [...exactDshVersions] });
+      releases.set(version, { surfaces: [...surfaces], dshRange, dshVersions: [...exactDshVersions], sourceDshVersion });
     }
   }
   return { releases };
