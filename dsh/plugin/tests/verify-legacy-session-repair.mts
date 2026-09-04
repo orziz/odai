@@ -47,6 +47,18 @@ const dsh = process.env.DSH_BIN ?? "dsh";
 const dshRoot = process.env.DSH_PACKAGE_ROOT
   ? resolve(process.env.DSH_PACKAGE_ROOT)
   : findDshPackageRoot(dsh);
+const pluginMetadata: unknown = JSON.parse(readFileSync(resolve(pluginRoot, "package.json"), "utf8"));
+const dshMetadata: unknown = JSON.parse(readFileSync(resolve(dshRoot, "package.json"), "utf8"));
+const expectedDshVersion = isRecord(pluginMetadata) && isRecord(pluginMetadata.peerDependencies)
+  ? pluginMetadata.peerDependencies["@deepseek-ai/dsh"]
+  : undefined;
+const actualDshVersion = isRecord(dshMetadata) ? dshMetadata.version : undefined;
+if (typeof expectedDshVersion !== "string" || typeof actualDshVersion !== "string") {
+  throw new Error("cannot resolve the Plugin or DSH version contract");
+}
+if (actualDshVersion !== expectedDshVersion) {
+  throw new Error(`Plugin verification expects DSH ${expectedDshVersion}, found ${actualDshVersion}; run the isolated release matrix instead`);
+}
 const repairPath = [
   resolve(pluginRoot, "runtime/legacy-session-repair.mjs"),
   resolve(pluginRoot, "../runtime/build/legacy-session-repair.mjs"),

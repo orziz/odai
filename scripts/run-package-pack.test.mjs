@@ -7,12 +7,12 @@ import { resolve } from "node:path";
 import { packageManagerInvocation, runPackagePack } from "./run-package-pack.mjs";
 
 test("pack runner uses the Windows command shim through a shell", () => {
-  assert.deepEqual(packageManagerInvocation("win32", undefined), {
+  assert.deepEqual(packageManagerInvocation("win32", null), {
     command: "npm.cmd",
     prefixArgs: [],
     shell: true,
   });
-  assert.deepEqual(packageManagerInvocation("linux", undefined), {
+  assert.deepEqual(packageManagerInvocation("linux", null), {
     command: "npm",
     prefixArgs: [],
     shell: false,

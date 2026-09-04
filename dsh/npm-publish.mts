@@ -291,8 +291,9 @@ async function main(): Promise<void> {
   npm(["--prefix", AGENT_DIR, "test"], { label: "Agent tests" });
   npm(["--prefix", PLUGIN_DIR, "run", "pack:dry-run"], { label: "Plugin dry-run packaging" });
   npm(["--prefix", AGENT_DIR, "run", "pack:dry-run"], { label: "Agent dry-run packaging" });
-  npm(["--prefix", PLUGIN_DIR, "run", "verify:dsh"], { label: "Plugin DSH verification" });
-  npm(["--prefix", AGENT_DIR, "run", "verify:dsh"], { label: "Agent DSH verification" });
+  run(process.execPath, [resolve(REPO_ROOT, "scripts/verify-dsh-release-matrix.mjs")], {
+    label: "Isolated DSH release-matrix verification",
+  });
 
   await publishIfMissing(plugin, PLUGIN_DIR, gitHead);
   await publishIfMissing(agent, AGENT_DIR, gitHead);

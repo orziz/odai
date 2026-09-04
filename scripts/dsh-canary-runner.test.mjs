@@ -12,6 +12,7 @@ import { observeProviderOutputCeiling } from "./dsh-output-budget-observation.mj
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runner = resolve(repoRoot, "scripts/dsh-canary-runner.mjs");
+const fakeDshWebFixture = resolve(repoRoot, "scripts/fixtures/fake-dsh-web-rc1.mjs");
 
 const routingBlock = [
   "    routing:",
@@ -293,7 +294,7 @@ test("DSH canary runner isolates Plugin and Agent routing surfaces", async () =>
     });
 
     const fakeDsh = resolve(root, "fake-dsh-web.mjs");
-    await writeFile(fakeDsh, `#!/usr/bin/env node\nimport { createServer } from "node:http";\nconst port = Number(process.argv[process.argv.indexOf("--port") + 1]);\nlet preset;\nlet selection;\nconst server = createServer((request, response) => {\n  let body = "";\n  request.on("data", (chunk) => { body += chunk; });\n  request.on("end", () => {\n    const call = JSON.parse(body);\n    if (request.url !== "/api/" + call.method) { response.statusCode = 404; response.end("not found"); return; }\n    let value;\n    if (call.method === "agentPreset.list") value = { presets: [{ id: "odai" }] };\n    else if (call.method === "session.create") { preset = call.payload.agentPreset; value = { sessionId: "session-test", agentPreset: preset }; }\n    else if (call.method === "session.selectModel") { selection = call.payload; value = { selected: call.payload }; }\n    else if (call.method === "session.prompt") value = { accepted: true };\n    else if (call.method === "session.history") value = { events: [\n      { event: { type: "assistant/message", seq: 1, data: { message: { content: [{ type: "text", text: JSON.stringify({ preset, model: selection?.model, permissionMode: process.env.DSH_PERMISSION_MODE }) }] } } } },\n      { event: { type: "turn/end", seq: 2, data: { reason: { kind: "completed" } } } },\n    ], hasMore: false };\n    else { response.statusCode = 404; response.end(); return; }\n    response.setHeader("content-type", "application/json");\n    response.end(JSON.stringify({ result: { ok: true, value } }));\n  });\n});\nserver.listen(port, "127.0.0.1");\nprocess.on("SIGTERM", () => server.close(() => process.exit(0)));\n`, "utf8");
+    await copyFile(fakeDshWebFixture, fakeDsh);
     await chmod(fakeDsh, 0o700);
     let dshCommand = fakeDsh;
     if (process.platform === "win32") {

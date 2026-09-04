@@ -31,6 +31,7 @@ jobs:
           node --check scripts/codex-canary-judge.mjs
           node --check scripts/dsh-canary-runner.mjs
           node --check scripts/dsh-canary-runner.test.mjs
+          node --check scripts/fixtures/fake-dsh-web-rc1.mjs
           node --check scripts/grok-canary-judge.mjs
           node --check scripts/grok-canary-runner.mjs
           node --check scripts/kimi-canary-runner.mjs
@@ -46,6 +47,7 @@ jobs:
           node --check scripts/package-odai-artifact.mjs
           node --check scripts/run-package-pack.mjs
           node --check scripts/run-package-pack.test.mjs
+          node --check scripts/dsh-publish-entrypoint.test.mjs
           node --check scripts/verify-dsh-packed-artifacts.mjs
           node --check scripts/verify-dsh-release-matrix.mjs
           node --check dsh/runtime/build/governance.mjs
@@ -61,10 +63,12 @@ jobs:
         run: node scripts/test-odai-routing.mjs
       - name: Test DSH runtime and Agent installer
         run: |
-          node --test scripts/run-package-pack.test.mjs scripts/dsh-canary-runner.test.mjs
+          node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs scripts/dsh-canary-runner.test.mjs
           npm --prefix dsh/plugin test
           npm --prefix dsh/agent install --ignore-scripts --no-package-lock --legacy-peer-deps
           npm --prefix dsh/agent test
+      - name: Verify isolated DSH release contract
+        run: node scripts/verify-dsh-release-matrix.mjs
       - name: Build frozen full and A/B fixtures
         run: |
           node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite full --skill-mode on --out /tmp/odai-full-on-dry-run
