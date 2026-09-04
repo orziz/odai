@@ -1,10 +1,11 @@
 # Odai DSH 版本兼容对照表
 
-本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。历史行是逐项验证的精确版本；从 `0.2.20` 起，支持范围与 release matrix 实测锚点分别声明，不把范围内未来版本写成已经实测。
+本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。历史行按发布事实保留；从 `0.2.20` 起，支持范围与 release matrix 实测锚点分别声明，不把范围内未来版本写成已经实测。
 
 | odai-dsh-plugin | odai-dsh-agent | 支持的 @deepseek-ai/dsh | 说明 |
 | --- | --- | --- | --- |
-| `0.2.20` | `0.2.20` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 发布元数据已定稿，registry 上架由后续步骤完成；实测锚点为 rc.2 与 alpha.5，以 alpha.5 Standard 为 source，范围内后续 `0.1.2` prerelease 共用该 renderer |
+| `0.2.21`（未发布） | `0.2.21`（未发布） | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 实测锚点为 rc.2、alpha.5 与 rc.1，以 rc.1 Standard 为 source；Control Center 分别适配旧 conversation services 与 `uiConversation.events/views` |
+| `0.2.20` | `0.2.20` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 已发布；Agent preset 可加载，但 alpha.5/rc.1 的 Control Center 会等待 rc.2-only services 并阻断 Web boot，应升级到 `0.2.21` |
 | `0.2.19` | `0.2.19` | `0.1.1-rc.2`、`0.1.2-alpha.4` | 已发布；以 alpha.4 Standard 为 source，按公开 `snapshotEvents()` 适配 Session 读取，保留 rc.2 精确回渲染与默认行为 |
 | `0.2.18` | `0.2.18` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；Control Center 可见交互提示恢复 `[Y/n]`，直接回车默认同意，EOF 与非交互仍拒绝 |
 | `0.2.17` | `0.2.17` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；修复 Agent Control Center 来源/版本误判，要求显式 `y/yes` 授权并为失败 profile 变更提供回滚 |
@@ -39,8 +40,8 @@
 ## 使用规则
 
 1. 从同一行选择版本组合，不要混用不同版本的 Plugin 与 Agent。`0.0.10` 及之后的两个包必须保持相同版本。
-2. `0.2.15` 至 `0.2.18` 只支持精确的 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持精确的 rc.2 与 alpha.4。`0.2.20` 改为保留精确 rc.2，并接纳 alpha.5 起、稳定版 `0.1.2` 之前的同一 prerelease 线；alpha.4 不属于当前范围。
-3. `dshVersions` 只表示 release matrix 完整跑过的精确锚点，`dshRange` 才是当前支持范围。范围内未来 prerelease 按上游 SemVer 兼容承诺共用 alpha.5 renderer，不得据此宣称已经跑过该未来版本。rc.2 仍是当前正式支持，alpha.5 仍是上游 prerelease。
+2. `0.2.15` 至 `0.2.18` 只支持精确的 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持精确的 rc.2 与 alpha.4。`0.2.20` 与 `0.2.21` 都声明保留精确 rc.2，并接纳 alpha.5 起、稳定版 `0.1.2` 之前的同一 prerelease 线；但 `0.2.20` 的 Control Center 对新会话服务不兼容，实际用于 alpha.5/rc.1 Web profile 时应选择 `0.2.21`。
+3. `dshVersions` 只表示 release matrix 完整跑过的精确锚点，`dshRange` 才是当前支持范围。`0.2.21` 的锚点为 rc.2、alpha.5 与 rc.1；范围内未来 prerelease 按上游 SemVer 兼容承诺共用 rc.1 source renderer，不得据此宣称已经跑过该未来版本。alpha.5 与 rc.1 均为上游 prerelease，二者当前 Standard composition 摘要和 `uiConversation` 客户端契约相同。
 4. 运行时兼容不等于 DSH 自有数据可以跨版本迁移。特别是 rc.8 的 SQLite 存储格式与旧版本不兼容，切换 DSH 版本前应按上游说明备份和迁移宿主数据。
 5. 从 `0.2.5` 起，本仓库自有的新版本标识不得包含数字字符 `4`；历史版本（如 `0.0.4`）按事实保留，上游 DSH 版本不受该规则限制。
 

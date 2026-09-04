@@ -99,14 +99,15 @@ const packageMetadata: PackageMetadata = {
   peerDependencies,
 };
 const EXPECTED_DSH_RANGE = "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2";
-const SOURCE_DSH_VERSION = "0.1.2-alpha.5";
+const SOURCE_DSH_VERSION = "0.1.2-rc.1";
 const LEGACY_DSH_VERSION = "0.1.1-rc.2";
+const COMPATIBLE_DSH_VERSION = "0.1.2-alpha.5";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
 if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
   throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
 }
 export const SUPPORTED_DSH_RANGE = peerRange;
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, SOURCE_DSH_VERSION]);
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, COMPATIBLE_DSH_VERSION, SOURCE_DSH_VERSION]);
 if (SUPPORTED_DSH_VERSIONS.some((version) => !satisfies(version, SUPPORTED_DSH_RANGE))) {
   throw new Error(`Odai Agent tested DSH versions must satisfy ${SUPPORTED_DSH_RANGE}`);
 }
@@ -157,7 +158,7 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
     "# resolves `goals` on the host and an entry-local realm here would hide it. The",
     "# registry is keyed by session anyway, so one host instance serves every",
     "# session. What a preset chooses is whether its agent can call the goal tool.",
-  ].join("\n") + "\n", "alpha.5 goal command block");
+  ].join("\n") + "\n", "rc.1 goal command block");
   rendered = replaceRequired(rendered, "- id: delegation\n", [
     "#",
     "# `tool-subagent-report` is host-plane for the same reason as the registry,",
@@ -166,15 +167,15 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
     "# not scope-aware — one copy per mounted preset means every child gets",
     "# `report` registered once per live session, which throws on the second.",
     "- id: delegation",
-  ].join("\n") + "\n", "alpha.5 send_message host guidance");
-  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "alpha.5 spawn model selection setting");
+  ].join("\n") + "\n", "rc.1 send_message host guidance");
+  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "rc.1 spawn model selection setting");
   rendered = replaceRequired(rendered, [
     "    # Fork omits model selection so provider/model stay equal to the parent and",
     "    # the inherited history remains eligible for KV Cache reuse. This preset",
     "    # keeps fork continuable; parent and child inherit the same messaging tool,",
     "    # while the parent id and return guidance follow the inherited history.",
-  ].join("\n") + "\n", "", "alpha.5 fork messaging guidance");
-  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "alpha.5 web fetch setting");
+  ].join("\n") + "\n", "", "rc.1 fork messaging guidance");
+  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "rc.1 web fetch setting");
   return rendered;
 }
 

@@ -178,6 +178,22 @@
         "0.1.2-alpha.5"
       ],
       "sourceDshVersion": "0.1.2-alpha.5"
+    },
+    {
+      "packageVersions": [
+        "0.2.21"
+      ],
+      "surfaces": [
+        "plugin",
+        "agent"
+      ],
+      "dshRange": "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2",
+      "dshVersions": [
+        "0.1.1-rc.2",
+        "0.1.2-alpha.5",
+        "0.1.2-rc.1"
+      ],
+      "sourceDshVersion": "0.1.2-rc.1"
     }
   ]
 }

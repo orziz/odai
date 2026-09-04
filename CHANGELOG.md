@@ -1,10 +1,16 @@
 # Changelog
 
-本文只记当前已定稿发布版与已冻结版本的对外能力、架构、迁移和评测口径；npm registry 上架是后续独立步骤。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
+本文只记当前唯一 Unreleased 候选与已发布版本的对外能力、架构、迁移和评测口径；每一行分别说明真实 npm registry 状态。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
+
+## Unreleased — DSH 0.2.21 dual conversation-service compatibility
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步升至未发布的 `0.2.21`；peer 保持 `0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2`，release matrix 实测锚点扩为 rc.2、alpha.5 与 rc.1，Agent source composition 固定为 rc.1。上游 alpha.5 与 rc.1 的 Standard composition 摘要及 `uiConversation.events/views` 客户端契约相同，因此 alpha.5 继续属于当前支持范围。
+- Control Center client 的顶层依赖只保留两代共有服务；mount coordinator 通过动态 profile facade 公开的 `ctx.get` 可选读取与 `internal/service` 生命周期事件，在 rc.2 的 `conversationEvents` / `conversationViews` 和 alpha.5/rc.1 的 `uiConversation` 之间切换，并分别从 legacy Session snapshot 或 modern conversation binding 读取视图证据。新服务确定性优先，候选重启、回退及 stale cleanup 均保持唯一 event/view/launcher 注册；既不令 Web boot 等待另一代服务，也不调用 facade 禁止的 `ctx.inject`。
+- `0.2.20` 已于 `2026-09-03T03:15:23.661Z` 发布，registry `gitHead` 为 `d7b39fbf268a5d0bec54f41727028c3e5488c223`；该版本的 Agent preset 仍可加载，但不要在 alpha.5 或 rc.1 Web profile 中启用其 Control Center。`0.2.21` 尚未发布，不复用或改写 `0.2.20` 制品。
 
 ## 2026-09-03 — DSH 0.2.20 alpha.5 range compatibility
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 的同步发布版锁定为 `0.2.20`；peer 保留正式 `@deepseek-ai/dsh@0.1.1-rc.2`，并以 `>=0.1.2-alpha.5 <0.1.2` 接纳 alpha.5 起的同一 prerelease 线。release matrix 的当前实测锚点为 rc.2 与 alpha.5；已发布 `0.2.19` 的 alpha.4 兼容只保留在历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.20`；peer 保留正式 `@deepseek-ai/dsh@0.1.1-rc.2`，并以 `>=0.1.2-alpha.5 <0.1.2` 接纳 alpha.5 起的同一 prerelease 线。当时的 release matrix 实测锚点为 rc.2 与 alpha.5；已发布 `0.2.19` 的 alpha.4 兼容只保留在历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
 - Agent source composition 跟随 alpha.5 Standard；该 Standard SHA-256 与 alpha.4 相同。rc.2 继续使用精确 legacy renderer，范围内的 `0.1.2` prerelease 使用 alpha.5 source renderer。alpha.5 的上游变化集中在升级后的存储兼容与损坏记录备份跳过；Odai 使用的 Session event、持续子 Agent 与 `send_message` 契约无新增变化。
 - Control Center 提高品牌、导航、路由标签、模型值、调度控件与表单字号；宽屏路由页把模型映射和调度方式并排，900px 以下仍恢复堆叠，并缩减角色行纵向 padding，改善高分辨率下的可读性和信息密度，不改变路由写入与 evidence 行为。
 

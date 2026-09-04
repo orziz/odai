@@ -31,9 +31,10 @@ function jsonRecord(text: string): Record<string, unknown> {
 
 test("Agent composition follows the supported DSH range and two renderer families", async () => {
   assert.equal(SUPPORTED_DSH_RANGE, "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-alpha.5"]);
-  assert.equal(supportsDshVersion("0.1.2-alpha.6"), true);
-  assert.equal(supportsDshVersion("0.1.2-beta.1"), true);
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2-rc.1"]);
+  for (const supported of ["0.1.2-alpha.5", "0.1.2-alpha.6", "0.1.2-beta.1", "0.1.2-rc.1", "0.1.2-rc.2"]) {
+    assert.equal(supportsDshVersion(supported), true, supported);
+  }
   for (const unsupported of ["0.1.1-rc.3", "0.1.2-alpha.4", "0.1.2", "0.1.3"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
@@ -41,14 +42,15 @@ test("Agent composition follows the supported DSH range and two renderer familie
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
   assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.5"), normalizedSource);
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-alpha.6"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-rc.1"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-rc.2"), normalizedSource);
   const legacy = renderAgentCompositionForDsh(source, "0.1.1-rc.2");
   assert.doesNotMatch(legacy, /command-goal|modelSelectionSettings/u);
   assert.match(legacy, /fetch: false/u);
   assert.match(legacy, /id: tool-goal/u);
   assert.throws(
     () => renderAgentCompositionForDsh(source.replace("    fetch: true", "    fetch: false"), "0.1.1-rc.2"),
-    /missing alpha\.5 web fetch setting/u,
+    /missing rc\.1 web fetch setting/u,
   );
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.2-alpha.4"), /unsupported DSH version/u);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.2"), /unsupported DSH version/u);
