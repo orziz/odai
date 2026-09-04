@@ -15,9 +15,9 @@ function denial(value: string | undefined): string {
   return value;
 }
 
-const controller: DshAgent = { session: { header: {}, events: [], append() {} } };
+const controller: DshAgent = { session: { header: {}, snapshotEvents: () => [], append() {} } };
 const child: DshAgent = {
-  session: { header: { origin: "subagent", delegationDepth: 1 }, events: [], append() {} },
+  session: { header: { origin: "subagent", delegationDepth: 1 }, snapshotEvents: () => [], append() {} },
 };
 
 test("subagent detection uses durable lineage", () => {
@@ -57,7 +57,7 @@ test("high-impact route protection denies controller mutations only for the acti
         },
       ];
   const protectedController: DshAgent = {
-    session: { header: {}, events: protectedEvents, append() {} },
+    session: { header: {}, snapshotEvents: () => protectedEvents, append() {} },
   };
   const guard = createRouteProtectionGuard({
     onDenied: (execution) => denied.push(execution.name),
@@ -76,14 +76,14 @@ test("high-impact route protection denies controller mutations only for the acti
   const restrictedGuard = createRouteProtectionGuard({ additionalDeniedTools: ["web_fetch"] });
   assert.match(denial(restrictedGuard({ agent: protectedController, name: "web_fetch" })), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
 
-  protectedController.session.events.push({
+  protectedEvents.push({
     type: "odai/route-protection-released",
     data: { turn: 1, scopeId: "scope-1", reason: "terminal-response" },
   });
   assert.equal(activeRouteProtection(protectedController), undefined);
   assert.equal(guard({ agent: protectedController, name: "write" }), undefined);
 
-  protectedController.session.events.push({
+  protectedEvents.push({
     type: "odai/route-decided",
     data: { turn: 2, step: 1, reasonCode: "DIRECT_DEFAULT_NO_INDEPENDENT_GAP" },
   });

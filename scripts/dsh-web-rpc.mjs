@@ -25,7 +25,6 @@ async function exchangeLaunchToken(url) {
   return cookie;
 }
 
-const remoteProtocolBases = new Set();
 const remoteMethods = Object.freeze({
   "agentPreset.list": { endpoint: "agentPresets/list", request: () => ({ args: {} }) },
   "session.create": { endpoint: "session/create", request: (payload) => ({ args: { request: payload } }) },
@@ -80,25 +79,9 @@ async function callRpc(baseUrl, endpoint, payload, cookie) {
 
 export async function dshWebRpc(baseUrl, method, payload, cookie) {
   const remote = remoteMethods[method];
-  if (remoteProtocolBases.has(baseUrl)) {
-    if (!remote) return await callRpc(baseUrl, method, payload, cookie);
-    try {
-      const value = await callRpc(baseUrl, remote.endpoint, remote.request(payload), cookie);
-      return remote.response ? remote.response(value) : value;
-    } catch (error) {
-      if (error?.status !== 404) throw error;
-      remoteProtocolBases.delete(baseUrl);
-      return await callRpc(baseUrl, method, payload, cookie);
-    }
-  }
-  try {
-    return await callRpc(baseUrl, method, payload, cookie);
-  } catch (error) {
-    if (error?.status !== 404 || !remote) throw error;
-    const value = await callRpc(baseUrl, remote.endpoint, remote.request(payload), cookie);
-    remoteProtocolBases.add(baseUrl);
-    return remote.response ? remote.response(value) : value;
-  }
+  if (!remote) return await callRpc(baseUrl, method, payload, cookie);
+  const value = await callRpc(baseUrl, remote.endpoint, remote.request(payload), cookie);
+  return remote.response ? remote.response(value) : value;
 }
 
 export async function waitForDshWeb(baseUrl, child, output, timeoutMs = 20_000) {

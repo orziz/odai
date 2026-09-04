@@ -36,6 +36,7 @@ import { isUnknownRecord } from "../build/runtime-types.mjs";
 import type {
   DshAgent,
   DshContentBlock,
+  DshEvent,
   DshMessage,
   DshSessionHeader,
   RuntimeEventData,
@@ -49,6 +50,7 @@ const canonicalPath = resolve(canonicalRoot, "SKILL.md");
 
 interface TestAgent extends DshAgent {
   phase: { turn?: number; step?: number };
+  session: DshAgent["session"] & { events: DshEvent[] };
 }
 
 type TestSelection = EvolutionSelection;
@@ -121,9 +123,10 @@ function upstreamSelection(bundle: SkillBundle = loadSkillBundle(canonicalPath))
 }
 
 function execution(header: DshSessionHeader = {}): ToolExecution & { agent: TestAgent } {
+  const events: DshEvent[] = [];
   return {
     name: "odai_skill_evolution",
-    agent: { phase: {}, session: { header, events: [], append() {} } },
+    agent: { phase: {}, session: { header, events, snapshotEvents: () => events, append() {} } },
   };
 }
 

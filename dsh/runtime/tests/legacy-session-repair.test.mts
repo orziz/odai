@@ -18,7 +18,7 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   inspectLegacySessionLogs,
   repairLegacySessionLogs,
-} from "../build/session-compat.mjs";
+} from "../build/legacy-session-repair.mjs";
 import {
   createSessionEvidence,
   readStoredSessionEvidence,
@@ -36,7 +36,7 @@ function parseRecord(text: string): UnknownRecord {
 }
 
 function testAgent(id: string, events: DshEvent[] = []): DshAgent {
-  return { session: { header: { id }, events, append() {} } };
+  return { session: { header: { id }, snapshotEvents: () => events, append() {} } };
 }
 
 function event(type: string, seq: number, data: RuntimeEventData, extra: UnknownRecord = {}): string {
@@ -54,7 +54,7 @@ function sessionHeader(id: string): string {
 }
 
 test("legacy plain and multi-frame Zstandard logs mark every known Odai audit event ignorable", () => {
-  const scratch = mkdtempSync(resolve(tmpdir(), "odai-session-compat-"));
+  const scratch = mkdtempSync(resolve(tmpdir(), "odai-legacy-repair-"));
   const sessions = resolve(scratch, "sessions");
   const plainPath = resolve(sessions, "plain", "session.jsonl");
   const zstdPath = resolve(sessions, "zstd", "session.jsonl.zstd");
@@ -211,7 +211,7 @@ test("new evidence stays outside a real DSH session log and reloads by session i
   const firstAgent = {
     session: {
       header: { id: "session-with-durable-evidence" },
-      events: [],
+      snapshotEvents: () => [],
       append() { sessionAppends += 1; },
     },
   };
@@ -224,7 +224,7 @@ test("new evidence stays outside a real DSH session log and reloads by session i
     const secondAgent = {
       session: {
         header: { id: "session-with-durable-evidence" },
-        events: [{ type: "odai/route-decided", data: { turn: 1, step: 1 } }],
+        snapshotEvents: () => [{ type: "odai/route-decided", data: { turn: 1, step: 1 } }],
         append() {},
       },
     };
@@ -322,13 +322,13 @@ test("an acquisition claim is never reclaimed automatically", () => {
   }
 });
 
-test("transient probes without a session id retain the legacy in-memory append fallback", () => {
+test("transient probes without a session id retain the in-memory append fallback", () => {
   const scratch = mkdtempSync(resolve(tmpdir(), "odai-transient-evidence-"));
   const events: DshEvent[] = [];
   const agent: DshAgent = {
     session: {
       header: {},
-      events,
+      snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };

@@ -6,7 +6,7 @@ import { createHumanSafetyTool } from "../build/human-safety.mjs";
 import type { DshAgent, ToolExecution } from "../build/runtime-types.mjs";
 
 function agentWithChild(child = false): DshAgent & { child: boolean } {
-  return { child, session: { header: {}, events: [], append() {} } };
+  return { child, session: { header: {}, snapshotEvents: () => [], append() {} } };
 }
 
 function isChild(agent: DshAgent): boolean {

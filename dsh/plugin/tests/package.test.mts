@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
 
 interface ProcessCall {
@@ -32,6 +33,26 @@ test("bundle patch resolves the packaged runtime through the package export", as
   assert.equal(metadata.engines.node, ">=22.15.0");
   assert.ok(metadata.files.includes("build/bin"));
   assert.equal(metadata.files.some((entry: string) => entry.includes("tests") || entry.includes("scripts")), false);
+});
+
+test("CLI exposes only the explicit legacy session repair command", () => {
+  const bin = resolve(pluginRoot, "build/bin/odai-dsh-plugin.mjs");
+  const help = spawnSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /odai-dsh-plugin legacy-session-repair/u);
+
+  const retired = spawnSync(process.execPath, [bin, "repair-sessions"], { encoding: "utf8" });
+  assert.notEqual(retired.status, 0);
+  assert.match(retired.stderr, /unknown argument: repair-sessions/u);
+
+  const runtimeLocated = spawnSync(process.execPath, [bin, "legacy-session-repair", "--dsh-home", pluginRoot], { encoding: "utf8" });
+  assert.notEqual(runtimeLocated.status, 0);
+  assert.match(runtimeLocated.stderr, /rerun legacy-session-repair with --yes/u);
+  assert.doesNotMatch(runtimeLocated.stderr, /runtime is unavailable/u);
+
+  const missingHome = spawnSync(process.execPath, [bin, "legacy-session-repair", "--dsh-home", "--yes"], { encoding: "utf8" });
+  assert.notEqual(missingHome.status, 0);
+  assert.match(missingHome.stderr, /--dsh-home requires a non-empty path/u);
 });
 
 test("DSH process spawn supports Windows npm command shims", () => {

@@ -11,7 +11,7 @@ import type { DshAgent, DshEvent } from "../build/runtime-types.mjs";
 import { classifyContextActivation } from "../build/context-activation.mjs";
 
 function agentWithChild(child = false): DshAgent & { child: boolean } {
-  return { child, session: { header: {}, events: [], append() {} } };
+  return { child, session: { header: {}, snapshotEvents: () => [], append() {} } };
 }
 
 function isChild(agent: DshAgent): boolean {

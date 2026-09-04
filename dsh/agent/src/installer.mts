@@ -17,11 +17,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { satisfies, validRange } from "semver";
 import { parse as parseYaml } from "yaml";
 
-import type {
-  SessionCompatOptions,
-  SessionCompatResult,
-} from "../../runtime/build/session-compat.mjs";
-
 interface PackageMetadata {
   name: string;
   version: string;
@@ -33,8 +28,6 @@ export interface AgentInstallerOptions {
   dshHome?: string;
   sourceRoot?: string;
   dshVersion?: string;
-  confirmDshStopped?: boolean;
-  processScanner?: SessionCompatOptions["processScanner"];
 }
 
 interface ManagedManifest {
@@ -98,15 +91,14 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const EXPECTED_DSH_RANGE = "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2";
+const EXPECTED_DSH_RANGE = "0.1.2-rc.1";
 const SOURCE_DSH_VERSION = "0.1.2-rc.1";
-const LEGACY_DSH_VERSION = "0.1.1-rc.2";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
 if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
   throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
 }
 export const SUPPORTED_DSH_RANGE = peerRange;
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, SOURCE_DSH_VERSION]);
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([SOURCE_DSH_VERSION]);
 if (SUPPORTED_DSH_VERSIONS.some((version) => !satisfies(version, SUPPORTED_DSH_RANGE))) {
   throw new Error(`Odai Agent tested DSH versions must satisfy ${SUPPORTED_DSH_RANGE}`);
 }
@@ -118,7 +110,6 @@ const requiredFiles = Object.freeze([
   "agent.cordis.yml",
   "preset.yml",
   "runtime/index.mjs",
-  "runtime/session-compat.mjs",
   "runtime/session-evidence.mjs",
   "runtime/skill-bundle.mjs",
   "runtime/skill-evolution.mjs",
@@ -129,11 +120,6 @@ const requiredFiles = Object.freeze([
   "skills/odai/manifest.json",
 ]);
 
-function replaceRequired(value: string, oldString: string, newString: string, label: string): string {
-  if (!value.includes(oldString)) throw new Error(`agent source composition is missing ${label}`);
-  return value.replace(oldString, newString);
-}
-
 export function renderAgentCompositionForDsh(composition: string, dshVersion = SUPPORTED_DSH_VERSION): string {
   if (typeof composition !== "string" || composition.trim() === "") {
     throw new TypeError("agent composition must be a non-empty string");
@@ -141,41 +127,7 @@ export function renderAgentCompositionForDsh(composition: string, dshVersion = S
   if (!supportsDshVersion(dshVersion)) {
     throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
   }
-  let rendered = composition.replace(/\r\n/gu, "\n");
-  if (dshVersion !== LEGACY_DSH_VERSION) return rendered;
-
-  rendered = replaceRequired(rendered, [
-    "# The goal service and session driver stay on the host plane, where the Gateway",
-    "# can resolve them. The human command and model-facing tool register into this",
-    "# preset's scoped layers.",
-    "- id: command-goal",
-    "  name: '@deepseek-ai/dsh-command-goal'",
-  ].join("\n") + "\n\n", [
-    "# Only the model-facing tool. The goal SERVICE, its session driver, and the",
-    "# `/goal` command stay on the host plane: the Gateway serves the goal domain as",
-    "# Remote endpoints whose receiver comes from a generated descriptor, so it",
-    "# resolves `goals` on the host and an entry-local realm here would hide it. The",
-    "# registry is keyed by session anyway, so one host instance serves every",
-    "# session. What a preset chooses is whether its agent can call the goal tool.",
-  ].join("\n") + "\n", "rc.1 goal command block");
-  rendered = replaceRequired(rendered, "- id: delegation\n", [
-    "#",
-    "# `tool-subagent-report` is host-plane for the same reason as the registry,",
-    "# not because a preset may not want it: it registers a CONTINUABLE SETUP on",
-    "# that singleton rather than a tool this agent calls, and the setup list is",
-    "# not scope-aware — one copy per mounted preset means every child gets",
-    "# `report` registered once per live session, which throws on the second.",
-    "- id: delegation",
-  ].join("\n") + "\n", "rc.1 send_message host guidance");
-  rendered = replaceRequired(rendered, "        modelSelectionSettings: true\n", "", "rc.1 spawn model selection setting");
-  rendered = replaceRequired(rendered, [
-    "    # Fork omits model selection so provider/model stay equal to the parent and",
-    "    # the inherited history remains eligible for KV Cache reuse. This preset",
-    "    # keeps fork continuable; parent and child inherit the same messaging tool,",
-    "    # while the parent id and return guidance follow the inherited history.",
-  ].join("\n") + "\n", "", "rc.1 fork messaging guidance");
-  rendered = replaceRequired(rendered, "    fetch: true\n", "    fetch: false\n", "rc.1 web fetch setting");
-  return rendered;
+  return composition.replace(/\r\n/gu, "\n");
 }
 
 export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -217,12 +169,6 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
   }
 
   await assertSource(sourceRoot);
-  const sessionCompatibility = await repairSessionCompatibility(
-    dshHome,
-    [sourceRoot],
-    options.confirmDshStopped === true,
-    options.processScanner,
-  );
   await mkdir(targetRoot, { recursive: true, mode: 0o700 });
   const staging = resolve(targetRoot, `.${presetId}.tmp-${process.pid}-${randomUUID()}`);
   const backup = resolve(targetRoot, `.${presetId}.backup-${process.pid}-${randomUUID()}`);
@@ -271,7 +217,6 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
       dshVersion,
       trust: "user",
       security: "DSH user presets have the same privileges as shell access; install only reviewed preset code.",
-      sessionCompatibility,
     });
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
@@ -294,21 +239,11 @@ export async function uninstallAgentPreset(options: AgentInstallerOptions = {}) 
     throw new Error(`refusing to remove modified preset at ${inspected.target}: ${inspected.issues.join("; ")}`);
   }
   await assertPresetIsNotDefault(inspected.dshHome, inspected.presetId);
-  const sessionCompatibility = await repairSessionCompatibility(
-    inspected.dshHome,
-    [defaultSourceRoot, inspected.target],
-    options.confirmDshStopped === true,
-    options.processScanner,
-  );
-  if (sessionCompatibility.failures.length > 0) {
-    throw new Error(`refusing to uninstall before legacy Odai session evidence is made ignorable: ${sessionCompatibility.failures.map((failure) => `${failure.path}: ${failure.error}`).join("; ")}`);
-  }
   await rm(inspected.target, { recursive: true, force: true });
   return Object.freeze({
     operation: "uninstalled",
     target: inspected.target,
     presetId: inspected.presetId,
-    sessionCompatibility,
   });
 }
 
@@ -389,44 +324,6 @@ function validateManifest(manifest: unknown, presetId: string): string[] {
     issues.push("managed manifest file map is invalid");
   }
   return issues;
-}
-
-async function repairSessionCompatibility(
-  dshHome: string,
-  sourceRoots: readonly string[],
-  confirmDshStopped: boolean,
-  processScanner?: SessionCompatOptions["processScanner"],
-): Promise<SessionCompatResult> {
-  for (const sourceRoot of sourceRoots) {
-    const modulePath = resolve(sourceRoot, "runtime/session-compat.mjs");
-    if (await pathState(modulePath) !== "file") continue;
-    const compatibility: {
-      inspectLegacySessionLogs(options?: SessionCompatOptions): SessionCompatResult;
-      repairLegacySessionLogs(options?: SessionCompatOptions): SessionCompatResult;
-    } = await import(pathToFileURL(modulePath).href);
-    if (typeof compatibility.inspectLegacySessionLogs !== "function"
-      || typeof compatibility.repairLegacySessionLogs !== "function") {
-      throw new Error(`agent package session compatibility module is invalid: ${modulePath}`);
-    }
-    const inspected = compatibility.inspectLegacySessionLogs({ dshHome });
-    if (inspected.failures.length > 0) {
-      throw new Error(`cannot inspect legacy Odai session evidence safely: ${inspected.failures.map((failure) => `${failure.path}: ${failure.error}`).join("; ")}`);
-    }
-    if (inspected.matchedEvents === 0) return inspected;
-    if (!confirmDshStopped) {
-      throw new Error(`found ${inspected.matchedEvents} legacy Odai session event(s); stop every DSH process and rerun with --yes before changing the Agent preset`);
-    }
-    const repaired = compatibility.repairLegacySessionLogs({
-      dshHome,
-      confirmDshStopped: true,
-      processScanner,
-    });
-    if (repaired.failures.length > 0) {
-      throw new Error(`cannot repair legacy Odai session evidence safely: ${repaired.failures.map((failure) => `${failure.path}: ${failure.error}`).join("; ")}`);
-    }
-    return repaired;
-  }
-  throw new Error("agent package is incomplete: missing runtime/session-compat.mjs");
 }
 
 async function assertSource(sourceRoot: string): Promise<void> {

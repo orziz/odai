@@ -17,11 +17,11 @@ test("DSH version probe uses a shell for Windows npm command shims", () => {
     platform: "win32",
     execute(command, args, options) {
       calls.push({ command, args, options });
-      return "0.1.1-rc.2\r\n";
+      return "0.1.2-rc.1\r\n";
     },
   });
 
-  assert.equal(actual, "0.1.1-rc.2");
+  assert.equal(actual, "0.1.2-rc.1");
   assert.deepEqual(calls, [{
     command: "dsh.cmd",
     args: ["-V"],
@@ -37,7 +37,7 @@ test("Windows keeps an explicit DSH binary unchanged", () => {
     platform: "win32",
     execute(command, args, options) {
       calls.push({ command, args, options });
-      return "0.1.1-rc.2\r\n";
+      return "0.1.2-rc.1\r\n";
     },
   });
   spawnDsh(explicit, ["web"], {}, {
@@ -61,7 +61,7 @@ test("DSH version probe directly executes binaries outside Windows", () => {
     platform: "linux",
     execute(command, args, options) {
       calls.push({ command, args, options });
-      return "0.1.1-rc.2\n";
+      return "0.1.2-rc.1\n";
     },
   });
 

@@ -2,6 +2,13 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
+## DSH 0.2.23 rc.1 contract and Control Center
+
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步进入未发布的 `0.2.23` 候选；peer 精确收敛到 `@deepseek-ai/dsh@0.1.2-rc.1`，退役 rc.2、alpha.5 范围兼容、旧 Agent renderer、旧 Web RPC 与 conversation service 分支，并只读取 rc.1 的 immutable Session snapshot。已发布版本的历史兼容记录不变；canonical skill 保持 `0.3.8`，runtime contract 保持 `6`，冻结的 provider-neutral CLI 不变。
+- Plugin-only Web profile 不再假定 `connection` 已在 Odai runtime apply 前发布：Control Center runtime 订阅 Cordis `internal/service` 生命周期，在服务到达后注册一次 RPC，并由 effect disposer 保持共存去重与卸载。浏览器端只依赖 rc.1 `uiConversation` binding，长会话保持当前轮、时间线与 Inspector 独立滚动，闭合轮次不挂载事件行，展开轮次按 100 条逐批加载，unchanged evidence 不重复传输或渲染。Control Center host 缺失提示明确说明 host 已随 Odai 包含，无需另装第三个包，要求停止并重新启动 Web profile 后刷新。release-matrix 在 Windows 使用 shell 启动 npm/DSH `.cmd` shim，避免 Node 26 的 `spawnSync EINVAL` 阻断制品验证；installed Agent probe 固定使用 tgz 自带 runtime，不再被仓库开发构建覆盖，冷启动 marker 预算由 15 秒调整为 30 秒。
+- Agent 的正常安装、更新和卸载不扫描、不改写、也不因历史会话阻断；当前 runtime 同样不从 DSH 核心日志合并旧 `odai/*` 事件。仅为从 rc.2 升级 DSH 后被旧 Odai event 阻断的会话保留显式一次性 `npx odai-dsh-plugin legacy-session-repair --yes`：停机检查、已知事件白名单、原子替换、验证及 content-addressed backup 继续 fail-closed，未知事件不猜测处理。
+- 官方 `dsh-v0.1.3-alpha.1` tag（`d347e703908d0406b7a7ef80e3a0e594d86b2215`）完成源码审计与 `build:official`；其 Standard composition 与 rc.1 同为 SHA-256 `f18dd942686aa71f43ffc4fd328a712f79af113fb67a35b54cb6de4fc3b84bda`。该版包含 Session v2/相邻迁移、live assistant stream、goal pause 中止、通用文件上传等宿主更新，但 npm 尚无 `0.1.3-alpha.1` 发布制品，且 v0→v1 迁移明确拒绝历史外部 Odai event，即使已有 `ignorable` 标记；本候选不声明 alpha.1 兼容，也不以仅源码构建冒充发布物验证。
+
 ## DSH 0.2.22 requirement provenance
 
 - `odai-dsh-agent` 与 `odai-dsh-plugin` 同步升至 `0.2.22`，canonical skill 升为 `0.3.8`，runtime contract 保持 `6`；当前 DSH 支持合同仍为 `0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2`，release matrix 只保留有区分力的 rc.2 旧服务与 rc.1 新服务/source；alpha.5 由同一 SemVer 范围自然覆盖，不再另设安装、renderer 或完整 matrix 检查。controller 与 researcher、planner、reviewer、frontend 的责任拓扑不变，不新增 auditor、Executor、固定 stage 或“三省六部”运行时结构。
@@ -216,7 +223,7 @@
 
 - `odai-dsh-agent@0.0.4` 与 `odai-dsh-plugin@0.0.3` 不再把私有 `odai/*` 审计事件写入 DSH 核心 session log，改为保存到 `$DSH_HOME/odai/session-evidence/`，避免重启后旧 DSH 因未知事件拒绝加载历史。
 - 新增停机迁移：给历史版本写入的八类已知 Odai 审计事件补上 DSH 官方 `ignorable: true` 标记；迁移覆盖 JSONL 与多 frame Zstandard，原子替换并保留校验备份，未知事件拒绝猜测处理，进程检查失败或发现 DSH 仍在运行时拒绝写入。
-- Agent 安装、更新和卸载会先检查历史兼容性；Plugin 提供 `odai-dsh-plugin repair-sessions --yes`。真实 DSH 验证覆盖会话先以 `standard` 创建、再切换到 `odai` 后的 preset 恢复，确保迁移不把模式回退为标准。
+- 上述历史版本当时会让 Agent 安装、更新和卸载先检查历史兼容性，并由 Plugin 提供 `odai-dsh-plugin repair-sessions --yes`；该自动检查不属于当前发布线。真实 DSH 验证覆盖会话先以 `standard` 创建、再切换到 `odai` 后的 preset 恢复，确保迁移不把模式回退为标准。
 - 两个包要求 Node.js 22.15.0 或更高版本，以匹配历史 Zstandard 会话迁移所依赖的原生 API。
 
 ## 2026-08-14 — DSH Agent 0.0.2

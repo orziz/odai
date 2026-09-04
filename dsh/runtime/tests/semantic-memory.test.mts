@@ -56,7 +56,7 @@ function memoryEntry<T>(entries: readonly T[], description = "memory entry"): T 
 }
 
 function agentWithEvents(events: DshEvent[]): DshAgent {
-  return { session: { header: {}, events, append() {} } };
+  return { session: { header: {}, snapshotEvents: () => events, append() {} } };
 }
 
 function toolExecution(tool: { name: string }, agent: DshAgent): ToolExecution {
@@ -100,7 +100,7 @@ function agentFor({ id, cwd, turn = 1, text, messageId = `${id}-message` }: Agen
     { type: "user/message", seq: 2, data: message },
   ];
   return {
-    agent: { session: { header: { id, cwd }, events, append() {} } },
+    agent: { session: { header: { id, cwd }, snapshotEvents: () => events, append() {} } },
     message,
     turn,
   };
@@ -185,21 +185,21 @@ test("only the authenticated direct-human message in the current open turn is el
   ])), undefined);
   assert.equal(latestDirectUserMessage(agentWithEvents([{ type: "user/message", seq: 11, data: human }])), undefined);
   assert.equal(latestDirectUserMessage(agentWithEvents([
-    ...valid.session.events,
+    ...valid.session.snapshotEvents(),
     { type: "turn/end", seq: 12, data: { turn: 3 } },
   ])), undefined);
   assert.equal(latestDirectUserMessage(agentWithEvents([
-    ...valid.session.events,
+    ...valid.session.snapshotEvents(),
     { type: "turn/start", seq: 12, data: { turn: 4 } },
   ])), undefined);
   const malformed = { id: "", role: "user", source: { kind: "user" }, content: [{ type: "text", text: "bad" }] };
   assert.equal(latestDirectUserMessage(agentWithEvents([
-    ...valid.session.events,
+    ...valid.session.snapshotEvents(),
     { type: "user/message", seq: 12, data: malformed },
   ])), undefined);
   const plugin = { ...stale, source: { kind: "plugin" } };
   assert.equal(latestDirectUserMessage(agentWithEvents([
-    ...valid.session.events,
+    ...valid.session.snapshotEvents(),
     { type: "user/message", seq: 12, data: plugin },
   ])), undefined);
 });
@@ -638,14 +638,15 @@ test("stale or closed-turn human text cannot authorize any memory mutation", asy
       excerpt: "本项目的输出格式偏好记为 json",
     }, toolExecution(tool, pendingFixture.agent));
     const pendingId = memoryEntry(pending.entries).id;
+    const staleEvents: DshEvent[] = [
+      { type: "turn/start", seq: 1, data: { turn: 3 } },
+      { type: "user/message", seq: 2, data: directMessage("stale-replay-message", "CLEAR ODAI GLOBAL MEMORY") },
+      { type: "turn/end", seq: 3, data: { turn: 3 } },
+    ];
     const staleAgent: DshAgent = {
       session: {
         header: { id: "stale-replay", cwd },
-        events: [
-          { type: "turn/start", seq: 1, data: { turn: 3 } },
-          { type: "user/message", seq: 2, data: directMessage("stale-replay-message", "CLEAR ODAI GLOBAL MEMORY") },
-          { type: "turn/end", seq: 3, data: { turn: 3 } },
-        ],
+        snapshotEvents: () => staleEvents,
         append() {},
       },
     };
@@ -751,7 +752,7 @@ test("memory mode is user-controlled and every child action is denied", async ()
     const child: DshAgent = {
       session: {
         header: { id: "child", cwd, origin: "subagent", delegationDepth: 1 },
-        events: [],
+        snapshotEvents: () => [],
         append() {},
       },
     };

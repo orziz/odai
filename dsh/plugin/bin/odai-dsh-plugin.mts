@@ -4,19 +4,19 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { SessionCompatOptions, SessionCompatResult } from "../../runtime/build/session-compat.mjs";
+import type { LegacySessionRepairOptions, LegacySessionRepairResult } from "../../runtime/build/legacy-session-repair.mjs";
 
 interface CliArguments {
-  command?: "repair-sessions";
+  command?: "legacy-session-repair";
   dshHome?: string;
   json: boolean;
   yes: boolean;
   help: boolean;
 }
 
-type RepairLegacySessionLogs = (options?: SessionCompatOptions) => SessionCompatResult;
+type RepairLegacySessionLogs = (options?: LegacySessionRepairOptions) => LegacySessionRepairResult;
 
-const HELP = `Usage: odai-dsh-plugin repair-sessions [options]
+const HELP = `Usage: odai-dsh-plugin legacy-session-repair [options]
 
 Repair historical DSH session logs written by older Odai Agent or Plugin versions.
 The command adds the official ignorable marker to Odai-only audit events; it does
@@ -35,14 +35,18 @@ try {
   if (args.help) {
     process.stdout.write(HELP);
   } else {
-    const modulePath = [
-      resolve(import.meta.dirname, "../runtime/session-compat.mjs"),
-      resolve(import.meta.dirname, "../../runtime/build/session-compat.mjs"),
+    const packageRoot = [
+      resolve(import.meta.dirname, ".."),
+      resolve(import.meta.dirname, "../.."),
+    ].find((candidate) => existsSync(resolve(candidate, "package.json")));
+    const modulePath = packageRoot && [
+      resolve(packageRoot, "runtime/legacy-session-repair.mjs"),
+      resolve(packageRoot, "../runtime/build/legacy-session-repair.mjs"),
     ].find(existsSync);
-    if (!modulePath) throw new Error("session compatibility runtime is unavailable");
+    if (!modulePath) throw new Error("legacy session repair runtime is unavailable");
     const runtime: { repairLegacySessionLogs: RepairLegacySessionLogs } = await import(pathToFileURL(modulePath).href);
     const { repairLegacySessionLogs } = runtime;
-    if (!args.yes) throw new Error("stop every DSH process, then rerun repair-sessions with --yes");
+    if (!args.yes) throw new Error("stop every DSH process, then rerun legacy-session-repair with --yes");
     const result = repairLegacySessionLogs({
       dshHome: args.dshHome,
       confirmDshStopped: true,
@@ -62,12 +66,16 @@ function parseArgs(argv: readonly string[]): CliArguments {
     if (arg === "-h" || arg === "--help") parsed.help = true;
     else if (arg === "--json") parsed.json = true;
     else if (arg === "--yes") parsed.yes = true;
-    else if (arg === "--dsh-home") parsed.dshHome = argv[++index];
-    else if (!parsed.command && arg === "repair-sessions") parsed.command = arg;
+    else if (arg === "--dsh-home") {
+      const dshHome = argv[++index];
+      if (!dshHome || dshHome.startsWith("-")) throw new Error("--dsh-home requires a non-empty path");
+      parsed.dshHome = dshHome;
+    }
+    else if (!parsed.command && arg === "legacy-session-repair") parsed.command = arg;
     else throw new Error(`unknown argument: ${arg}`);
   }
-  if (!parsed.help && parsed.command !== "repair-sessions") {
-    throw new Error(`repair-sessions is required\n\n${HELP}`);
+  if (!parsed.help && parsed.command !== "legacy-session-repair") {
+    throw new Error(`legacy-session-repair is required\n\n${HELP}`);
   }
   if (parsed.dshHome !== undefined && parsed.dshHome.trim() === "") {
     throw new Error("--dsh-home requires a non-empty path");
@@ -75,7 +83,7 @@ function parseArgs(argv: readonly string[]): CliArguments {
   return parsed;
 }
 
-function print(result: SessionCompatResult, json: boolean): void {
+function print(result: LegacySessionRepairResult, json: boolean): void {
   if (json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;

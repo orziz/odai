@@ -9,6 +9,7 @@ import {
   CONTROL_CENTER_ENDPOINT,
   CONTROL_CENTER_EVIDENCE_ENDPOINT,
   installControlCenterRuntime,
+  installControlCenterRuntimeWhenAvailable,
   type ControlCenterResponse,
 } from "../build/control-center-runtime.mjs";
 import { createSessionEvidence } from "../build/session-evidence.mjs";
@@ -151,6 +152,42 @@ test("Control Center uses one process-wide loopback RPC registration across Cord
     await disposeSecond?.();
     await rm(scratch, { recursive: true, force: true });
   }
+});
+
+test("Control Center waits for a late Web connection service", async () => {
+  let connection: UnknownRecord | undefined;
+  let serviceHandler: ((serviceName: string) => void) | undefined;
+  let registrations = 0;
+  let disposals = 0;
+  const ctx = {
+    get(name: string) { return name === "connection" ? connection : undefined; },
+    on(event: string, handler: (serviceName: string) => void) {
+      if (event === "internal/service") serviceHandler = handler;
+    },
+    llm: { resolveCallConfig(route: UnknownRecord) { return { config: route }; } },
+  } as unknown as DshRuntimeContext;
+  const dispose = installControlCenterRuntimeWhenAvailable(ctx, {
+    configPath: resolve(tmpdir(), "odai-control-center-late-routing.json"),
+  });
+
+  assert.equal(registrations, 0);
+  assert.ok(serviceHandler);
+  connection = {
+    rpc: {
+      handle() {
+        registrations += 1;
+        return async () => { disposals += 1; };
+      },
+    },
+  };
+  serviceHandler("connection");
+  serviceHandler("connection");
+  assert.equal(registrations, 1);
+
+  await dispose();
+  assert.equal(disposals, 1);
+  serviceHandler("connection");
+  assert.equal(registrations, 1);
 });
 
 test("Control Center rejects an unavailable route without overwriting configuration", async () => {

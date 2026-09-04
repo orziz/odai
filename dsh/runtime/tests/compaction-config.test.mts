@@ -21,7 +21,7 @@ import { isUnknownRecord } from "../build/runtime-types.mjs";
 import type { DshMessage, DshSessionsService, ToolExecution } from "../build/runtime-types.mjs";
 
 function testExecution(): ToolExecution {
-  return { name: "odai_compaction_config", agent: { session: { header: {}, events: [], append() {} } } };
+  return { name: "odai_compaction_config", agent: { session: { header: {}, snapshotEvents: () => [], append() {} } } };
 }
 
 function last<T>(values: readonly T[]): T {
@@ -81,7 +81,7 @@ test("compaction target validates explicit model options and applies only to com
       if (sessionId !== "session-route") return undefined;
       return {
         header: {},
-        events: [],
+        snapshotEvents: () => [],
         append() {},
         requestHeader: () => ({ config: { provider: "openai", model: "gpt-5.6-sol", reasoningEffort: "xhigh" } }),
       };

@@ -27,8 +27,8 @@ interface TestingTrace {
 
 interface ClientTesting {
   conversationTraceSource(conversation: unknown, sessionId?: string): { getSnapshot(): unknown; subscribe(listener: () => void): () => void };
+  controlCenterError(cause: unknown): string;
   defaultTraceItem(trace: TestingTrace): TestingTraceItem | undefined;
-  legacyTraceView(snapshot: unknown): { events?: unknown[] };
   projectTrace(events: unknown[]): TestingTrace;
   shouldOwnSurface(): boolean;
   traceFingerprint(events: unknown[]): string;
@@ -70,6 +70,15 @@ async function loadClientModule(packageId: "odai-dsh-agent" | "odai-dsh-plugin",
 async function loadClient(packageId: "odai-dsh-agent" | "odai-dsh-plugin", entries: string[]): Promise<ClientTesting> {
   return (await loadClientModule(packageId, entries)).__testing;
 }
+
+test("Control Center host failure explains that no separate install is required", async () => {
+  const client = await loadClient("odai-dsh-plugin", ["odai-dsh-plugin"]);
+  assert.equal(
+    client.controlCenterError(new Error("HTTP 405 from /odai-control-center")),
+    "Control Center 已随 Odai 安装，无需另行安装。当前 Web profile 尚未加载 host，请停止并重新启动 dsh web 后刷新页面。",
+  );
+  assert.equal(client.controlCenterError(new Error("routing failed")), "Error: routing failed");
+});
 
 test("shared client projection separates proposal, same-turn, child, and handback evidence", async () => {
   const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
@@ -120,13 +129,10 @@ test("timeline helpers skip unchanged append-only evidence and bound mounted row
   assert.ok(selectedWindow.some((item) => item.key === "event-40"));
 });
 
-test("trace data resolves through legacy snapshots or modern conversation bindings", async () => {
+test("trace data resolves through the uiConversation binding", async () => {
   const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
-  const legacy = { events: [{ seq: 1 }] };
-  assert.equal(client.legacyTraceView({ views: new Map([["odaiControlCenter", legacy]]) }), legacy);
-  assert.equal(client.legacyTraceView({}).events?.length, 0);
-
-  const source = { getSnapshot: () => legacy, subscribe: () => () => {} };
+  const trace = { events: [{ seq: 1 }] };
+  const source = { getSnapshot: () => trace, subscribe: () => () => {} };
   const conversation = {
     binding(sessionId: string) {
       assert.equal(sessionId, "session-modern");
@@ -139,7 +145,7 @@ test("trace data resolves through legacy snapshots or modern conversation bindin
     },
   };
   assert.equal(client.conversationTraceSource(conversation, "session-modern"), source);
-  const fallback = client.conversationTraceSource(undefined).getSnapshot() as { events: unknown[] };
+  const fallback = client.conversationTraceSource(conversation).getSnapshot() as { events: unknown[] };
   assert.equal(fallback.events.length, 0);
 });
 
@@ -169,7 +175,7 @@ interface SurfaceHarness {
   reads: string[];
   registrations: Array<{ kind: string; value: Record<string, unknown> }>;
   services: Map<string, unknown>;
-  makePair(label: string): { events: unknown; views: unknown };
+  makePair(label: string): { events: unknown; views: unknown; binding(sessionId: string): { target(name: string): unknown } };
   notify(name: string): void;
   dispose(): void;
 }
@@ -195,7 +201,11 @@ function mountSurfaceHarness(
         return () => { live.delete(key); };
       },
     });
-    return { events: registry("event"), views: registry("view") };
+    return {
+      events: registry("event"),
+      views: registry("view"),
+      binding() { return { target() { return { getSnapshot: () => ({ events: [] }), subscribe: () => () => {} }; } }; },
+    };
   };
   prepare({ makePair, services });
   const target = {
@@ -255,74 +265,55 @@ function mountSurfaceHarness(
   };
 }
 
-test("Control Center activates through the dynamic facade on both registry families", async () => {
-  for (const generation of ["legacy", "uiConversation"] as const) {
-    const client = await loadClientModule("odai-dsh-agent", ["odai-dsh-agent"]);
-    assert.deepEqual(Array.from(client.inject), ["slots", "sessions", "connection"]);
-    const harness = mountSurfaceHarness(client, ({ makePair, services }) => {
-      const pair = makePair(generation);
-      if (generation === "uiConversation") services.set("uiConversation", pair);
-      else {
-        services.set("conversationEvents", pair.events);
-        services.set("conversationViews", pair.views);
-      }
-    });
+test("Control Center activates through the rc.1 uiConversation service", async () => {
+  const client = await loadClientModule("odai-dsh-agent", ["odai-dsh-agent"]);
+  assert.deepEqual(Array.from(client.inject), ["slots", "sessions", "connection"]);
+  const harness = mountSurfaceHarness(client, ({ makePair, services }) => {
+    services.set("uiConversation", makePair("ui-conversation"));
+  });
 
-    assert.deepEqual(harness.reads, generation === "uiConversation"
-      ? ["uiConversation"]
-      : ["uiConversation", "conversationEvents", "conversationViews"]);
-    assert.equal(harness.listeners.size, 1);
-    assert.equal(harness.registrations.filter((entry) => entry.kind === "event")[0]?.value.kind, "odai-control-center:event");
-    assert.equal(harness.registrations.filter((entry) => entry.kind === "view")[0]?.value.target, "odaiControlCenter");
-    assert.equal(harness.registrations.filter((entry) => entry.kind === "slot")[0]?.value.id, "odai-control-center");
-    assert.equal(harness.live.size, 3);
-    harness.dispose();
-    assert.equal(harness.live.size, 0);
-    assert.equal(harness.listeners.size, 0);
-  }
+  assert.deepEqual(harness.reads, ["uiConversation"]);
+  assert.equal(harness.listeners.size, 1);
+  assert.equal(harness.registrations.filter((entry) => entry.kind === "event")[0]?.value.kind, "odai-control-center:event");
+  assert.equal(harness.registrations.filter((entry) => entry.kind === "view")[0]?.value.target, "odaiControlCenter");
+  assert.equal(harness.registrations.filter((entry) => entry.kind === "slot")[0]?.value.id, "odai-control-center");
+  assert.equal(harness.live.size, 3);
+  harness.dispose();
+  assert.equal(harness.live.size, 0);
+  assert.equal(harness.listeners.size, 0);
 });
 
-test("service changes preserve modern precedence and remount only the authoritative registries", async () => {
-  let legacyFirst: { events: unknown; views: unknown } | undefined;
+test("uiConversation lifecycle mounts late, remounts on replacement, and cleans up", async () => {
   const client = await loadClientModule("odai-dsh-agent", ["odai-dsh-agent"]);
-  const harness = mountSurfaceHarness(client, ({ makePair, services }) => {
-    legacyFirst = makePair("legacy-first");
-    services.set("conversationEvents", legacyFirst.events);
-    services.set("conversationViews", legacyFirst.views);
-  });
-  assert.deepEqual(Array.from(harness.live), ["legacy-first:view", "legacy-first:event", "legacy-first:slot"]);
+  const harness = mountSurfaceHarness(client, () => {});
+  assert.deepEqual(harness.reads, ["uiConversation"]);
+  assert.equal(harness.live.size, 0);
 
-  const modern = harness.makePair("modern");
-  harness.services.set("uiConversation", modern);
+  const first = harness.makePair("first");
+  harness.services.set("uiConversation", first);
   harness.notify("uiConversation");
-  assert.deepEqual(Array.from(harness.live), ["modern:view", "modern:event", "modern:slot"]);
+  assert.deepEqual(Array.from(harness.live), ["first:view", "first:event", "first:slot"]);
 
-  const legacyRestart = harness.makePair("legacy-restart");
-  harness.services.set("conversationEvents", legacyRestart.events);
-  harness.services.set("conversationViews", legacyRestart.views);
-  harness.notify("conversationEvents");
-  harness.notify("conversationViews");
-  assert.deepEqual(Array.from(harness.live), ["modern:view", "modern:event", "modern:slot"]);
-
-  const modernRestart = harness.makePair("modern-restart");
-  harness.services.set("uiConversation", modernRestart);
-  harness.notify("uiConversation");
-  assert.deepEqual(Array.from(harness.live), ["modern-restart:view", "modern-restart:event", "modern-restart:slot"]);
   const mountedSlots = () => harness.registrations.filter((entry) => entry.kind === "slot").length;
   const mountsBeforeDuplicate = mountedSlots();
   harness.notify("uiConversation");
   assert.equal(mountedSlots(), mountsBeforeDuplicate);
 
-  const modernServiceRestart = { events: modernRestart.events, views: modernRestart.views };
-  harness.services.set("uiConversation", modernServiceRestart);
+  const replacement = harness.makePair("replacement");
+  harness.services.set("uiConversation", replacement);
   harness.notify("uiConversation");
   assert.equal(mountedSlots(), mountsBeforeDuplicate + 1);
-  assert.deepEqual(Array.from(harness.live), ["modern-restart:view", "modern-restart:event", "modern-restart:slot"]);
+  assert.deepEqual(Array.from(harness.live), ["replacement:view", "replacement:event", "replacement:slot"]);
+
+  const readsBeforeUnrelatedService = harness.reads.length;
+  harness.notify("conversationEvents");
+  assert.equal(harness.reads.length, readsBeforeUnrelatedService);
+  assert.deepEqual(Array.from(harness.live), ["replacement:view", "replacement:event", "replacement:slot"]);
 
   harness.services.delete("uiConversation");
   harness.notify("uiConversation");
-  assert.deepEqual(Array.from(harness.live), ["legacy-restart:view", "legacy-restart:event", "legacy-restart:slot"]);
+  assert.equal(harness.live.size, 0);
 
   harness.dispose();
-  assert.equal(harness.live.size, 0);
+  assert.equal(harness.listeners.size, 0);
 });

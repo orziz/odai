@@ -29,6 +29,7 @@ import {
   selectSharedSkillForTurn,
   sharedSkillSelection,
 } from "../build/skill-selection-state.mjs";
+import { createSessionEvidence, resolveSessionEvidenceRoot } from "../build/session-evidence.mjs";
 import { isUnknownRecord } from "../build/runtime-types.mjs";
 import type {
   DshAgent,
@@ -56,14 +57,14 @@ interface CapturedContext extends DshRuntimeContext {
 function turnAgent(cwd?: string, events: DshEvent[] = []): TurnAgent {
   return {
     phase: { turn: 1 },
-    session: { header: cwd ? { cwd } : {}, events, append() {} },
+    session: { header: cwd ? { cwd } : {}, snapshotEvents: () => events, append() {} },
   };
 }
 
 function testExecution(origin?: string): ToolExecution {
   return {
     name: "odai_skill_source_config",
-    agent: { session: { header: origin ? { origin } : {}, events: [], append() {} } },
+    agent: { session: { header: origin ? { origin } : {}, snapshotEvents: () => [], append() {} } },
   };
 }
 
@@ -503,13 +504,14 @@ test("runtime injects one project snapshot into both prompt and routed role cont
       subagents: {
         async start(_provider: unknown, request: UnknownRecord) {
           startRequest = request;
+          const events: DshEvent[] = [{
+            type: "request/header",
+            data: { header: { config: { provider: "fixture", model: "planner" } } },
+          }];
           return {
             localAgent: {
               session: {
-                events: [{
-                  type: "request/header",
-                  data: { header: { config: { provider: "fixture", model: "planner" } } },
-                }],
+                snapshotEvents: () => events,
               },
             },
             result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "planned" }] }),
@@ -519,14 +521,16 @@ test("runtime injects one project snapshot into both prompt and routed role cont
       },
     });
     const sourceConfigPath = resolve(dshHome, "odai/source.json");
+    const routingConfigPath = resolve(dshHome, "odai/routing.json");
     apply(ctx, {
       governance: { skillSource: "auto", skillConfigPath: sourceConfigPath },
       routing: {
         mode: "execute",
+        configPath: routingConfigPath,
         roles: { planner: { provider: "fixture", model: "planner" } },
       },
     });
-    const agent = turnAgent(project, [{
+    const gap: DshEvent = {
       type: "odai/responsibility-gap",
       data: {
         turn: 1,
@@ -537,7 +541,10 @@ test("runtime injects one project snapshot into both prompt and routed role cont
         expectedChange: "Select the compatible route before implementation.",
         stateDigest: "b".repeat(64),
       },
-    }]);
+    };
+    const agent = turnAgent(project, [gap]);
+    createSessionEvidence({ root: resolveSessionEvidenceRoot(routingConfigPath) })
+      .append(agent, gap.type, gap.data);
     const signal = new AbortController().signal;
     const assemble = handler(ctx, "system-prompt/assemble");
     const baseAssembly = assemblyFor(ctx);

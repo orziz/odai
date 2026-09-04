@@ -18,7 +18,7 @@ import type { ToolExecution } from "../build/runtime-types.mjs";
 
 const execution: ToolExecution = {
   name: "test-config-tool",
-  agent: { session: { header: {}, events: [], append() {} } },
+  agent: { session: { header: {}, snapshotEvents: () => [], append() {} } },
 };
 
 function rejectingResolver(code: string, message = code): () => Promise<never> {

@@ -22,6 +22,10 @@ const routingConfigModulePath = firstExisting("Odai routing configuration runtim
   resolve(pluginRoot, "runtime/routing-config.mjs"),
   resolve(pluginRoot, "../runtime/build/routing-config.mjs"),
 ]);
+const sessionEvidenceModulePath = firstExisting("Odai session evidence runtime", [
+  resolve(pluginRoot, "runtime/session-evidence.mjs"),
+  resolve(pluginRoot, "../runtime/build/session-evidence.mjs"),
+]);
 const skillPath = firstExisting("canonical Odai skill", [
   resolve(pluginRoot, "skills/odai/SKILL.md"),
   resolve(repoRoot, "skills/odai/SKILL.md"),
@@ -37,21 +41,23 @@ const routingConfigPath = resolve(scratch, "home", "odai", "routing.json");
 const sourceConfigPath = resolve(scratch, "home", "odai", "source.json");
 const outputConfigPath = resolve(scratch, "home", "odai", "output.json");
 const compactionConfigPath = resolve(scratch, "home", "odai", "compaction.json");
+const sessionEvidenceRoot = resolve(scratch, "home", "odai", "session-evidence");
 
 const yamlString = (value: string): string => JSON.stringify(value);
 const wrapper = [
   "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
   `import { apply as applyOdai, inject, name } from ${JSON.stringify(pathToFileURL(pluginPath).href)};`,
   `import { createRoutingConfigTool } from ${JSON.stringify(pathToFileURL(routingConfigModulePath).href)};`,
+  `import { createSessionEvidence } from ${JSON.stringify(pathToFileURL(sessionEvidenceModulePath).href)};`,
   "export { inject, name };",
   "export function apply(ctx, config) {",
   "  if (typeof ctx.llm?.resolveCallConfig !== 'function') throw new Error('DSH did not expose llm.resolveCallConfig');",
   "  applyOdai(ctx, config);",
-  "  const child = { session: { header: { origin: 'subagent', delegationDepth: 1 }, append() {} } };",
-  "  const protectedController = { session: { header: {}, events: [",
-  "    { type: 'odai/route-decided', data: { turn: 1, step: 1 } },",
-  "    { type: 'odai/route-protection', data: { turn: 1, step: 1, mode: 'read-only', reasonCode: 'PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE' } },",
-  "  ], append() {} } };",
+  "  const child = { session: { header: { origin: 'subagent', delegationDepth: 1 }, snapshotEvents() { return []; }, append() {} } };",
+  "  const protectedController = { session: { header: {}, snapshotEvents() { return []; }, append() {} } };",
+  `  const protectionEvidence = createSessionEvidence({ root: ${JSON.stringify(sessionEvidenceRoot)} });`,
+  "  protectionEvidence.append(protectedController, 'odai/route-decided', { turn: 1, step: 1 });",
+  "  protectionEvidence.append(protectedController, 'odai/route-protection', { turn: 1, step: 1, mode: 'read-only', reasonCode: 'PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE' });",
   "  const probes = [",
   `    { callId: 'odai-child-boundary-probe', path: ${JSON.stringify(deniedWritePath)}, agent: child, prefix: 'ODAI_SUBAGENT_BOUNDARY:' },`,
   `    { callId: 'odai-route-protection-probe', path: ${JSON.stringify(protectedWritePath)}, agent: protectedController, prefix: 'ODAI_HIGH_IMPACT_ROUTE_BLOCKED:' },`,
@@ -68,7 +74,8 @@ const wrapper = [
   "    }",
   "    if (existsSync(probe.path)) throw new Error(`${probe.callId} reached the write tool body`);",
   "  })));",
-  "  const controller = { session: { header: {}, events: [], append(type, data) { this.events.push({ type, data }); } } };",
+  "  const controllerEvents = [];",
+  "  const controller = { session: { header: {}, snapshotEvents() { return controllerEvents; }, append(type, data) { controllerEvents.push({ type, data }); } } };",
   "  const routingTool = ctx.tools.get('odai_routing_config');",
   "  if (!routingTool) throw new Error('odai_routing_config was not registered');",
   `  const configProbe = createRoutingConfigTool(${JSON.stringify(routingConfigPath)}).execute({`,
@@ -177,7 +184,7 @@ try {
     const timeout = setTimeout(() => {
       terminateDsh(child);
       reject(new Error(`timed out waiting for odai plugin load marker\n${output}`));
-    }, 15_000);
+    }, 30_000);
     const markerPoll = setInterval(() => {
       if (!existsSync(markerPath)) return;
       verified = true;

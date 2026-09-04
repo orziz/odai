@@ -7,7 +7,7 @@ import type { ResponsibilityReturnResult } from "../build/responsibility-return.
 import type { DshAgent, ToolExecution } from "../build/runtime-types.mjs";
 
 function agent(): DshAgent {
-  return { session: { header: {}, events: [], append() {} } };
+  return { session: { header: {}, snapshotEvents: () => [], append() {} } };
 }
 
 function execution(owner: DshAgent): ToolExecution {

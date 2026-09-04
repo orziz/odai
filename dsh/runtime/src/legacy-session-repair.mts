@@ -37,19 +37,19 @@ interface ProcessRecord extends ActiveDshProcess {
   commandLine: unknown;
 }
 
-export interface SessionCompatOptions {
+export interface LegacySessionRepairOptions {
   dshHome?: string;
   sessionRoot?: string;
   confirmDshStopped?: boolean;
   processScanner?: () => readonly ActiveDshProcess[];
 }
 
-export interface SessionCompatFailure {
+export interface LegacySessionRepairFailure {
   path: string;
   error: string;
 }
 
-export interface SessionCompatResult {
+export interface LegacySessionRepairResult {
   dshHome: string;
   sessionRoot: string;
   scannedArtifacts: number;
@@ -59,7 +59,7 @@ export interface SessionCompatResult {
   repairedEvents: number;
   backupPaths: string[];
   tornArtifacts: string[];
-  failures: SessionCompatFailure[];
+  failures: LegacySessionRepairFailure[];
 }
 
 interface ZstdFrame { start: number; end: number }
@@ -119,7 +119,7 @@ export function listActiveDshProcesses(platform: NodeJS.Platform = process.platf
     .map(({ pid, name }) => Object.freeze({ pid, name }));
 }
 
-function assertDshStopped(options: SessionCompatOptions): void {
+function assertDshStopped(options: LegacySessionRepairOptions): void {
   let active: readonly ActiveDshProcess[];
   try {
     const scanner = options.processScanner ?? listActiveDshProcesses;
@@ -332,11 +332,11 @@ function replaceAtomically(path: string, source: Buffer, replacement: Buffer, ba
   } finally { rmSync(temporary, { force: true }); }
 }
 
-function processLegacySessionLogs(options: SessionCompatOptions, writeChanges: boolean): SessionCompatResult {
+function processLegacySessionLogs(options: LegacySessionRepairOptions, writeChanges: boolean): LegacySessionRepairResult {
   const dshHome = resolveDshHome(options.dshHome);
   const sessionRoot = resolve(options.sessionRoot ?? resolve(dshHome, "sessions"));
   const artifacts = listSessionArtifacts(sessionRoot);
-  const result: SessionCompatResult = {
+  const result: LegacySessionRepairResult = {
     dshHome, sessionRoot, scannedArtifacts: artifacts.length, matchedArtifacts: 0, matchedEvents: 0,
     repairedArtifacts: 0, repairedEvents: 0, backupPaths: [], tornArtifacts: [], failures: [],
   };
@@ -360,11 +360,11 @@ function processLegacySessionLogs(options: SessionCompatOptions, writeChanges: b
   return result;
 }
 
-export function inspectLegacySessionLogs(options: SessionCompatOptions = {}): SessionCompatResult {
+export function inspectLegacySessionLogs(options: LegacySessionRepairOptions = {}): LegacySessionRepairResult {
   return processLegacySessionLogs(options, false);
 }
 
-export function repairLegacySessionLogs(options: SessionCompatOptions = {}): SessionCompatResult {
+export function repairLegacySessionLogs(options: LegacySessionRepairOptions = {}): LegacySessionRepairResult {
   if (options.confirmDshStopped !== true) throw new Error("refusing to rewrite session artifacts until confirmDshStopped is true; stop every DSH process first");
   assertDshStopped(options);
   return processLegacySessionLogs(options, true);

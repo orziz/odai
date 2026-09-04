@@ -14,8 +14,6 @@ import {
   SUPPORTED_DSH_RANGE,
   uninstallAgentPreset,
 } from "../src/installer.mjs";
-import type { SessionCompatResult } from "../../runtime/build/session-compat.mjs";
-
 interface CliArguments {
   command?: "install" | "status" | "uninstall" | "control-center";
   controlCenterCommand?: "install" | "status" | "uninstall";
@@ -23,7 +21,6 @@ interface CliArguments {
   profile?: string;
   controlCenter?: boolean;
   json: boolean;
-  yes: boolean;
   help: boolean;
 }
 
@@ -33,7 +30,6 @@ interface DisplayResult {
   target: string;
   issues?: readonly string[];
   security?: string;
-  sessionCompatibility?: SessionCompatResult;
 }
 
 const HELP = `Usage: odai-dsh-agent <command> [options]
@@ -52,8 +48,7 @@ Options:
   --with-control-center     Install Control Center without prompting
   --without-control-center  Skip the interactive Control Center prompt
   --json                    Print JSON; never prompts
-  --yes              Confirm DSH is stopped; active-process verification still applies
-  -h, --help         Show this help
+  -h, --help                Show this help
 `;
 
 try {
@@ -65,7 +60,6 @@ try {
     const preset = await installAgentPreset({
       dshHome: args.dshHome,
       dshVersion,
-      confirmDshStopped: args.yes,
     });
     if (args.json) {
       const controlCenter = args.controlCenter === true
@@ -89,7 +83,6 @@ try {
   } else if (args.command === "uninstall") {
     print(await uninstallAgentPreset({
       dshHome: args.dshHome,
-      confirmDshStopped: args.yes,
     }), args.json);
   } else if (args.command === "control-center" && args.controlCenterCommand === "install") {
     print(await installAgentControlCenter({ dshHome: args.dshHome, profile: args.profile }), args.json);
@@ -149,12 +142,11 @@ function assertDshVersion(): string {
 }
 
 function parseArgs(argv: readonly string[]): CliArguments {
-  const parsed: CliArguments = { json: false, yes: false, help: false };
+  const parsed: CliArguments = { json: false, help: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "-h" || arg === "--help") parsed.help = true;
     else if (arg === "--json") parsed.json = true;
-    else if (arg === "--yes") parsed.yes = true;
     else if (arg === "--with-control-center") {
       if (parsed.controlCenter === false) throw new Error("--with-control-center conflicts with --without-control-center");
       parsed.controlCenter = true;
@@ -194,18 +186,5 @@ function print(result: DisplayResult, json: boolean): void {
     return;
   }
   process.stdout.write(`${result.operation}: ${result.target}\n`);
-  const compatibility = result.sessionCompatibility;
-  if ((compatibility?.repairedEvents ?? 0) > 0) {
-    process.stdout.write(`session compatibility: made ${compatibility?.repairedEvents ?? 0} legacy Odai event(s) ignorable in ${compatibility?.repairedArtifacts ?? 0} session artifact(s)\n`);
-  }
-  if ((compatibility?.backupPaths?.length ?? 0) > 0) {
-    process.stdout.write(`session compatibility: retained ${compatibility?.backupPaths.length ?? 0} verified backup artifact(s)\n`);
-  }
-  for (const path of compatibility?.tornArtifacts ?? []) {
-    process.stdout.write(`session compatibility warning: preserved DSH-recoverable torn tail: ${path}\n`);
-  }
-  for (const failure of compatibility?.failures ?? []) {
-    process.stdout.write(`session compatibility warning: ${failure.path}: ${failure.error}\n`);
-  }
   if (result.security) process.stdout.write(`security: ${result.security}\n`);
 }

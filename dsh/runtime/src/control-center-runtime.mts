@@ -123,6 +123,28 @@ function failureFor(error: unknown): RpcFailure {
   return { code: "internal", message };
 }
 
+export function installControlCenterRuntimeWhenAvailable(
+  ctx: DshRuntimeContext,
+  options: ControlCenterRuntimeOptions,
+): () => Promise<void> {
+  let release: (() => Promise<void>) | undefined;
+  let stopped = false;
+  const mount = (): void => {
+    if (stopped || release) return;
+    release = installControlCenterRuntime(ctx, options);
+  };
+  ctx.on("internal/service", (serviceName: string) => {
+    if (serviceName === "connection") mount();
+  });
+  mount();
+  return async () => {
+    stopped = true;
+    const current = release;
+    release = undefined;
+    await current?.();
+  };
+}
+
 export function installControlCenterRuntime(
   ctx: DshRuntimeContext,
   options: ControlCenterRuntimeOptions,

@@ -315,7 +315,7 @@ window.__ModuleLoader__.load({
     function controlCenterError(cause: unknown): string {
       const message = cause instanceof Error ? cause.message : String(cause);
       return /HTTP 405|transport failure.*odai-control-center/iu.test(message)
-        ? "当前 DSH 进程尚未加载 Control Center host。安装后需重启一次 Web profile。"
+        ? "Control Center 已随 Odai 安装，无需另行安装。当前 Web profile 尚未加载 host，请停止并重新启动 dsh web 后刷新页面。"
         : message;
     }
 
@@ -585,21 +585,13 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function legacyTraceView(snapshot: any): { events?: unknown[] } {
-      return snapshot?.views?.get?.("odaiControlCenter") ?? EMPTY_TRACE_VIEW;
-    }
-
     function conversationTraceSource(conversation: any, sessionId: string | undefined): any {
       return conversation && sessionId ? conversation.binding(sessionId).target("odaiControlCenter") : EMPTY_TRACE_SOURCE;
     }
 
-    function ControlCenter({ useSession, sessionId: ownerSessionId, traceSource, connection, onClose }: { useSession: any; sessionId?: string; traceSource?: (sessionId: string | undefined) => any; connection: any; onClose(): void }) {
-      const selectedSessionId = useSession((snapshot: any) => snapshot.sessionId) as string | undefined;
-      const sessionId = ownerSessionId ?? selectedSessionId;
-      const source = useMemo(() => traceSource?.(sessionId) ?? EMPTY_TRACE_SOURCE, [traceSource, sessionId]);
-      const modernTraceView = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot) as { events?: unknown[] } | undefined;
-      const legacyView = useSession(legacyTraceView) as { events?: unknown[] };
-      const traceView = traceSource ? modernTraceView ?? EMPTY_TRACE_VIEW : legacyView;
+    function ControlCenter({ sessionId, traceSource, connection, onClose }: { sessionId?: string; traceSource: (sessionId: string | undefined) => any; connection: any; onClose(): void }) {
+      const source = useMemo(() => traceSource(sessionId), [traceSource, sessionId]);
+      const traceView = useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot) as { events?: unknown[] } | undefined ?? EMPTY_TRACE_VIEW;
       const [storedEvidence, setStoredEvidence] = useState([]);
       const [evidenceError, setEvidenceError] = useState("");
       const traceEvents = storedEvidence.length ? storedEvidence : traceView.events ?? [];
@@ -696,7 +688,7 @@ window.__ModuleLoader__.load({
       ), document.body);
     }
 
-    function Launcher(props: { useSession: any; sessionId?: string; traceSource?: (sessionId: string | undefined) => any; connection: any }) {
+    function Launcher(props: { sessionId?: string; traceSource: (sessionId: string | undefined) => any; connection: any }) {
       const [open, setOpen] = useState(false);
       return h(React.Fragment, null,
         h("button", {
@@ -740,7 +732,9 @@ window.__ModuleLoader__.load({
       return PACKAGE_ID === preferred;
     }
 
-    function mountSurface(ctx: any, conversationEvents: any, conversationViews: any, conversation?: any): () => void {
+    function mountSurface(ctx: any, conversation: any): () => void {
+      const eventRegistry = conversation.events;
+      const viewRegistry = conversation.views;
       const disposers: Array<() => void> = [];
       let disposed = false;
       const disposeAll = () => {
@@ -749,7 +743,7 @@ window.__ModuleLoader__.load({
         while (disposers.length > 0) disposers.pop()?.();
       };
       try {
-        disposers.push(conversationViews.register({
+        disposers.push(viewRegistry.register({
           target: "odaiControlCenter",
           create() {
             let events: any[] = [];
@@ -771,7 +765,7 @@ window.__ModuleLoader__.load({
             };
           },
         }));
-        disposers.push(conversationEvents.register({
+        disposers.push(eventRegistry.register({
           kind: "odai-control-center:event",
           target: "odaiControlCenter",
           match(event: UnknownRecord) {
@@ -795,8 +789,8 @@ window.__ModuleLoader__.load({
             };
           },
         }));
-        const traceSource = conversation ? (sessionId: string | undefined) => conversationTraceSource(conversation, sessionId) : undefined;
-        const Entry = (props: { useSession: any; sessionId?: string }) => h(Launcher, { ...props, connection: ctx.connection, traceSource });
+        const traceSource = (sessionId: string | undefined) => conversationTraceSource(conversation, sessionId);
+        const Entry = (props: { sessionId?: string }) => h(Launcher, { ...props, connection: ctx.connection, traceSource });
         disposers.push(ctx.slots.inject("conversation.session.header.utilities", () => ctx.slots.register({
           name: "conversation.session.header.utilities",
           id: "odai-control-center",
@@ -814,46 +808,27 @@ window.__ModuleLoader__.load({
       if (!shouldOwnSurface()) return;
       injectStyles();
       type Candidate = {
-        generation: "legacy" | "uiConversation";
+        conversation: any;
         events: any;
         views: any;
-        conversation?: any;
-        serviceIdentity?: any;
-        eventsIdentity?: any;
-        viewsIdentity?: any;
+        serviceIdentity: any;
       };
       // ctx.get wraps services per read; internal/service carries the stable provider identity.
-      const serviceIdentities = new Map<string, unknown>();
+      let serviceIdentity: unknown;
       let active: Candidate | undefined;
       let disposeActive: (() => void) | undefined;
       const readCandidate = (): Candidate | undefined => {
-        const modern = ctx.get("uiConversation");
-        if (modern?.events && modern?.views) {
-          return {
-            generation: "uiConversation",
-            events: modern.events,
-            views: modern.views,
-            conversation: modern,
-            serviceIdentity: serviceIdentities.get("uiConversation") ?? modern.events,
-          };
-        }
-        const events = ctx.get("conversationEvents");
-        const views = ctx.get("conversationViews");
-        return events && views ? {
-          generation: "legacy",
-          events,
-          views,
-          eventsIdentity: serviceIdentities.get("conversationEvents"),
-          viewsIdentity: serviceIdentities.get("conversationViews"),
+        const conversation = ctx.get("uiConversation");
+        return conversation?.events && conversation?.views && typeof conversation.binding === "function" ? {
+          conversation,
+          events: conversation.events,
+          views: conversation.views,
+          serviceIdentity: serviceIdentity ?? conversation.events,
         } : undefined;
       };
-      const sameCandidate = (left: Candidate | undefined, right: Candidate | undefined): boolean => {
-        if (left?.generation !== right?.generation) return false;
-        if (left?.generation === "uiConversation") {
-          return left.serviceIdentity === right?.serviceIdentity && left.events === right?.events && left.views === right?.views;
-        }
-        return left?.eventsIdentity === right?.eventsIdentity && left?.viewsIdentity === right?.viewsIdentity;
-      };
+      const sameCandidate = (left: Candidate | undefined, right: Candidate | undefined): boolean => left?.serviceIdentity === right?.serviceIdentity
+        && left?.events === right?.events
+        && left?.views === right?.views;
       const reconcile = () => {
         const next = readCandidate();
         if (sameCandidate(next, active)) return;
@@ -861,13 +836,13 @@ window.__ModuleLoader__.load({
         disposeActive = undefined;
         active = undefined;
         if (!next) return;
-        disposeActive = mountSurface(ctx, next.events, next.views, next.conversation);
+        disposeActive = mountSurface(ctx, next.conversation);
         active = next;
       };
       reconcile();
       ctx.on("internal/service", (name: string, value: unknown) => {
-        if (!["uiConversation", "conversationEvents", "conversationViews"].includes(name)) return;
-        serviceIdentities.set(name, value);
+        if (name !== "uiConversation") return;
+        serviceIdentity = value;
         reconcile();
       });
       ctx.effect(() => () => {
@@ -879,7 +854,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply;
     exports.inject = ["slots", "sessions", "connection"];
-    exports.__testing = { conversationTraceSource, defaultTraceItem, legacyTraceView, projectTrace, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
+    exports.__testing = { controlCenterError, conversationTraceSource, defaultTraceItem, projectTrace, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
     return module.exports;
   },
 });

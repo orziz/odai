@@ -5,19 +5,22 @@ import test from "node:test";
 import { resolve } from "node:path";
 
 import {
-  apply,
+  apply as applyRuntime,
   inheritCompactionReasoning,
   resolveConfig,
   runRoutedRole,
 } from "../build/index.mjs";
 import {
+  createSessionEvidence,
   readStoredSessionEvidence,
   resolveSessionEvidenceRoot,
 } from "../build/session-evidence.mjs";
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
+import { resolveRoutingConfigPath } from "../build/routing-config.mjs";
 import type { Responsibility } from "../src/responsibility-gap.mjs";
 import type {
+  DshAgent,
   DshContentBlock,
   DshEvent,
   DshMessage,
@@ -261,6 +264,35 @@ function fakeContext(extra: FakeContextExtra = {}): FakeContext {
   return context;
 }
 
+const evidenceRoots = new WeakMap<FakeContext, string>();
+
+function apply(ctx: FakeContext, config: UnknownRecord = {}): void {
+  applyRuntime(ctx, config);
+  const routing = isUnknownRecord(config.routing) ? config.routing : undefined;
+  const configPath = typeof routing?.configPath === "string" ? routing.configPath : undefined;
+  evidenceRoots.set(ctx, resolveSessionEvidenceRoot(resolveRoutingConfigPath(configPath)));
+}
+
+function seedCurrentEvidence(ctx: FakeContext, agent: DshAgent, events: readonly DshEvent[]): void {
+  const root = evidenceRoots.get(ctx);
+  if (!root) throw new Error("runtime test context has no evidence root");
+  const evidence = createSessionEvidence({ root });
+  const append = agent.session.append;
+  agent.session.append = () => undefined;
+  try {
+    for (const event of events) {
+      if (event.type.startsWith("odai/")) evidence.append(agent, event.type, event.data);
+    }
+  } finally {
+    agent.session.append = append;
+  }
+}
+
+function childSession(config: ModelRoute): Pick<DshSession, "snapshotEvents"> {
+  const events: DshEvent[] = [{ type: "request/header", data: { header: { config } } }];
+  return { snapshotEvents: () => events };
+}
+
 function userMessage(text: string): DshMessage {
   return {
     id: "user-1",
@@ -369,7 +401,7 @@ test("responsibility gap tool source-verifies requirement ledgers against direct
   const agent = {
     phase: { turn: 1, step: 1 },
     session: {
-      header: {}, events,
+      header: {}, events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
@@ -427,7 +459,7 @@ test("responsibility gap tool source-verifies requirement ledgers against direct
   const idlessEvents: DshEvent[] = [{ type: "user/message", data: idlessMessage }];
   const idlessAgent = {
     session: {
-      header: {}, events: idlessEvents,
+      header: {}, events: idlessEvents, snapshotEvents: () => idlessEvents,
       append(type: string, data: RuntimeEventData) { idlessEvents.push({ type, data }); },
     },
   };
@@ -539,7 +571,7 @@ test("compaction inherits routed reasoning and applies configured retention for 
       if (sessionId !== "session-cache") return undefined;
       return {
         header: {},
-        events: [],
+        events: [], snapshotEvents: () => [],
         append() {},
         requestHeader() {
           return {
@@ -686,7 +718,7 @@ test("managed compaction target overrides only summaries and restores inheritanc
       if (sessionId !== "managed-compaction") return undefined;
       return {
         header: {},
-        events: [],
+        events: [], snapshotEvents: () => [],
         append() {},
         requestHeader() {
           return { config: { provider: "openai", model: "gpt-5.6-sol", reasoningEffort: "xhigh" } };
@@ -939,7 +971,7 @@ test("semantic memory captures and retrieves across sessions without hidden mode
   const firstAgent = {
     session: {
       header: { id: "memory-first", cwd: projectRoot },
-      events: firstEvents,
+      events: firstEvents, snapshotEvents: () => firstEvents,
       append(type: string, data: RuntimeEventData) { firstEvents.push({ type, data }); },
     },
   };
@@ -958,7 +990,7 @@ test("semantic memory captures and retrieves across sessions without hidden mode
   const secondAgent = {
     session: {
       header: { id: "memory-second", cwd: projectRoot },
-      events: secondEvents,
+      events: secondEvents, snapshotEvents: () => secondEvents,
       append(type: string, data: RuntimeEventData) { secondEvents.push({ type, data }); },
     },
   };
@@ -1008,7 +1040,7 @@ test("invalid semantic memory fails closed without rewriting the store", async (
   const agent = {
     session: {
       header: { id: "memory-invalid-runtime", cwd: root },
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
@@ -1046,7 +1078,7 @@ test("profile and preset runtimes single-flight automatic memory capture", async
   const agent = {
     session: {
       header: { id: "memory-dual", cwd: projectRoot },
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
@@ -1075,12 +1107,13 @@ test("default auto routing keeps ordinary tasks on the current controller", asyn
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -1106,7 +1139,7 @@ test("real sessions persist routing evidence outside the DSH event log", async (
   const agent = {
     session: {
       header: { id: "real-session-evidence" },
-      events: [],
+      events: [], snapshotEvents: () => [],
       append() { sessionAppends += 1; },
     },
   };
@@ -1144,14 +1177,14 @@ test("only explicit Odai responsibility labels route manual children", async () 
 
   const handler = ctx.captured.handlers.get("agent/request");
   const inherited = { provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "max" };
-  const controller = { session: { events: [] } };
+  const controller = { session: { events: [], snapshotEvents: () => [] } };
   assert.deepEqual(await handler({ agent: controller }, async () => inherited), inherited);
 
   let plannerHeader: { config: UnknownRecord } | undefined;
   const plannerEvents: DshEvent[] = [{ type: "subagent/descriptor", data: { label: "odai-planner architecture check" } }];
   const planner = {
     session: {
-      events: plannerEvents,
+      events: plannerEvents, snapshotEvents: () => plannerEvents,
       requestHeader() { return plannerHeader; },
       append(type: string, data: RuntimeEventData) { this.events.push({ type, data }); },
     },
@@ -1178,7 +1211,7 @@ test("only explicit Odai responsibility labels route manual children", async () 
   const mismatchedHeader = { config: inherited };
   const mismatchedPlanner = {
     session: {
-      events: mismatchedEvents,
+      events: mismatchedEvents, snapshotEvents: () => mismatchedEvents,
       requestHeader() { return mismatchedHeader; },
       append(type: string, data: RuntimeEventData) { mismatchedEvents.push({ type, data }); },
     },
@@ -1193,18 +1226,12 @@ test("only explicit Odai responsibility labels route manual children", async () 
     /planner child route was not verified: child model mismatch/u,
   );
 
-  const generic = {
-    session: {
-      events: [{ type: "subagent/descriptor", data: { label: "审查界面改版代码" } }],
-    },
-  };
+  const genericEvents: DshEvent[] = [{ type: "subagent/descriptor", data: { label: "审查界面改版代码" } }];
+  const generic = { session: { snapshotEvents: () => genericEvents } };
   assert.deepEqual(await handler({ agent: generic }, async () => inherited), inherited);
 
-  const missingReviewer = {
-    session: {
-      events: [{ type: "subagent/descriptor", data: { label: "odai-reviewer acceptance check" } }],
-    },
-  };
+  const reviewerEvents: DshEvent[] = [{ type: "subagent/descriptor", data: { label: "odai-reviewer acceptance check" } }];
+  const missingReviewer = { session: { snapshotEvents: () => reviewerEvents } };
   await assert.rejects(
     handler({ agent: missingReviewer }, async () => inherited),
     /reviewer child route is not configured/u,
@@ -1232,7 +1259,7 @@ test("effective routing mappings are merged, visible after compaction, and stabl
     phase: { turn: 1 },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -1293,7 +1320,7 @@ test("controller output policy is default-concise, turn-stable, request-bounded,
     phase: { turn: 1 },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -1367,7 +1394,7 @@ test("controller output policy is default-concise, turn-stable, request-bounded,
 
   const child = {
     phase: { turn: 1 },
-    session: { header: { origin: "subagent", delegationDepth: 1 }, events: [] },
+    session: { header: { origin: "subagent", delegationDepth: 1 }, events: [], snapshotEvents: () => [] },
   };
   const childResult = await request(
     { agent: child, turn: 1, step: 1 },
@@ -1409,7 +1436,7 @@ test("session-scoped output ceiling directives apply before generation without c
     ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
@@ -1438,7 +1465,7 @@ test("session-scoped output ceiling directives apply before generation without c
   assert.equal(readFileSync(configPath, "utf8"), originalStore);
   const child = {
     phase: { turn: 1 },
-    session: { header: { origin: "subagent", delegationDepth: 1 }, events: [] },
+    session: { header: { origin: "subagent", delegationDepth: 1 }, events: [], snapshotEvents: () => [] },
   };
   assert.deepEqual(
     await request({ agent: child, turn: 1, step: 1 }, async () => ({ provider: "child", model: "worker", maxTokens: 4_000 })),
@@ -1495,7 +1522,7 @@ test("session-scoped output ceiling directives apply before generation without c
     ctx: { tools: { restrict(filter: TestRestriction) { questionRestrictions.push(filter); return () => {}; } } },
     session: {
       header: {},
-      events: questionEvents,
+      events: questionEvents, snapshotEvents: () => questionEvents,
       append(type: string, data: RuntimeEventData) { questionEvents.push({ type, data }); },
     },
   };
@@ -1526,7 +1553,7 @@ test("a verified controller max-token interruption grants one uncapped pure-cont
     phase: { turn: 1 },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
@@ -1587,7 +1614,7 @@ test("a verified controller max-token interruption grants one uncapped pure-cont
     phase: { turn: 1 },
     session: {
       header: {},
-      events: hostEvents,
+      events: hostEvents, snapshotEvents: () => hostEvents,
       append(type: string, data: RuntimeEventData) { hostEvents.push({ type, data }); },
     },
   };
@@ -1628,7 +1655,7 @@ test("a verified controller max-token interruption grants one uncapped pure-cont
     phase: { turn: 1 },
     session: {
       header: {},
-      events: resumedControllerEvents,
+      events: resumedControllerEvents, snapshotEvents: () => resumedControllerEvents,
       append(type: string, data: RuntimeEventData) { resumedControllerEvents.push({ type, data }); },
     },
   };
@@ -1667,7 +1694,7 @@ test("host evolution bypass disables selection and mutations", async () => {
       routing: { mode: "off" },
     });
     const tool = ctx.captured.tools.find((candidate: TestTool) => candidate.name === "odai_skill_evolution");
-    const agent = { session: { header: {}, events: [] } };
+    const agent = { session: { header: {}, events: [], snapshotEvents: () => [] } };
     assert.equal((await tool.execute({ action: "show" }, { agent })).status, "disabled");
     assert.throws(
       () => tool.execute({ action: "validate", generationId: "0".repeat(64) }, { agent }),
@@ -1696,7 +1723,7 @@ test("skill evolution activation preserves the current turn and changes the next
     phase: { turn: 1 },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, seq: events.length, time: 1_777_000_000_000 + events.length, data });
       },
@@ -1784,7 +1811,7 @@ test("adaptive tool exposure reconciles prebuilt prompt schemas with the scoped 
     },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -1829,7 +1856,7 @@ test("cold first steps expose only executable core tools before gateway activati
     ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -1890,7 +1917,7 @@ test("every gateway capability is executable when its next-step schema is snapsh
       ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
       session: {
         header: {},
-        events,
+        events, snapshotEvents: () => events,
         append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
       },
     };
@@ -1940,7 +1967,7 @@ test("outer runtime refreshes executable schemas after downstream restriction ch
     ctx: { tools: { restrict() { return () => {}; } } },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -1974,7 +2001,7 @@ test("capability gateway recovers a missed expression on the next step", async (
     ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -2003,7 +2030,7 @@ test("implementation turns activate craft within the contextual prompt budget", 
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -2043,7 +2070,7 @@ test("read-only requests do not activate the canonical craft reference", async (
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -2120,7 +2147,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -2183,7 +2210,7 @@ test("explicit safety continuity persists across controller sessions without rea
   const firstAgent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
     },
   };
@@ -2199,7 +2226,7 @@ test("explicit safety continuity persists across controller sessions without rea
   const controllerAgent = {
     session: {
       header: {},
-      events: controllerEvents,
+      events: controllerEvents, snapshotEvents: () => controllerEvents,
       append(type: string, data: RuntimeEventData) { controllerEvents.push({ type, seq: controllerEvents.length + 1, data }); },
     },
   };
@@ -2212,7 +2239,7 @@ test("explicit safety continuity persists across controller sessions without rea
   assert.match(continuity, new RegExp(value, "u"));
   assert.match(continuity, /not evidence of the user's current state/u);
 
-  const childAgent = { session: { header: { origin: "subagent", delegationDepth: 1 }, events: [], append() {} } };
+  const childAgent = { session: { header: { origin: "subagent", delegationDepth: 1 }, events: [], snapshotEvents: () => [], append() {} } };
   const childAssembled = await nextCtx.captured.handlers.get("system-prompt/assemble")(
     {},
     { agent: childAgent, signal: new AbortController().signal },
@@ -2250,7 +2277,7 @@ test("global and preset runtime instances deduplicate durable evidence and routi
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -2322,12 +2349,13 @@ test("global and preset execute routing starts exactly one subagent", async () =
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(globalCtx, agent, events);
   const payload = { agent, turn: 1, step: 1, signal: new AbortController().signal };
   const base = async () => ({
     kind: "enter",
@@ -2388,7 +2416,7 @@ test("default auto reports an unconfigured planner only when the gap is needed",
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -2436,12 +2464,13 @@ test("an invalid user routing store keeps governance loaded and repairs through 
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -2497,12 +2526,13 @@ test("execute mode loads without subagents and reports an unconfigured reviewer 
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -2549,7 +2579,7 @@ test("configured auto mode upgrades the current controller turn without a child"
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
@@ -2702,10 +2732,11 @@ test("auto mode honors explicit child dispatch for planner and frontend", async 
         async start(_provider: string, options: UnknownRecord) {
           starts += 1;
           assert.equal(options.label, `odai-${fixture.role}`);
+          const childEvents: DshEvent[] = [{ type: "request/header", data: { header: { config: fixture.route } } }];
           return {
             localAgent: {
               session: {
-                events: [{ type: "request/header", data: { header: { config: fixture.route } } }],
+                snapshotEvents: () => childEvents,
               },
             },
             result: Promise.resolve({
@@ -2728,10 +2759,11 @@ test("auto mode honors explicit child dispatch for planner and frontend", async 
     const agent = {
       session: {
         header: {},
-        events,
+        events, snapshotEvents: () => events,
         append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
       },
     };
+    seedCurrentEvidence(ctx, agent, events);
     const result = await ctx.captured.handlers.get("agent/pre-step")(
       { agent, turn: 1, step: 1, signal: new AbortController().signal },
       async () => ({ kind: "enter", messages: [userMessage(fixture.message)] }),
@@ -2760,10 +2792,11 @@ test("researcher same-turn dispatch returns its read-only packet to the controll
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("核实当前实现依据再继续")] }),
@@ -2802,10 +2835,11 @@ test("reviewer same-turn findings return to the controller for continued process
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请审查当前实现并把 finding 交回总控继续处理")] }),
@@ -2845,15 +2879,16 @@ test("planner handback restores the original controller route", async () => {
     { type: "step/start", seq: 3, data: { turn: 1, step: 1 } },
     { ...responsibilityGapEvent("planner"), seq: 4 },
   ];
-  let actualHeader: UnknownRecord | undefined;
+  let actualHeader: { config?: ModelRoute } = {};
   const agent = {
     phase: { turn: 1, step: 1 },
     session: {
-      header: {}, events,
+      header: {}, events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal },
@@ -2908,10 +2943,11 @@ test("same-turn read-only terminal output is recovered to the controller when ha
     inject(message: DshMessage) { injected.push(message); },
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请审查当前实现")] }),
@@ -2972,10 +3008,11 @@ test("resume restores every in-place responsibility's base route without revivin
     const agent = {
       session: {
         header: {},
-        events,
+        events, snapshotEvents: () => events,
         append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
       },
     };
+    seedCurrentEvidence(ctx, agent, events);
     await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 2, step: 1, signal }, async () => ({
       kind: "enter",
       messages: [userMessage("告诉我当前状态")],
@@ -3026,11 +3063,12 @@ test("a positionless late header cannot erase durable base-route restoration", a
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 2, step: 1, signal },
@@ -3089,7 +3127,7 @@ test("a planner mapping identical to the controller stays inline without a dupli
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
@@ -3133,7 +3171,8 @@ test("same-turn deterministic route validation removes the exact persisted mappi
   const ctx = fakeContext({ llm });
   apply(ctx, { skillPath, routing: { configPath } });
   const events: DshEvent[] = [responsibilityGapEvent("planner")];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -3168,7 +3207,8 @@ test("transient same-turn route validation falls back without deleting the persi
   const ctx = fakeContext({ llm });
   apply(ctx, { skillPath, routing: { configPath } });
   const events: DshEvent[] = [responsibilityGapEvent("planner")];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -3192,7 +3232,8 @@ test("a provider failure after route preflight retries the original controller o
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { configPath } });
   const events: DshEvent[] = [responsibilityGapEvent("planner")];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -3232,12 +3273,7 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
         startRequest = asTestSubagentRequest(request);
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" }),
           },
           result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "independent review result" }] }),
           async dispose() {},
@@ -3278,7 +3314,8 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     ...nativeToolEvents("diff-1", "git diff -- dsh/runtime/src/router.mts", "diff --git a/router.mjs b/router.mjs\n+bounded change", { callSeq: 101 }),
     ...nativeToolEvents("test-1", "node --test dsh/runtime/tests/router.test.mts", "tests 14 pass 14 fail 0 exit code: 0", { callSeq: 111 }),
   ];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3328,12 +3365,7 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
       async start() {
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "wrong-reviewer", reasoningEffort: "max" } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "wrong-reviewer", reasoningEffort: "max" }),
           },
           result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "untrusted review" }] }),
           async dispose() { throw new Error("reviewer cleanup failed"); },
@@ -3358,10 +3390,11 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   const mismatchAgent = {
     session: {
       header: {},
-      events: mismatchEvents,
+      events: mismatchEvents, snapshotEvents: () => mismatchEvents,
       append(type: string, data: RuntimeEventData) { mismatchEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(mismatchCtx, mismatchAgent, mismatchEvents);
   await mismatchCtx.captured.handlers.get("agent/pre-step")(
     { agent: mismatchAgent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3391,12 +3424,7 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
         fallbackStarts += 1;
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" }),
           },
           result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "reviewed after evidence refresh" }] }),
           async dispose() {},
@@ -3415,10 +3443,11 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   const fallbackAgent = {
     session: {
       header: {},
-      events: fallbackEvents,
+      events: fallbackEvents, snapshotEvents: () => fallbackEvents,
       append(type: string, data: RuntimeEventData) { fallbackEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(fallbackCtx, fallbackAgent, fallbackEvents);
   const fallback = await fallbackCtx.captured.handlers.get("agent/pre-step")(
     { agent: fallbackAgent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3508,10 +3537,11 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   const executeAgent = {
     session: {
       header: {},
-      events: executeEvents,
+      events: executeEvents, snapshotEvents: () => executeEvents,
       append(type: string, data: RuntimeEventData) { executeEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(executeCtx, executeAgent, executeEvents);
   const executeFallback = await executeCtx.captured.handlers.get("agent/pre-step")(
     { agent: executeAgent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3562,7 +3592,8 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     ...nativeToolEvents("diff-2", "git diff -- dsh/runtime/src/router.mts", "diff --git a/router.mjs b/router.mjs\n+bounded change", { callSeq: 141 }),
     ...nativeToolEvents("test-2", "node --test dsh/runtime/tests/router.test.mts", "tests 14 pass 13 fail 1 exit code: 1", { callSeq: 151, isError: true }),
   ];
-  const failedAgent = { session: { header: {}, events: failedEvents, append(type: string, data: RuntimeEventData) { failedEvents.push({ type, data }); } } };
+  const failedAgent = { session: { header: {}, events: failedEvents, snapshotEvents: () => failedEvents, append(type: string, data: RuntimeEventData) { failedEvents.push({ type, data }); } } };
+  seedCurrentEvidence(failedCtx, failedAgent, failedEvents);
   await failedCtx.captured.handlers.get("agent/pre-step")(
     { agent: failedAgent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3602,10 +3633,11 @@ test("a revised user task cannot resume a deferred reviewer with a stale require
   ];
   const agent = {
     session: {
-      header: {}, events,
+      header: {}, events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [original] }),
@@ -3636,12 +3668,7 @@ test("reviewer child accepts a current read-only check without relabeling it as 
         starts += 1;
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "reviewer-model" } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "reviewer-model" }),
           },
           result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "reviewed" }] }),
           async dispose() {},
@@ -3656,7 +3683,8 @@ test("reviewer child accepts a current read-only check without relabeling it as 
     ...nativeToolEvents("check-route-diff", "git diff -- dsh/runtime/src/routing-context.mts", "diff --git a/routing-context.mts b/routing-context.mts\n+bounded change", { callSeq: 181 }),
     ...nativeToolEvents("check-route-eslint", "pnpm exec eslint dsh/runtime/src/routing-context.mts", "", { callSeq: 191 }),
   ];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
@@ -3692,7 +3720,8 @@ test("an unavailable frontend mapping falls back locally with an explicit non-re
   });
   apply(ctx, { skillPath, routing: { configPath } });
   const events: DshEvent[] = [];
-  const agent = { session: { header: {}, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   const result = await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -3746,7 +3775,7 @@ test("frontend incident upgrades in place, verifies its actual route, and overri
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
@@ -3945,10 +3974,11 @@ test("a new authenticated task clears preserved interruption even when a plugin 
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const pluginNotice = {
     id: "other-plugin-notice",
     role: "user",
@@ -3994,7 +4024,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
@@ -4036,7 +4066,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
   const unverifiedAgent = {
     session: {
       header: {},
-      events: unverifiedEvents,
+      events: unverifiedEvents, snapshotEvents: () => unverifiedEvents,
       append(type: string, data: RuntimeEventData) { unverifiedEvents.push({ type, data }); },
     },
   };
@@ -4066,7 +4096,7 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
   const missingCtx = fakeContext();
   apply(missingCtx, { skillPath, output: { configPath: outputConfigPath } });
   const missingEvents: DshEvent[] = [];
-  const missingAgent = { session: { header: {}, events: missingEvents, append(type: string, data: RuntimeEventData) { missingEvents.push({ type, data }); } } };
+  const missingAgent = { session: { header: {}, events: missingEvents, snapshotEvents: () => missingEvents, append(type: string, data: RuntimeEventData) { missingEvents.push({ type, data }); } } };
   const missing = await missingCtx.captured.handlers.get("agent/pre-step")(
     { agent: missingAgent, turn: 1, step: 1, signal },
     async () => ({ kind: "enter", messages: [task] }),
@@ -4087,7 +4117,7 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
     },
   });
   const boundedEvents: DshEvent[] = [];
-  const boundedAgent = { session: { header: {}, events: boundedEvents, append(type: string, data: RuntimeEventData) { boundedEvents.push({ type, data }); } } };
+  const boundedAgent = { session: { header: {}, events: boundedEvents, snapshotEvents: () => boundedEvents, append(type: string, data: RuntimeEventData) { boundedEvents.push({ type, data }); } } };
   await boundedCtx.captured.handlers.get("agent/pre-step")(
     { agent: boundedAgent, turn: 1, step: 1, signal },
     async () => ({ kind: "enter", messages: [task] }),
@@ -4176,7 +4206,7 @@ test("auto mode upgrades an implicit continuation of earlier high-impact context
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -4262,12 +4292,13 @@ test("configured auto mode keeps an evidence-grounded planner gap in the current
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -4312,12 +4343,7 @@ test("configured researcher compresses evidence before planner without replacing
       starts.push(asTestSubagentRequest(request));
       return {
         localAgent: {
-          session: {
-            events: [{
-              type: "request/header",
-              data: { header: { config: { provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "xhigh", maxTokens: 500 } } },
-            }],
-          },
+          session: childSession({ provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "xhigh", maxTokens: 500 }),
         },
         result: Promise.resolve({
           stopReason: "completed",
@@ -4341,10 +4367,11 @@ test("configured researcher compresses evidence before planner without replacing
   const agent = {
     session: {
       header: { cwd: researchProjectRoot },
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   const requestText = "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。";
   const result = await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
@@ -4387,12 +4414,7 @@ test("configured researcher compresses evidence before planner without replacing
       async start() {
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "wrong-researcher", reasoningEffort: "xhigh", maxTokens: 500 } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "wrong-researcher", reasoningEffort: "xhigh", maxTokens: 500 }),
           },
           result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: researchPacketText() }] }),
           async dispose() { throw new Error("researcher cleanup failed"); },
@@ -4414,10 +4436,11 @@ test("configured researcher compresses evidence before planner without replacing
   const mismatchAgent = {
     session: {
       header: { cwd: researchProjectRoot },
-      events: mismatchEvents,
+      events: mismatchEvents, snapshotEvents: () => mismatchEvents,
       append(type: string, data: RuntimeEventData) { mismatchEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(mismatchCtx, mismatchAgent, mismatchEvents);
   await mismatchCtx.captured.handlers.get("agent/pre-step")(
     { agent: mismatchAgent, turn: 1, step: 1, signal },
     async () => ({ kind: "enter", messages: [userMessage(requestText)] }),
@@ -4446,10 +4469,11 @@ test("configured researcher compresses evidence before planner without replacing
   const missingAgent = {
     session: {
       header: { cwd: researchProjectRoot },
-      events: missingEvents,
+      events: missingEvents, snapshotEvents: () => missingEvents,
       append(type: string, data: RuntimeEventData) { missingEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(missingPlannerCtx, missingAgent, missingEvents);
   const missingResult = await missingPlannerCtx.captured.handlers.get("agent/pre-step")({
     agent: missingAgent,
     turn: 1,
@@ -4469,12 +4493,7 @@ test("invalid researcher output is discarded before the planner sees it", async 
       async start() {
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: { header: { config: { provider: "openai", model: "researcher-model" } } },
-              }],
-            },
+            session: childSession({ provider: "openai", model: "researcher-model" }),
           },
           result: Promise.resolve({
             stopReason: "completed",
@@ -4508,7 +4527,8 @@ test("invalid researcher output is discarded before the planner sees it", async 
     },
   });
   const events: DshEvent[] = [responsibilityGapEvent("researcher")];
-  const agent = { session: { header: { cwd: researchProjectRoot }, events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const agent = { session: { header: { cwd: researchProjectRoot }, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -4548,7 +4568,7 @@ test("high-impact execute routing fails closed when the planner is unavailable",
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
@@ -4604,12 +4624,13 @@ test("ordinary state-backed planner route failure still permits controller fallb
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -4662,20 +4683,11 @@ test("execute routing discards output when the actual child model mismatches", a
       async start() {
         return {
           localAgent: {
-            session: {
-              events: [{
-                type: "request/header",
-                data: {
-                  header: {
-                    config: {
-                      provider: "openai",
-                      model: "gpt-5.6-luna",
-                      reasoningEffort: "max",
-                    },
-                  },
-                },
-              }],
-            },
+            session: childSession({
+              provider: "openai",
+              model: "gpt-5.6-luna",
+              reasoningEffort: "max",
+            }),
           },
           result: Promise.resolve({
             stopReason: "completed",
@@ -4714,7 +4726,7 @@ test("execute routing marks a missing child request header unverified", async ()
     subagents: {
       async start() {
         return {
-          localAgent: { session: { events: [] } },
+          localAgent: { session: { events: [], snapshotEvents: () => [] } },
           result: Promise.resolve({
             stopReason: "completed",
             output: [{ type: "text", text: "unverified child output" }],
@@ -4807,7 +4819,7 @@ test("the model can persist every user-specified responsibility mapping", async 
   const agent = {
     session: {
       header: {},
-      events,
+      events, snapshotEvents: () => events,
       append(type: string, data: RuntimeEventData) {
         events.push({ type, data });
       },

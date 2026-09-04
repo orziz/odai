@@ -28,7 +28,6 @@ interface RoutedRunResult {
 
 interface RequestRouteAgent {
   session?: {
-    events?: readonly DshEvent[];
     snapshotEvents?(): readonly DshEvent[];
   };
 }

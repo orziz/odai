@@ -35,7 +35,7 @@ function harness() {
     directUserTextFor: directUserText,
     onChanged(_agent, data) { changes.push(data); },
   });
-  const agent: TestAgent = { currentText: "", session: { header: {}, events: [], append() {} } };
+  const agent: TestAgent = { currentText: "", session: { header: {}, snapshotEvents: () => [], append() {} } };
   return { root, storePath, changes, tool, agent };
 }
 
@@ -247,7 +247,7 @@ test("continuity rejects child access and private contact data", async (t) => {
 
   const child: TestAgent = {
     currentText: "查看我的安全档案",
-    session: { header: { origin: "subagent" }, events: [], append() {} },
+    session: { header: { origin: "subagent" }, snapshotEvents: () => [], append() {} },
   };
   assert.throws(() => state.tool.execute({ action: "show" }, execution(child)), /child agents/u);
 });

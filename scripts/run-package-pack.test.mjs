@@ -4,7 +4,20 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { runPackagePack } from "./run-package-pack.mjs";
+import { packageManagerInvocation, runPackagePack } from "./run-package-pack.mjs";
+
+test("pack runner uses the Windows command shim through a shell", () => {
+  assert.deepEqual(packageManagerInvocation("win32", undefined), {
+    command: "npm.cmd",
+    prefixArgs: [],
+    shell: true,
+  });
+  assert.deepEqual(packageManagerInvocation("linux", undefined), {
+    command: "npm",
+    prefixArgs: [],
+    shell: false,
+  });
+});
 
 test("pack runner cleans generated roots when the pack command fails", async () => {
   const packageRoot = await mkdtemp(resolve(tmpdir(), "odai-pack-runner-"));

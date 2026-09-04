@@ -196,7 +196,7 @@ test("requirement ledgers reject invalid status relationships", () => {
 test("only the controller can submit a responsibility or user-decision gap", async () => {
   const proposals: ReturnType<typeof resolveResponsibilityGap>[] = [];
   const tool = createResponsibilityGapTool({ onProposed(_agent, proposal) { proposals.push(proposal); } });
-  const agent: DshAgent = { session: { header: {}, events: [], append() {} } };
+  const agent: DshAgent = { session: { header: {}, snapshotEvents: () => [], append() {} } };
   const result = await tool.execute({
     responsibility: "user",
     gap: "The request does not choose which behavior to preserve.",

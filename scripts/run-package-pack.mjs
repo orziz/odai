@@ -30,12 +30,25 @@ function resolveCleanRoot(packageRoot, value) {
   return target;
 }
 
+export function packageManagerInvocation(
+  platform = process.platform,
+  npmExecPath = process.env.npm_execpath,
+) {
+  if (npmExecPath) return { command: process.execPath, prefixArgs: [npmExecPath], shell: false };
+  return platform === "win32"
+    ? { command: "npm.cmd", prefixArgs: [], shell: true }
+    : { command: "npm", prefixArgs: [], shell: false };
+}
+
 function spawnPack(packArgs, packageRoot) {
-  const npmExecPath = process.env.npm_execpath;
-  const command = npmExecPath ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
-  const args = [...(npmExecPath ? [npmExecPath] : []), "pack", ...packArgs];
+  const invocation = packageManagerInvocation();
+  const args = [...invocation.prefixArgs, "pack", ...packArgs];
   return new Promise((accept, reject) => {
-    const child = spawn(command, args, { cwd: packageRoot, stdio: "inherit" });
+    const child = spawn(invocation.command, args, {
+      cwd: packageRoot,
+      stdio: "inherit",
+      ...(invocation.shell ? { shell: true } : {}),
+    });
     child.once("error", reject);
     child.once("close", (code) => accept(code ?? 1));
   });

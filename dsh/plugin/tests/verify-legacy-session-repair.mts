@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -15,7 +15,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { constants, zstdCompressSync } from "node:zlib";
 
-import type { SessionCompatOptions, SessionCompatResult } from "../../runtime/build/session-compat.mjs";
+import type { LegacySessionRepairOptions, LegacySessionRepairResult } from "../../runtime/build/legacy-session-repair.mjs";
 import type { DshEvent, DshSessionHeader } from "../../runtime/build/runtime-types.mjs";
 
 interface StoredSession {
@@ -47,16 +47,16 @@ const dsh = process.env.DSH_BIN ?? "dsh";
 const dshRoot = process.env.DSH_PACKAGE_ROOT
   ? resolve(process.env.DSH_PACKAGE_ROOT)
   : findDshPackageRoot(dsh);
-const compatibilityPath = [
-  resolve(pluginRoot, "runtime/session-compat.mjs"),
-  resolve(pluginRoot, "../runtime/build/session-compat.mjs"),
+const repairPath = [
+  resolve(pluginRoot, "runtime/legacy-session-repair.mjs"),
+  resolve(pluginRoot, "../runtime/build/legacy-session-repair.mjs"),
 ].find(existsSync);
-if (!compatibilityPath) throw new Error("cannot locate the Odai session compatibility module");
+if (!repairPath) throw new Error("cannot locate the Odai legacy session repair module");
 
-const compatibility: {
-  repairLegacySessionLogs(options?: SessionCompatOptions): SessionCompatResult;
-} = await import(pathToFileURL(compatibilityPath).href);
-const { repairLegacySessionLogs } = compatibility;
+const repairModule: {
+  repairLegacySessionLogs(options?: LegacySessionRepairOptions): LegacySessionRepairResult;
+} = await import(pathToFileURL(repairPath).href);
+const { repairLegacySessionLogs } = repairModule;
 const requireFromDsh = createRequire(resolve(dshRoot, "package.json"));
 const jsonlModule: { JsonlSessionPersistence: { prototype: PersistenceBackend } } = await import(
   pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-session-persistence-jsonl")).href
@@ -71,18 +71,16 @@ interface AgentPresetProjectionDefinition {
   wire: { view(state: unknown): unknown };
 }
 const presetModule: {
-  resolveSessionPreset?(input: { header: DshSessionHeader; events: readonly DshEvent[] }): string;
   agentPresetProjectionDefinition?: AgentPresetProjectionDefinition;
 } = await import(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-agent-presets")).href);
 const { JsonlSessionPersistence } = jsonlModule;
 const { PersistenceCoordinator, SessionFormatUnsupportedError } = persistenceModule;
 
 function resolvedSessionPreset(input: { header: DshSessionHeader; events: readonly DshEvent[] }): string {
-  if (typeof presetModule.resolveSessionPreset === "function") return presetModule.resolveSessionPreset(input);
   const projection = presetModule.agentPresetProjectionDefinition;
   if (!projection || typeof projection.init !== "function" || typeof projection.apply !== "function"
     || typeof projection.wire?.view !== "function") {
-    throw new Error("DSH Agent preset package exposes neither the legacy resolver nor the projection contract");
+    throw new Error("DSH Agent preset projection contract is unavailable");
   }
   let state = projection.init(input.header);
   for (const event of input.events) state = projection.apply(state, event);
@@ -91,7 +89,7 @@ function resolvedSessionPreset(input: { header: DshSessionHeader; events: readon
   return selected;
 }
 
-const scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-session-compat-"));
+const scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-legacy-repair-"));
 const sessionRoot = resolve(scratch, "sessions");
 const backend: PersistenceBackend = Object.create(JsonlSessionPersistence.prototype);
 backend.root = sessionRoot;
@@ -118,6 +116,12 @@ const originals = new Map<string, Buffer>();
 const noDshProcesses = (): never[] => [];
 
 try {
+  const cliPath = resolve(pluginRoot, "build/bin/odai-dsh-plugin.mjs");
+  const cliProbe = spawnSync(process.execPath, [cliPath, "legacy-session-repair", "--dsh-home", scratch], { encoding: "utf8" });
+  assert.notEqual(cliProbe.status, 0);
+  assert.match(cliProbe.stderr, /rerun legacy-session-repair with --yes/u);
+  assert.doesNotMatch(cliProbe.stderr, /runtime is unavailable/u);
+
   for (const fixture of fixtures) {
     const meta = {
       version: 0,
@@ -206,7 +210,7 @@ try {
     processScanner: noDshProcesses,
   });
   assert.equal(repeated.repairedEvents, 0);
-  process.stdout.write("DSH official session compatibility verified for legacy Agent and Plugin logs\n");
+  process.stdout.write("Odai legacy session repair verified against the current DSH Session contract\n");
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

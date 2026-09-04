@@ -544,7 +544,7 @@ function coverageFor(
 }
 
 export interface RoleContextAgent {
-  readonly session?: Pick<DshSession, "events" | "snapshotEvents">;
+  readonly session?: Pick<DshSession, "snapshotEvents">;
 }
 
 export function buildRoleContextPacket(

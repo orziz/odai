@@ -19,7 +19,7 @@ import { acquireOwnedStoreLock } from "../build/store-lock.mjs";
 import type { DshAgent, DshEvent, RuntimeEventData, ToolExecution } from "../build/runtime-types.mjs";
 
 function testExecution(): ToolExecution {
-  return { name: "odai_output_config", agent: { session: { header: {}, events: [], append() {} } } };
+  return { name: "odai_output_config", agent: { session: { header: {}, snapshotEvents: () => [], append() {} } } };
 }
 
 test("session ceiling directives require an explicit declarative session-scoped change", () => {
@@ -313,7 +313,7 @@ test("owned store locks reject live writers, reclaim dead owners, and preserve s
 });
 
 test("output policy selection is single-flight for one agent turn", async () => {
-  const agent: DshAgent = { session: { header: {}, events: [], append() {} } };
+  const agent: DshAgent = { session: { header: {}, snapshotEvents: () => [], append() {} } };
   let selections = 0;
   const select = async () => {
     selections += 1;

@@ -111,8 +111,7 @@ export interface DshSessionHeader extends UnknownRecord {
 
 export interface DshSession {
   header: DshSessionHeader;
-  events: DshEvent[];
-  snapshotEvents?(): readonly DshEvent[];
+  snapshotEvents(): readonly DshEvent[];
   eventAt?(seq: number): DshEvent | undefined;
   readonly seq?: number;
   append(type: string, data: RuntimeEventData, options?: UnknownRecord): unknown;
@@ -120,14 +119,11 @@ export interface DshSession {
 }
 
 interface EventReadableSession {
-  readonly events?: readonly DshEvent[];
   snapshotEvents?(): readonly DshEvent[];
 }
 
 export function sessionEvents(session: EventReadableSession | undefined): readonly DshEvent[] {
-  if (!session) return [];
-  if (typeof session.snapshotEvents === "function") return session.snapshotEvents();
-  return Array.isArray(session.events) ? session.events : [];
+  return typeof session?.snapshotEvents === "function" ? session.snapshotEvents() : [];
 }
 
 export interface ToolRestriction {

@@ -5,7 +5,7 @@ import {
   invalidatePersistedCompactionTarget,
 } from "./compaction-config.mjs";
 import { installCompactionRuntime } from "./compaction-runtime.mjs";
-import { installControlCenterRuntime } from "./control-center-runtime.mjs";
+import { installControlCenterRuntimeWhenAvailable } from "./control-center-runtime.mjs";
 import { installLifecycleRuntime } from "./lifecycle-runtime.mjs";
 import type {
   OutputUsage,
@@ -81,13 +81,13 @@ interface RouteInvalidation extends UnknownRecord {
 export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig);
   const logger = loggerFor(ctx);
-  const disposeControlCenter = installControlCenterRuntime(ctx, {
+  const disposeControlCenter = installControlCenterRuntimeWhenAvailable(ctx, {
     configPath: config.routing.configPath,
     configuredRoles: config.routing.roles,
     configuredDispatch: config.routing.dispatch,
     logger,
   });
-  if (disposeControlCenter) ctx.effect?.(() => disposeControlCenter, "odai: Control Center RPC");
+  ctx.effect?.(() => disposeControlCenter, "odai: Control Center RPC");
   const humanSafetyContinuityStorePath = resolveHumanSafetyContinuityStorePath();
   const evidence = createSessionEvidence({
     root: resolveSessionEvidenceRoot(config.routing.configPath),

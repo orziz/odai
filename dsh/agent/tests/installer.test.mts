@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import test from "node:test";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import {
   inspectAgentInstallation,
@@ -17,8 +15,6 @@ import {
   uninstallAgentPreset,
 } from "../src/installer.mjs";
 
-const noDshProcesses = (): never[] => [];
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -29,29 +25,19 @@ function jsonRecord(text: string): Record<string, unknown> {
   return value;
 }
 
-test("Agent composition follows the supported DSH range and two renderer families", async () => {
-  assert.equal(SUPPORTED_DSH_RANGE, "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.1-rc.2", "0.1.2-rc.1"]);
-  for (const supported of ["0.1.2-rc.1", "0.1.2-rc.2"]) {
-    assert.equal(supportsDshVersion(supported), true, supported);
-  }
-  for (const unsupported of ["0.1.1-rc.3", "0.1.2-alpha.4", "0.1.2", "0.1.3"]) {
+test("Agent composition follows the exact rc.1 support contract", async () => {
+  assert.equal(SUPPORTED_DSH_RANGE, "0.1.2-rc.1");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.2-rc.1"]);
+  assert.equal(supportsDshVersion("0.1.2-rc.1"), true);
+  for (const unsupported of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2-rc.2", "0.1.2", "0.1.3-alpha.1", "0.1.3"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
 
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
   assert.equal(renderAgentCompositionForDsh(source, "0.1.2-rc.1"), normalizedSource);
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-rc.2"), normalizedSource);
-  const legacy = renderAgentCompositionForDsh(source, "0.1.1-rc.2");
-  assert.doesNotMatch(legacy, /command-goal|modelSelectionSettings/u);
-  assert.match(legacy, /fetch: false/u);
-  assert.match(legacy, /id: tool-goal/u);
-  assert.throws(
-    () => renderAgentCompositionForDsh(source.replace("    fetch: true", "    fetch: false"), "0.1.1-rc.2"),
-    /missing rc\.1 web fetch setting/u,
-  );
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.2"), /unsupported DSH version/u);
+  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.2"), /unsupported DSH version/u);
+  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.3-alpha.1"), /unsupported DSH version/u);
 });
 
 test("managed preset rejects removed DSH releases before writing", async () => {
@@ -60,7 +46,7 @@ test("managed preset rejects removed DSH releases before writing", async () => {
   const dshHome = resolve(scratch, "home");
   try {
     await writeFixture(sourceRoot, "runtime");
-    for (const dshVersion of ["0.1.0-rc.7", "0.1.1-rc.1", "0.1.2-alpha.4", "0.1.2"]) {
+    for (const dshVersion of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2", "0.1.3-alpha.1"]) {
       await assert.rejects(
         installAgentPreset({ dshHome, sourceRoot, dshVersion }),
         /unsupported DSH version/u,
@@ -120,63 +106,30 @@ test("managed preset installs, updates, reports status, and uninstalls", async (
   }
 });
 
-test("install, update, and uninstall preserve legacy Odai sessions", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-session-compat-"));
+test("normal lifecycle never inspects or rewrites historical session logs", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-session-boundary-"));
   const sourceRoot = resolve(scratch, "source");
   const dshHome = resolve(scratch, "home");
-  const firstSession = resolve(dshHome, "sessions/project/first/session.jsonl");
-  const updatedSession = resolve(dshHome, "sessions/project/updated/session.jsonl");
-  const removedSession = resolve(dshHome, "sessions/project/removed/session.jsonl");
+  const sessionPath = resolve(dshHome, "sessions/project/legacy/session.jsonl");
+  const session = [
+    JSON.stringify({ type: "session", version: 0, id: "legacy", createdAt: 1_700_000_000_000, delegationDepth: 0 }),
+    JSON.stringify({ type: "odai/unknown-historical-event", seq: 0, time: 1_700_000_000_001, data: { retained: true } }),
+    "",
+  ].join("\n");
   try {
-    await writeFixture(sourceRoot, "runtime");
-    await writeLegacySession(firstSession, "first");
-    await assert.rejects(
-      installAgentPreset({ dshHome, sourceRoot }),
-      /stop every DSH process and rerun with --yes/u,
-    );
-    const installed = await installAgentPreset({ dshHome, sourceRoot, confirmDshStopped: true, processScanner: noDshProcesses });
-    assert.equal(installed.sessionCompatibility.repairedEvents, 1);
-    assert.equal(installed.sessionCompatibility.backupPaths.length, 1);
-    assert.equal((await readSessionEvents(firstSession))[0].ignorable, true);
-
-    await writeLegacySession(updatedSession, "updated");
-    const updated = await installAgentPreset({ dshHome, sourceRoot, confirmDshStopped: true, processScanner: noDshProcesses });
-    assert.equal(updated.operation, "updated");
-    assert.equal(updated.sessionCompatibility.repairedEvents, 1);
-    assert.equal((await readSessionEvents(updatedSession))[0].ignorable, true);
-
-    await writeLegacySession(removedSession, "removed");
-    await assert.rejects(
-      uninstallAgentPreset({ dshHome }),
-      /stop every DSH process and rerun with --yes/u,
-    );
-    const removed = await uninstallAgentPreset({ dshHome, confirmDshStopped: true, processScanner: noDshProcesses });
-    if (removed.operation === "absent") assert.fail("expected the installed preset to be removed");
-    assert.equal(removed.sessionCompatibility.repairedEvents, 1);
-    assert.equal((await readSessionEvents(removedSession))[0].ignorable, true);
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-
-test("install fails closed when a confirmed session repair cannot publish safely", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-session-failure-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  const sessionPath = resolve(dshHome, "sessions/project/blocked/session.jsonl");
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    const content = `${JSON.stringify({ type: "odai/route-decided", seq: 0, time: 1, data: { turn: 1, step: 1 } })}\n`;
+    await writeFixture(sourceRoot, "first runtime");
     await mkdir(resolve(sessionPath, ".."), { recursive: true });
-    await writeFile(sessionPath, content, "utf8");
-    const digest = createHash("sha256").update(content).digest("hex").slice(0, 16);
-    await writeFile(`${sessionPath}.odai-compat-${digest}.bak`, "mismatched backup", "utf8");
+    await writeFile(sessionPath, session, "utf8");
 
-    await assert.rejects(
-      installAgentPreset({ dshHome, sourceRoot, confirmDshStopped: true, processScanner: noDshProcesses }),
-      /cannot repair legacy Odai session evidence safely/u,
-    );
-    assert.equal((await inspectAgentInstallation({ dshHome })).status, "absent");
+    assert.equal((await installAgentPreset({ dshHome, sourceRoot })).operation, "installed");
+    assert.equal(await readFile(sessionPath, "utf8"), session);
+
+    await writeFile(resolve(sourceRoot, "runtime/index.mjs"), "export default \"updated runtime\";\n", "utf8");
+    assert.equal((await installAgentPreset({ dshHome, sourceRoot })).operation, "updated");
+    assert.equal(await readFile(sessionPath, "utf8"), session);
+
+    assert.equal((await uninstallAgentPreset({ dshHome })).operation, "uninstalled");
+    assert.equal(await readFile(sessionPath, "utf8"), session);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -267,19 +220,6 @@ test("installer writes through DSH_HOME when no explicit home is provided", asyn
   }
 });
 
-async function writeLegacySession(path: string, id: string): Promise<void> {
-  await mkdir(resolve(path, ".."), { recursive: true });
-  await writeFile(path, [
-    JSON.stringify({ type: "session", version: 0, id, createdAt: 1_700_000_000_000, delegationDepth: 0 }),
-    JSON.stringify({ type: "odai/route-decided", seq: 0, time: 1_700_000_000_001, data: { turn: 1, step: 1 } }),
-    "",
-  ].join("\n"), "utf8");
-}
-
-async function readSessionEvents(path: string): Promise<Record<string, unknown>[]> {
-  return (await readFile(path, "utf8")).trim().split("\n").slice(1).map(jsonRecord);
-}
-
 async function writeFixture(root: string, runtimeText: string): Promise<void> {
   await Promise.all([
     mkdir(resolve(root, "runtime"), { recursive: true }),
@@ -289,11 +229,6 @@ async function writeFixture(root: string, runtimeText: string): Promise<void> {
     writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./runtime/index.mjs\n", "utf8"),
     writeFile(resolve(root, "preset.yml"), "name: Odai\n", "utf8"),
     writeFile(resolve(root, "runtime/index.mjs"), `export default ${JSON.stringify(runtimeText)};\n`, "utf8"),
-    writeFile(
-      resolve(root, "runtime/session-compat.mjs"),
-      `export { inspectLegacySessionLogs, repairLegacySessionLogs } from ${JSON.stringify(pathToFileURL(resolve(import.meta.dirname, "../../runtime/build/session-compat.mjs")).href)};\n`,
-      "utf8",
-    ),
     writeFile(resolve(root, "runtime/session-evidence.mjs"), "export const fixture = true;\n", "utf8"),
     writeFile(resolve(root, "runtime/skill-bundle.mjs"), "export const fixture = true;\n", "utf8"),
     writeFile(resolve(root, "runtime/skill-evolution.mjs"), "export const fixture = true;\n", "utf8"),

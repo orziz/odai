@@ -56,6 +56,10 @@ function nativeToolEvents(
   ];
 }
 
+function agentFor(events: readonly DshEvent[]) {
+  return { session: { snapshotEvents: () => events } };
+}
+
 function completeReviewEvents(options: {
   diffOutput?: string;
   diffIsError?: boolean;
@@ -84,7 +88,7 @@ function completeReviewEvents(options: {
 }
 
 test("reviewer packets require requirements, acceptance, diff, tests, and tool evidence", () => {
-  const agent = { session: { events: completeReviewEvents() } };
+  const agent = agentFor(completeReviewEvents());
   const packet = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现");
 
   assert.equal(packet.schemaVersion, 2);
@@ -120,7 +124,7 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
 });
 
 test("reviewer packets preserve source-verified active and superseded requirement decisions", () => {
-  const agent = { session: { events: completeReviewEvents() } };
+  const agent = agentFor(completeReviewEvents());
   const requirements = [
     {
       id: "R-old",
@@ -180,15 +184,11 @@ test("reviewer packets preserve source-verified active and superseded requiremen
 
 test("current DSH native tool call/result replays produce grounded coverage", () => {
   const packet = buildRoleContextPacket(
-    {
-      session: {
-        events: completeReviewEvents({
-          testCommand: "npm.cmd --prefix dsh/plugin test",
-        }).map((event) => event.type === "tool/call"
-          ? { ...event, data: { ...event.data, arguments: JSON.stringify(event.data.arguments) } }
-          : event),
-      },
-    },
+    agentFor(completeReviewEvents({
+      testCommand: "npm.cmd --prefix dsh/plugin test",
+    }).map((event) => event.type === "tool/call"
+      ? { ...event, data: { ...event.data, arguments: JSON.stringify(event.data.arguments) } }
+      : event)),
     "reviewer",
     "review",
   );
@@ -208,7 +208,7 @@ test("current JSON arguments and raw stream chunks remain reviewable", () => {
   for (let index = 0; index < 160; index += 1) {
     events.push({ type: index % 2 === 0 ? "text-chunks" : "reasoning-chunks", seq: 1_000 + index, data: { text: "stream chunk" } });
   }
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.sufficient, true);
   assert.equal(packet.coverage.diffCount, 1);
   assert.equal(packet.coverage.testCount, 1);
@@ -244,7 +244,7 @@ test("user acceptance, namespaced tools, and external workspace paths produce cu
       { callSeq: 50 },
     ),
   ];
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.coverage.acceptanceCount, 1);
   assert.equal(packet.coverage.writeCount, 1);
   assert.equal(packet.coverage.diffCount, 1);
@@ -277,7 +277,7 @@ test("ask_user_question preserves the full user decision as acceptance evidence"
       { callSeq: 60 },
     ),
   ];
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   const rendered = renderRoleContextPacket(packet);
 
   assert.equal(packet.coverage.acceptanceCount, 2);
@@ -286,7 +286,7 @@ test("ask_user_question preserves the full user decision as acceptance evidence"
   assert.match(rendered, /还要覆盖评测与发布/u);
   assert.match(rendered, /user-decision/u);
 
-  const incomplete = buildRoleContextPacket({ session: { events: [
+  const incomplete = buildRoleContextPacket(agentFor([
     { type: "user/message", data: userMessage("先讨论真实目标，不要实施。") },
     ...nativeToolEvents(
       "ask-user-empty",
@@ -295,7 +295,7 @@ test("ask_user_question preserves the full user decision as acceptance evidence"
       JSON.stringify({ answers: [] }),
       { callSeq: 70 },
     ),
-  ] } }, "reviewer", "review");
+  ]), "reviewer", "review");
   assert.equal(incomplete.coverage.acceptanceCount, 1);
   assert.doesNotMatch(renderRoleContextPacket(incomplete), /user-decision/u);
 
@@ -318,7 +318,7 @@ test("ask_user_question preserves the full user decision as acceptance evidence"
     },
   ];
   for (const [index, malformed] of malformedDecisions.entries()) {
-    const packet = buildRoleContextPacket({ session: { events: [
+    const packet = buildRoleContextPacket(agentFor([
       { type: "user/message", data: userMessage("先讨论真实目标，不要实施。") },
       ...nativeToolEvents(
         `ask-user-malformed-${index}`,
@@ -327,7 +327,7 @@ test("ask_user_question preserves the full user decision as acceptance evidence"
         JSON.stringify({ answers: malformed.answers }),
         { callSeq: 80 + index * 10 },
       ),
-    ] } }, "reviewer", "review");
+    ]), "reviewer", "review");
     assert.equal(packet.coverage.acceptanceCount, 1);
     assert.doesNotMatch(renderRoleContextPacket(packet), /user-decision/u);
   }
@@ -341,20 +341,18 @@ test("common JavaScript and JVM test entry points are recognized", () => {
     "./mvnw verify",
     "./gradlew test",
   ]) {
-    const packet = buildRoleContextPacket({
-      session: {
-        events: completeReviewEvents({ testCommand: command, testOutput: "Tests 7 passed\nfail 0" }),
-      },
-    }, "reviewer", "review");
+    const packet = buildRoleContextPacket(
+      agentFor(completeReviewEvents({ testCommand: command, testOutput: "Tests 7 passed\nfail 0" })),
+      "reviewer",
+      "review",
+    );
     assert.equal(packet.coverage.testCount, 1, command);
     assert.equal(packet.sufficient, true, command);
   }
 });
 
 test("a successful native test result does not require a duplicate stdout verdict", () => {
-  const packet = buildRoleContextPacket({
-    session: { events: completeReviewEvents({ testOutput: "" }) },
-  }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(completeReviewEvents({ testOutput: "" })), "reviewer", "review");
 
   assert.equal(packet.coverage.testCount, 1);
   assert.equal(packet.coverage.failedTestCount, 0);
@@ -363,14 +361,10 @@ test("a successful native test result does not require a duplicate stdout verdic
 });
 
 test("quoted test filters do not become shell mutations", () => {
-  const packet = buildRoleContextPacket({
-    session: {
-      events: completeReviewEvents({
-        testCommand: "node --test --test-name-pattern=\"pass|read-only\" dsh/runtime/tests/routing-context.test.mts",
-        testOutput: "",
-      }),
-    },
-  }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(completeReviewEvents({
+    testCommand: "node --test --test-name-pattern=\"pass|read-only\" dsh/runtime/tests/routing-context.test.mts",
+    testOutput: "",
+  })), "reviewer", "review");
 
   assert.equal(packet.coverage.testCount, 1);
   assert.equal(packet.coverage.writeCount, 0);
@@ -403,7 +397,7 @@ test("read-only validators provide check evidence without masquerading as tests"
         { callSeq: 310 + (index * 20) },
       ),
     ];
-    const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+    const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
     assert.equal(packet.entries.some((entry) => entry.kinds.includes("check")), true, command);
     assert.equal(packet.coverage.testCount, 0, command);
     assert.equal(packet.coverage.checkCount, 1, command);
@@ -430,7 +424,7 @@ test("failed read-only checks block reviewer readiness", () => {
       { callSeq: 410 },
     ),
   ];
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.coverage.checkCount, 0);
   assert.equal(packet.coverage.failedCheckCount, 1);
   assert.equal(packet.coverage.currentEvidence, false);
@@ -454,7 +448,7 @@ test("mutating validators and builds remain writes, not read-only checks", () =>
       "completed",
       { callSeq: 500 + (index * 10) },
     ));
-    const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+    const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
     assert.equal(packet.entries.some((entry) => entry.kinds.includes("check") && entry.text.includes(command)), false, command);
     assert.equal(packet.coverage.writeCount, 1, command);
     assert.equal(packet.coverage.currentEvidence, false, command);
@@ -519,7 +513,7 @@ test("reviewer evidence cannot be forged by flat fields or read-tool output text
       { callSeq: 100 },
     ),
   ];
-  const packet = buildRoleContextPacket({ session: { events: spoofed } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(spoofed), "reviewer", "review");
   assert.equal(packet.coverage.diffCount, 0);
   assert.equal(packet.coverage.testCount, 0);
   assert.equal(packet.sufficient, false);
@@ -532,7 +526,7 @@ test("reviewer packets fail closed when any decisive evidence class is absent", 
     completeReviewEvents().filter((event) => !["assistant/message", "user/message"].includes(event.type)),
   ];
   for (const events of cases) {
-    assert.equal(buildRoleContextPacket({ session: { events } }, "reviewer", "review").sufficient, false);
+    assert.equal(buildRoleContextPacket(agentFor(events), "reviewer", "review").sufficient, false);
   }
 });
 
@@ -548,14 +542,14 @@ test("plugin-authored user messages cannot manufacture user acceptance", () => {
       },
     },
   });
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.coverage.acceptanceCount, 0);
   assert.equal(packet.sufficient, false);
 });
 
 test("assistant claims cannot manufacture acceptance", () => {
   const assistantOnly = completeReviewEvents().filter((event) => event.type !== "user/message");
-  const assistantPacket = buildRoleContextPacket({ session: { events: assistantOnly } }, "reviewer", "review");
+  const assistantPacket = buildRoleContextPacket(agentFor(assistantOnly), "reviewer", "review");
   assert.equal(assistantPacket.coverage.acceptanceCount, 0);
   assert.equal(assistantPacket.sufficient, false);
 });
@@ -565,13 +559,13 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
     testOutput: "tests 14 pass 13 fail 1 exit code: 1",
     testIsError: true,
   });
-  const failedTestPacket = buildRoleContextPacket({ session: { events: failedTest } }, "reviewer", "review");
+  const failedTestPacket = buildRoleContextPacket(agentFor(failedTest), "reviewer", "review");
   assert.equal(failedTestPacket.coverage.testCount, 0);
   assert.equal(failedTestPacket.coverage.failedTestCount, 1);
   assert.equal(failedTestPacket.sufficient, false);
 
   const erroredDiff = completeReviewEvents({ diffIsError: true });
-  const erroredDiffPacket = buildRoleContextPacket({ session: { events: erroredDiff } }, "reviewer", "review");
+  const erroredDiffPacket = buildRoleContextPacket(agentFor(erroredDiff), "reviewer", "review");
   assert.equal(erroredDiffPacket.coverage.diffCount, 0);
   assert.equal(erroredDiffPacket.sufficient, false);
 
@@ -583,7 +577,7 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
   assert.ok(unidentifiedContent);
   delete unidentifiedResult.data.message.source.callId;
   delete unidentifiedContent.toolCallId;
-  const unidentifiedDiffPacket = buildRoleContextPacket({ session: { events: unidentifiedDiff } }, "reviewer", "review");
+  const unidentifiedDiffPacket = buildRoleContextPacket(agentFor(unidentifiedDiff), "reviewer", "review");
   assert.equal(unidentifiedDiffPacket.coverage.diffCount, 0);
   assert.equal(unidentifiedDiffPacket.sufficient, false);
 
@@ -592,12 +586,12 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
     && event.data?.message?.source?.callId === "diff-1");
   assert.ok(unlinkedResult);
   delete unlinkedResult.sourceEventSeqs;
-  const unlinkedPacket = buildRoleContextPacket({ session: { events: unlinkedDiff } }, "reviewer", "review");
+  const unlinkedPacket = buildRoleContextPacket(agentFor(unlinkedDiff), "reviewer", "review");
   assert.equal(unlinkedPacket.coverage.diffCount, 0);
   assert.equal(unlinkedPacket.sufficient, false);
 
   const truncatedPacket = buildRoleContextPacket(
-    { session: { events: completeReviewEvents() } },
+    agentFor(completeReviewEvents()),
     "reviewer",
     "review",
     { maxChars: 80, maxEvents: 80 },
@@ -612,7 +606,7 @@ test("the successful test must follow the reviewed diff", () => {
     ...nativeToolEvents("test-before-diff", "pwsh", { command: "node --test dsh/runtime/tests/router.test.mts" }, "tests 14 pass 14 fail 0 exit code: 0", { callSeq: 130 }),
     ...nativeToolEvents("diff-after-test", "pwsh", { command: "git diff -- dsh/runtime/src/router.mts" }, "diff --git a/router.mjs b/router.mjs\n+untested final patch", { callSeq: 140 }),
   ];
-  const packet = buildRoleContextPacket({ session: { events: reverseOrdered } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(reverseOrdered), "reviewer", "review");
   assert.equal(packet.coverage.diffCount, 1);
   assert.equal(packet.coverage.testCount, 1);
   assert.equal(packet.coverage.currentEvidence, false);
@@ -628,7 +622,7 @@ test("reviewer evidence must be current after the last write and latest test att
     "updated router.mjs",
     { callSeq: 30 },
   ));
-  const stalePacket = buildRoleContextPacket({ session: { events: staleAfterWrite } }, "reviewer", "review");
+  const stalePacket = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
   assert.equal(stalePacket.coverage.writeCount, 1);
   assert.equal(stalePacket.coverage.currentEvidence, false);
   assert.equal(stalePacket.sufficient, false);
@@ -647,7 +641,7 @@ test("reviewer evidence must be current after the last write and latest test att
     "tests 15\npass 15\nfail 0\nexit code: 0",
     { callSeq: 50 },
   ));
-  const refreshed = buildRoleContextPacket({ session: { events: staleAfterWrite } }, "reviewer", "review");
+  const refreshed = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
   assert.equal(refreshed.coverage.currentEvidence, true);
   assert.equal(refreshed.sufficient, true);
 
@@ -658,7 +652,7 @@ test("reviewer evidence must be current after the last write and latest test att
     "tests 15 pass 14 fail 1 exit code: 1",
     { callSeq: 60, isError: true },
   ));
-  const regressed = buildRoleContextPacket({ session: { events: staleAfterWrite } }, "reviewer", "review");
+  const regressed = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
   assert.equal(regressed.coverage.failedTestCount, 1);
   assert.equal(regressed.coverage.currentEvidence, false);
   assert.equal(regressed.sufficient, false);
@@ -687,7 +681,7 @@ test("read-only process and formatter checks do not stale reviewer evidence", ()
     "M dsh/runtime/src/router.mts\n router.mts | 2 +-",
     { callSeq: 195 },
   ));
-  const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.coverage.writeCount, 0);
   assert.equal(packet.coverage.currentEvidence, true);
   assert.equal(packet.sufficient, true);
@@ -709,7 +703,7 @@ test("unknown shell mutations and redirects invalidate earlier reviewer evidence
       "command completed",
       { callSeq: 200 + (index * 10) },
     ));
-    const packet = buildRoleContextPacket({ session: { events } }, "reviewer", "review");
+    const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
     assert.equal(packet.coverage.writeCount, 1, command);
     assert.equal(packet.coverage.currentEvidence, false, command);
     assert.equal(packet.sufficient, false, command);
@@ -723,7 +717,7 @@ test("unknown shell mutations and redirects invalidate earlier reviewer evidence
     "write completed before a later failure",
     { callSeq: 250, isError: true },
   ));
-  const failedWritePacket = buildRoleContextPacket({ session: { events: failedWrite } }, "reviewer", "review");
+  const failedWritePacket = buildRoleContextPacket(agentFor(failedWrite), "reviewer", "review");
   assert.equal(failedWritePacket.coverage.writeCount, 1);
   assert.equal(failedWritePacket.coverage.currentEvidence, false);
   assert.equal(failedWritePacket.sufficient, false);
@@ -731,11 +725,9 @@ test("unknown shell mutations and redirects invalidate earlier reviewer evidence
 
 test("role context packets bound task and evidence text", () => {
   const long = "x".repeat(10_000);
-  const packet = buildRoleContextPacket({
-    session: {
-      events: [{ type: "assistant/message", data: { content: [{ type: "text", text: long }] } }],
-    },
-  }, "planner", long, { maxChars: 1_000, maxEvents: 1 });
+  const packet = buildRoleContextPacket(agentFor([
+    { type: "assistant/message", data: { content: [{ type: "text", text: long }] } },
+  ]), "planner", long, { maxChars: 1_000, maxEvents: 1 });
 
   assert.equal(packet.sufficient, true);
   assert.equal(packet.truncated, true);

@@ -209,6 +209,20 @@
         "0.1.2-rc.1"
       ],
       "sourceDshVersion": "0.1.2-rc.1"
+    },
+    {
+      "packageVersions": [
+        "0.2.23"
+      ],
+      "surfaces": [
+        "plugin",
+        "agent"
+      ],
+      "dshRange": "0.1.2-rc.1",
+      "dshVersions": [
+        "0.1.2-rc.1"
+      ],
+      "sourceDshVersion": "0.1.2-rc.1"
     }
   ]
 }

@@ -7,7 +7,7 @@ import { loadSkillBundle } from "../build/skill-bundle.mjs";
 import type { DshAgent } from "../src/runtime-types.mjs";
 
 const bundle = loadSkillBundle(resolve(import.meta.dirname, "../../../skills/odai/SKILL.md"));
-const agent: DshAgent = { session: { header: {}, events: [], append() {} } };
+const agent: DshAgent = { session: { header: {}, snapshotEvents: () => [], append() {} } };
 
 test("canonical references use one selected snapshot and fail closed outside the controller", async () => {
   const tool = createCanonicalReferenceTool({ bundleFor: () => bundle });
