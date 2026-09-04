@@ -966,7 +966,9 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       const roleTaskText = researchPacketText ? `${responsibilityTaskText}\n\n${researchPacketText}` : responsibilityTaskText;
       let roleContext = decision.action === "direct"
         ? undefined
-        : buildRoleContextPacket(agent, routeRole, roleTaskText);
+        : buildRoleContextPacket(agent, routeRole, roleTaskText, {
+            ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
+          });
       const reviewerAlreadyDeferred = responsibilityGap?.responsibility === "reviewer"
         && hasReviewerDeferral(evidence.events(agent), responsibilityGap.stateDigest);
       let localReviewerCoverage;
@@ -1184,7 +1186,9 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         }
         rolePreflightVerified = health.status === "verified";
       }
-      roleContext ??= buildRoleContextPacket(agent, routeRole, roleTaskText);
+      roleContext ??= buildRoleContextPacket(agent, routeRole, roleTaskText, {
+        ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
+      });
       const roleDispatch = effectiveRoleDispatch(routeRole, roleState.dispatch, config.routing.mode);
       const inPlaceUpgrade = roleDispatch === "same-turn";
       const contextMode = inPlaceUpgrade ? "same-turn" : "bounded-packet";
@@ -1197,6 +1201,10 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         evidenceDigest: roleContext.evidenceDigest,
         evidenceCount: roleContext.evidenceCount,
         toolEvidenceCount: roleContext.toolEvidenceCount,
+        requirementDecisionCount: roleContext.coverage.requirementDecisionCount,
+        activeRequirementCount: roleContext.coverage.activeRequirementCount,
+        supersededRequirementCount: roleContext.coverage.supersededRequirementCount,
+        requirementProvenance: roleContext.coverage.requirementProvenance,
         acceptanceCount: roleContext.coverage.acceptanceCount,
         diffCount: roleContext.coverage.diffCount,
         testCount: roleContext.coverage.testCount,

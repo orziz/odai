@@ -87,9 +87,14 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
   const agent = { session: { events: completeReviewEvents() } };
   const packet = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现");
 
+  assert.equal(packet.schemaVersion, 2);
   assert.equal(packet.sufficient, true);
   assert.deepEqual(packet.coverage, {
     requirements: true,
+    requirementDecisionCount: 0,
+    activeRequirementCount: 0,
+    supersededRequirementCount: 0,
+    requirementProvenance: false,
     acceptanceCount: 1,
     diffCount: 1,
     testCount: 1,
@@ -112,6 +117,65 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
   assert.match(rendered, new RegExp(`digest: sha256:${packet.digest}`, "u"));
   assert.match(rendered, /kinds: tool, diff/u);
   assert.match(rendered, /kinds: tool, test/u);
+});
+
+test("reviewer packets preserve source-verified active and superseded requirement decisions", () => {
+  const agent = { session: { events: completeReviewEvents() } };
+  const requirements = [
+    {
+      id: "R-old",
+      statement: "Drop the legacy path.",
+      status: "superseded" as const,
+      sourceExcerpt: "先移除旧路径",
+      supersededBy: "R-compatible",
+      sourceMessageId: "user-old",
+      sourceOrder: 1,
+    },
+    {
+      id: "R-compatible",
+      statement: "Keep both service generations.",
+      status: "active" as const,
+      sourceExcerpt: "保留两代服务",
+      sourceMessageId: "user-current",
+      sourceOrder: 2,
+    },
+    {
+      id: "R-ui",
+      statement: "Keep existing UI behavior.",
+      status: "active" as const,
+      sourceExcerpt: "保持现有 UI",
+      sourceMessageId: "user-ui",
+      sourceOrder: 3,
+    },
+  ];
+  const packet = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现", { requirements });
+  const rendered = renderRoleContextPacket(packet);
+
+  assert.equal(packet.coverage.requirementDecisionCount, 3);
+  assert.equal(packet.coverage.activeRequirementCount, 2);
+  assert.equal(packet.coverage.supersededRequirementCount, 1);
+  assert.equal(packet.coverage.requirementProvenance, true);
+  assert.deepEqual(packet.requirements, requirements);
+  assert.match(rendered, /Frozen requirement decisions/u);
+  assert.match(rendered, /R-compatible/u);
+  assert.match(rendered, /"status": "superseded"/u);
+  assert.doesNotMatch(rendered, /no source-verified requirement ledger/u);
+
+  const changed = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现", {
+    requirements: requirements.map((requirement) => requirement.id === "R-ui"
+      ? { ...requirement, statement: "Changed active requirement." }
+      : requirement),
+  });
+  assert.notEqual(changed.digest, packet.digest);
+  assert.notEqual(changed.evidenceDigest, packet.evidenceDigest);
+
+  const mutable = requirements.map((requirement) => ({ ...requirement }));
+  const frozen = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现", { requirements: mutable });
+  mutable[1]!.statement = "Mutated after packet creation.";
+  assert.equal(frozen.requirements[1]?.statement, "Keep both service generations.");
+  assert.equal(buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现", {
+    requirements: frozen.requirements,
+  }).digest, frozen.digest);
 });
 
 test("current DSH native tool call/result replays produce grounded coverage", () => {

@@ -10,6 +10,7 @@ import {
   decideRoute,
   extractLatestUserText,
   extractRoutingText,
+  hasExplicitRequestRevision,
   isExecutionContinuation,
   renderDelegationPrompt,
   renderMissingRouteConfigNotice,
@@ -101,6 +102,12 @@ test("pending reviewer text distinguishes continuation, supersession, and dorman
   }
   for (const text of ["现在几点？", "解释一下这个术语", "为 API 添加测试", "审查 API", "把『开始另一个任务』改短"]) {
     assert.equal(classifyPendingReviewerText(text), "dormant", text);
+  }
+  for (const text of ["继续；A1 还必须覆盖回滚", "continue with the previous review; add rollback acceptance"]) {
+    assert.equal(hasExplicitRequestRevision(text), true, text);
+  }
+  for (const text of ["继续", "补充验收证据：目标测试已经通过"]) {
+    assert.equal(hasExplicitRequestRevision(text), false, text);
   }
 });
 

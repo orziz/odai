@@ -1,12 +1,12 @@
 # odai DSH 能力路由报告
 
-更新时间：2026-09-03
+更新时间：2026-09-04
 
 本报告只记录 DeepSeek Harness（DSH）能力路由的产品契约、机械验证和冻结对照。普通单模型全量与 A/B 结果见 [`evaluation-results.md`](evaluation-results.md)。单次路由样本用于证明真实换模、边界、质量和资源足迹，不用于宣称路由稳定优于单一充分能力总控。
 
-> 当前唯一 Unreleased DSH 候选为 `0.2.21`，canonical `0.3.7` / runtime contract `6` 保持不变：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。manifest schema 2 是角色/reference owner 拓扑，DSH 由 controller-only reference bridge 按当前 turn snapshot 读取 canonical references。独立 Executor、route card 与 Codex stage runner 已退役。下文含 Executor 或 stage 的数值全部是退役历史证据，保留用于解释删除决定，不是当前能力或配置说明。
+> 当前 DSH 发布线为 `0.2.22`，canonical 为 `0.3.8`、runtime contract 保持 `6`：controller 是唯一持续任务线程并拥有实施；可选责任仍只有 researcher、planner、reviewer、frontend。`0.2.22` 只补带认证用户原文来源的 active/superseded requirement provenance，不增加 auditor、Executor、stage 或“三省六部”运行时结构。manifest schema 2 仍是角色/reference owner 拓扑，DSH 由 controller-only reference bridge 按当前 turn snapshot 读取 canonical references。独立 Executor、route card 与 Codex stage runner 已退役。下文含 Executor 或 stage 的数值全部是退役历史证据，保留用于解释删除决定，不是当前能力或配置说明。
 
-## 当前候选契约
+## 当前发布契约
 
 ### 默认行为
 
@@ -16,6 +16,8 @@
 - Researcher 只在“未验证因果判断 + 具体高影响修改”形成多源决定阻断，且用户已显式配置该责任时启动一个只读 child；packet 通过来源验证后仍由 planner/controller 决定。
 - 完整的高影响判断缺口在 planner 映射存在时升级同一 controller turn，不启动 child；明确要求独立规划或复核时，独立性本身是能力要求，因此使用 child。
 - 实施始终由 controller 承担；planner 回交有界计划后，只有当前用户任务已授权实施时才由 controller 继续。
+- planner/reviewer gap 可带紧凑 requirement ledger；runtime 只接受能唯一定位到认证 direct-user message 的原文摘录，校验无环 replacement graph 及逐边时间顺序，并把 ledger 写入 bounded packet 与 evidence digest。来源绑定只证明原文和顺序，不证明 controller 的语义归类；reviewer 仍须对照原文核实冲突/取代关系；带显式修订的后续继续消息会淘汰旧 ledger，避免用过时要求恢复 deferred review。未冲突的 active 要求不会因另一条要求被替换而失效；无 ledger 的旧 gap 仍可运行，但 reviewer 不得从 assistant 摘要推断 coverage。
+- reviewer 的 workspace verify 权限档未进入 `0.2.22`：现有 child guard 尚不能只为该模式机械开放命令而不扩大其他 child 权限，也没有优于 packet 模式的净收益样本。
 - frontend 只为完整界面设计或制作缺口在同一 turn 使用显式映射；窄样式或文案修复保持 direct。
 
 ### 用户配置
@@ -53,7 +55,7 @@ Researcher 的运行时触发只判断任务是否匹配，不感知 provider �
 - researcher packet：runtime 另行核对来源数量、项目根 realpath、symlink、文件类型与大小、正数行号范围、逐字摘录和 SHA-256 digest；packet 只作为检索索引，不能替代原始来源、规划或批准。
 - Plugin 与 Agent 同时存在时，prompt 按 scope shadow，route/tool event 按 durable identity 去重，权限拒绝保持单调。两者通常不需要同时安装。
 
-## 当前候选机械验证
+## `0.2.22` 机械验证
 
 | 验证面 | 结果 | 证明范围 |
 |---|---:|---|
@@ -67,7 +69,7 @@ Researcher 的运行时触发只判断任务是否匹配，不感知 provider �
 | Plugin/Agent pack dry-run | 通过 | Plugin 192 文件、Agent 201 文件；临时 bundled source 与 tgz 均已清理 |
 | 双版本 installed-artifact release matrix | 通过 | 真实 Plugin/Agent tgz 在 DSH rc.2 与 alpha.2 隔离安装；分别为 188 / 215 包纯依赖图，Standard digest、official session compatibility、Plugin load 与 Agent scope/child guard 均通过 |
 
-这组验证证明当前源码、迁移和打包机制，不替代付费模型质量样本。当前 `0.3.7` 的普通 canonical intent/C04 定向结果见 [`evaluation-results.md`](evaluation-results.md)，但尚无新的 DSH 计分路由运行；下面样本按各自旧指纹保留。
+这组验证证明当前源码、迁移和打包机制，不替代付费模型质量样本。最近一次普通 canonical intent/C04 定向结果仍是 `0.3.7`，见 [`evaluation-results.md`](evaluation-results.md)；当前 `0.3.8` 候选尚无新的 DSH 计分路由运行，下面样本按各自旧指纹保留。
 
 ## 退役与历史质量/成本证据
 
@@ -148,7 +150,7 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 |---|---|---:|---|---:|---:|---:|---:|
 | 修复后 Plugin observe | 单 Luna；planner gap + 本地证据协议 + 只读保护 | **4/4** | 否 | 130,243 | 108.8s | $0.0142 | 0 |
 
-该历史样本证明当时的 observe 可以在不增加 Sol 调用的情况下安全闭环这份 C04，但不提供独立 planner 证据，也不证明 observe 稳定 4/4。当前候选对 planner 与 reviewer 的缺失或失败路线继续 fail-closed。
+该历史样本证明当时的 observe 可以在不增加 Sol 调用的情况下安全闭环这份 C04，但不提供独立 planner 证据，也不证明 observe 稳定 4/4。`0.2.22` 对 planner 与 reviewer 的缺失或失败路线继续 fail-closed。
 
 ### 独立 Executor 有界迁移对照（退役依据）
 
@@ -157,7 +159,7 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 | 12 文件冻结迁移 | Sol/high controller -> Luna/max executor | 只改 12 个目标值；项目测试通过 | 218,731 | 222.9s | $0.213 |
 | 同一迁移单模型对照 | Sol/high controller | 同等改动与验证结果 | 137,261 | 63.6s | $0.201 |
 
-独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是当前 `0.3.7` 候选删除 Executor、route card 与 stage 机制的直接依据；当前实现不再提供恢复开关。
+独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是 `0.3.7` 删除 Executor、route card 与 stage 机制的直接依据；当前 `0.3.8` 候选延续该结论，不提供恢复开关。
 
 ## 历史架构摘要
 
@@ -188,6 +190,6 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 3. Researcher 在固定 C04 的 4 份独立历史样本中均保持 4/4，并在这些 runner 上低于单份 Sol 基线成本；基线仍为 `n=1`，不建立通用调查流水线或稳定降本结论。
 4. 同 turn auto 的历史 C04 样本保持 4/4，但不证明所有任务都更便宜或更稳定；execute 模式的 child 换模同样没有普遍质量或资源净收益结论。
 5. observe 的价值是诊断、证据协议和 fail-closed，不是独立判断的替代品；frontend 只在明确专业缺口和显式映射下升级。
-6. 当前候选不选择任何责任模型。历史 Sol/Luna/Terra 都是冻结实验映射，不应被读成包默认。
+6. `0.2.22` 不选择任何责任模型。历史 Sol/Luna/Terra 都是冻结实验映射，不应被读成包默认。
 7. Researcher 触发不感知价格；配置只是用户显式选择，不是降本证明，缺权威价格与实际 usage 时不得作节省承诺。
-8. `0.3.7` 尚无新计分样本；质量与成本结论只覆盖表中旧指纹，provider cache、上下文档位和输出长度会显著改变单次结果。
+8. 当前 `0.3.8` 尚无新计分样本；最近的 `0.3.7` 普通 canonical 结果不包含 requirement provenance 路由对照。质量与成本结论只覆盖表中旧指纹，provider cache、上下文档位和输出长度会显著改变单次结果。

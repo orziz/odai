@@ -353,6 +353,98 @@ function researchPacketText(overrides: UnknownRecord = {}): string {
   });
 }
 
+test("responsibility gap tool source-verifies requirement ledgers against direct-user messages", async () => {
+  const ctx = fakeContext();
+  apply(ctx, { skillPath });
+  const oldMessage = { ...userMessage("先只支持旧 runtime。"), id: "user-old" };
+  const keptMessage = { ...userMessage("现有 UI 行为必须保留。"), id: "user-kept" };
+  const currentMessage = { ...userMessage("纠正：改为同时支持两代 runtime。"), id: "user-current" };
+  const events: DshEvent[] = [
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: oldMessage },
+    { type: "user/message", seq: 3, data: keptMessage },
+    { type: "user/message", seq: 4, data: currentMessage },
+    { type: "step/start", seq: 5, data: { turn: 1, step: 1 } },
+  ];
+  const agent = {
+    phase: { turn: 1, step: 1 },
+    session: {
+      header: {}, events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+    },
+  };
+  const gapTool = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_responsibility_gap");
+  assert.ok(gapTool);
+  const result = await gapTool.execute({
+    responsibility: "reviewer",
+    gap: "Review active compatibility requirements.",
+    evidenceRefs: ["current-task", "final-diff"],
+    expectedChange: "Reject only violations of active requirements.",
+    requirements: [
+      {
+        id: "R-old",
+        statement: "Support only the old runtime.",
+        status: "superseded",
+        sourceExcerpt: "先只支持旧 runtime",
+        supersededBy: "R-new",
+      },
+      {
+        id: "R-ui",
+        statement: "Keep current UI behavior.",
+        status: "active",
+        sourceExcerpt: "现有 UI 行为必须保留",
+      },
+      {
+        id: "R-new",
+        statement: "Support both runtime generations.",
+        status: "active",
+        sourceExcerpt: "改为同时支持两代 runtime",
+      },
+    ],
+  }, { name: "odai_responsibility_gap", agent });
+
+  assert.equal(result.recorded, true);
+  const recorded = findLastEvent(events, (event) => event.type === "odai/responsibility-gap");
+  assert.equal(recorded.data.taskMessageId, "user-current");
+  const requirements = recorded.data.requirements as UnknownRecord[];
+  assert.deepEqual(requirements.map((requirement) => requirement.sourceMessageId), ["user-old", "user-kept", "user-current"]);
+  assert.deepEqual(requirements.map((requirement) => requirement.sourceOrder), [1, 2, 3]);
+
+  assert.throws(() => gapTool.execute({
+    responsibility: "reviewer",
+    gap: "Review forged requirements.",
+    evidenceRefs: ["current-task"],
+    expectedChange: "Must not accept invented user evidence.",
+    requirements: [{
+      id: "R-forged",
+      statement: "Invented requirement.",
+      status: "active",
+      sourceExcerpt: "the user never said this",
+    }],
+  }, { name: "odai_responsibility_gap", agent }), /must match exactly one authenticated direct-user message/u);
+
+  const { id: _id, ...idlessMessage } = userMessage("Keep this exact requirement.");
+  const idlessEvents: DshEvent[] = [{ type: "user/message", data: idlessMessage }];
+  const idlessAgent = {
+    session: {
+      header: {}, events: idlessEvents,
+      append(type: string, data: RuntimeEventData) { idlessEvents.push({ type, data }); },
+    },
+  };
+  assert.throws(() => gapTool.execute({
+    responsibility: "planner",
+    gap: "Bind requirement provenance before planning.",
+    evidenceRefs: ["current-task"],
+    expectedChange: "Fail closed without a user message identity.",
+    requirements: [{
+      id: "R-id",
+      statement: "Keep this exact requirement.",
+      status: "active",
+      sourceExcerpt: "Keep this exact requirement",
+    }],
+  }, { name: "odai_responsibility_gap", agent: idlessAgent }), /needs an authenticated direct-user task message/u);
+});
+
 test("config is strict at governance boundaries", () => {
   assert.throws(() => resolveConfig({ routing: { mode: "magic" } }), /must be off, observe, auto, or execute/u);
   assert.throws(() => resolveConfig({ governance: { additionalDeniedTools: [""] } }), /non-empty strings/u);
@@ -1986,7 +2078,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   assert.match(ctx.captured.sections[2].text, /Never infer, recommend as chosen, or silently select/u);
   assert.match(ctx.captured.sections[3].text, /user-controlled human-safety continuity/iu);
   assert.match(ctx.captured.sections[3].text, /Never infer or automatically save a current mood/u);
-  assert.match(ctx.captured.sections[4].text, /Users provide goals, constraints, materials, and acceptance/u);
+  assert.match(ctx.captured.sections[4].text, /Users own goals, constraints, materials, and acceptance/u);
   assert.match(ctx.captured.sections[5].text, /explicitly asks to inspect, set, or reset that source/u);
   assert.equal(ctx.captured.sections[6].text, "");
   assert.match(ctx.captured.sections[7].text, /compaction model configuration/u);
@@ -2036,7 +2128,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   };
   const planning = await tools.get("odai_reference").execute({ reference: "planning" }, { agent });
   assert.equal(planning.reference, "planning");
-  assert.equal(planning.skillVersion, "0.3.7");
+  assert.equal(planning.skillVersion, "0.3.8");
   assert.equal(planning.runtimeContract, 6);
   assert.match(planning.digest, /^[a-f0-9]{64}$/u);
   assert.match(planning.contract, /工程实施计划/u);
@@ -3161,6 +3253,14 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     responsibilityGapEvent("reviewer", {
       gap: "Review planner acceptance A1 and A2 against the final patch.",
       expectedChange: "Accept A1 and A2 or return precise blocking findings.",
+      requirements: [{
+        id: "R-default",
+        statement: "Preserve default behavior while fixing routing.",
+        status: "active",
+        sourceExcerpt: "保持默认行为并修复路由",
+        sourceMessageId: "user-1",
+        sourceOrder: 1,
+      }],
     }),
     { type: "user/message", data: userMessage("实现请求：保持默认行为并修复路由。") },
     {
@@ -3187,12 +3287,20 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.ok(startRequest);
   assert.match(blockText(startRequest.prompt[0]), /Odai bounded role context packet/u);
   assert.match(blockText(startRequest.prompt[0]), /Review planner acceptance A1 and A2 against the final patch/u);
+  assert.match(blockText(startRequest.prompt[0]), /Frozen requirement decisions/u);
+  assert.match(blockText(startRequest.prompt[0]), /R-default/u);
+  assert.match(blockText(startRequest.prompt[0]), /Preserve default behavior while fixing routing/u);
+  assert.match(blockText(startRequest.prompt[0]), /source binding does not prove the normalized meaning or replacement semantics/u);
   assert.match(blockText(startRequest.prompt[0]), /Planner acceptance A1: reuse the canonical owner/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: planner-handback, planning/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: tool, diff/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: tool, test/u);
   const contextEvent = findEvent(events, (event) => event.type === "odai/route-context");
   assert.equal(contextEvent.data.mode, "bounded-packet");
+  assert.equal(contextEvent.data.requirementDecisionCount, 1);
+  assert.equal(contextEvent.data.activeRequirementCount, 1);
+  assert.equal(contextEvent.data.supersededRequirementCount, 0);
+  assert.equal(contextEvent.data.requirementProvenance, true);
   assert.equal(contextEvent.data.acceptanceCount, 1);
   assert.equal(contextEvent.data.diffCount, 1);
   assert.equal(contextEvent.data.testCount, 1);
@@ -3465,6 +3573,59 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.equal(failedContext.mode, "controller-local");
   assert.equal(failedEvents.some((event) => event.type === "odai/route-upgrade"), false);
   assert.equal(findEvent(failedEvents, (event) => event.type === "odai/route-result").data.independent, false);
+});
+
+test("a revised user task cannot resume a deferred reviewer with a stale requirement ledger", async () => {
+  let starts = 0;
+  const ctx = fakeContext({
+    subagents: { async start() { starts += 1; throw new Error("stale reviewer must not start"); } },
+  });
+  apply(ctx, {
+    skillPath,
+    routing: { roles: { reviewer: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } } },
+  });
+  const original = { ...userMessage("alpha.5 需要单独验证。"), id: "user-original" };
+  const events: DshEvent[] = [
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: original },
+    responsibilityGapEvent("reviewer", {
+      taskMessageId: "user-original",
+      requirements: [{
+        id: "R-alpha-check",
+        statement: "Validate alpha.5 separately.",
+        status: "active",
+        sourceExcerpt: "alpha.5 需要单独验证",
+        sourceMessageId: "user-original",
+        sourceOrder: 1,
+      }],
+    }),
+  ];
+  const agent = {
+    session: {
+      header: {}, events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+    },
+  };
+  await ctx.captured.handlers.get("agent/pre-step")(
+    { agent, turn: 1, step: 1, signal: new AbortController().signal },
+    async () => ({ kind: "enter", messages: [original] }),
+  );
+  assert.equal(events.some((event) => event.type === "odai/responsibility-gap-deferred"), true);
+
+  const correction = { ...userMessage("继续，但 alpha.5 不需要单独验证。"), id: "user-correction" };
+  events.push(
+    { type: "turn/start", seq: 10, data: { turn: 2 } },
+    { type: "user/message", seq: 11, data: correction },
+  );
+  await ctx.captured.handlers.get("agent/pre-step")(
+    { agent, turn: 2, step: 1, signal: new AbortController().signal },
+    async () => ({ kind: "enter", messages: [correction] }),
+  );
+  assert.equal(starts, 0);
+  assert.equal(events.some((event) => (
+    event.type === "odai/responsibility-gap-consumed"
+    && event.data?.reason === "SUPERSEDED_BY_DIRECT_USER_TASK"
+  )), true);
 });
 
 test("reviewer child accepts a current read-only check without relabeling it as a test", async () => {

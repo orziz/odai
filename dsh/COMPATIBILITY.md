@@ -1,11 +1,12 @@
 # Odai DSH 版本兼容对照表
 
-本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。历史行按发布事实保留；从 `0.2.20` 起，支持范围与 release matrix 实测锚点分别声明，不把范围内未来版本写成已经实测。
+本表用于选择 `odai-dsh-plugin`、`odai-dsh-agent` 与 `@deepseek-ai/dsh` 的可用版本组合。历史行按发布事实保留；从 `0.2.20` 起，支持范围与 release matrix 实测版本分别声明，不把范围内版本自动写成逐个实测。
 
 | odai-dsh-plugin | odai-dsh-agent | 支持的 @deepseek-ai/dsh | 说明 |
 | --- | --- | --- | --- |
-| `0.2.21`（未发布） | `0.2.21`（未发布） | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 实测锚点为 rc.2、alpha.5 与 rc.1，以 rc.1 Standard 为 source；Control Center 分别适配旧 conversation services 与 `uiConversation.events/views` |
-| `0.2.20` | `0.2.20` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 已发布；Agent preset 可加载，但 alpha.5/rc.1 的 Control Center 会等待 rc.2-only services 并阻断 Web boot，应升级到 `0.2.21` |
+| `0.2.22` | `0.2.22` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | release matrix 只跑 rc.2 旧服务与 rc.1 新服务/source；alpha.5 由范围覆盖，不另设重复检查；增加带认证用户原文来源的 active/superseded requirement provenance，不增加角色或 stage |
+| `0.2.21` | `0.2.21` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 已发布；当时实际跑过 rc.2、alpha.5 与 rc.1，以 rc.1 Standard 为 source；Control Center 分别适配旧 conversation services 与 `uiConversation.events/views` |
+| `0.2.20` | `0.2.20` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 已发布；Agent preset 可加载，但 alpha.5/rc.1 的 Control Center 会等待 rc.2-only services 并阻断 Web boot，应升级到 `0.2.21` 或后续兼容版本 |
 | `0.2.19` | `0.2.19` | `0.1.1-rc.2`、`0.1.2-alpha.4` | 已发布；以 alpha.4 Standard 为 source，按公开 `snapshotEvents()` 适配 Session 读取，保留 rc.2 精确回渲染与默认行为 |
 | `0.2.18` | `0.2.18` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；Control Center 可见交互提示恢复 `[Y/n]`，直接回车默认同意，EOF 与非交互仍拒绝 |
 | `0.2.17` | `0.2.17` | `0.1.1-rc.2`、`0.1.2-alpha.2` | 已发布；修复 Agent Control Center 来源/版本误判，要求显式 `y/yes` 授权并为失败 profile 变更提供回滚 |
@@ -40,9 +41,9 @@
 ## 使用规则
 
 1. 从同一行选择版本组合，不要混用不同版本的 Plugin 与 Agent。`0.0.10` 及之后的两个包必须保持相同版本。
-2. `0.2.15` 至 `0.2.18` 只支持精确的 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持精确的 rc.2 与 alpha.4。`0.2.20` 与 `0.2.21` 都声明保留精确 rc.2，并接纳 alpha.5 起、稳定版 `0.1.2` 之前的同一 prerelease 线；但 `0.2.20` 的 Control Center 对新会话服务不兼容，实际用于 alpha.5/rc.1 Web profile 时应选择 `0.2.21`。
-3. `dshVersions` 只表示 release matrix 完整跑过的精确锚点，`dshRange` 才是当前支持范围。`0.2.21` 的锚点为 rc.2、alpha.5 与 rc.1；范围内未来 prerelease 按上游 SemVer 兼容承诺共用 rc.1 source renderer，不得据此宣称已经跑过该未来版本。alpha.5 与 rc.1 均为上游 prerelease，二者当前 Standard composition 摘要和 `uiConversation` 客户端契约相同。
+2. `0.2.15` 至 `0.2.18` 只支持精确的 `0.1.1-rc.2` 与 `0.1.2-alpha.2`；`0.2.19` 只支持精确的 rc.2 与 alpha.4。`0.2.20`、`0.2.21` 与 `0.2.22` 都声明保留精确 rc.2，并接纳 alpha.5 起、稳定版 `0.1.2` 之前的同一 prerelease 线；但 `0.2.20` 的 Control Center 对新会话服务不兼容，实际用于 alpha.5/rc.1 Web profile 时应选择 `0.2.21` 或后续兼容版本。
+3. `dshVersions` 只表示 release matrix 完整跑过的精确版本，`dshRange` 才是支持范围。已发布 `0.2.21` 当时跑过 rc.2、alpha.5 与 rc.1；当前 `0.2.22` 只跑有区分力的 rc.2 与 rc.1。alpha.5 仍由范围覆盖，但其 Standard composition 摘要和 `uiConversation` 客户端契约与 rc.1 相同，不再重复一套安装、renderer 或完整 matrix 检查。范围内其他 prerelease 同样不得写成已经逐个实测。
 4. 运行时兼容不等于 DSH 自有数据可以跨版本迁移。特别是 rc.8 的 SQLite 存储格式与旧版本不兼容，切换 DSH 版本前应按上游说明备份和迁移宿主数据。
 5. 从 `0.2.5` 起，本仓库自有的新版本标识不得包含数字字符 `4`；历史版本（如 `0.0.4`）按事实保留，上游 DSH 版本不受该规则限制。
 
-DSH 包兼容关系的机器可读事实源是 [`compatibility.json`](./compatibility.json)；[`release-contracts.json`](./release-contracts.json) 进一步固定当前范围、source 版本，以及每个实测锚点的发布时间边界、纯依赖图包数、Standard composition 路径和摘要，`scripts/verify-dsh-release-matrix.mjs` 据此复现 source 或真实 tgz 的隔离 load。仓库自有版本规范的事实源是 [`../version-policy.json`](../version-policy.json)。发布前校验器会同时强制版本规范、当前双包 `peerDependencies`、对应矩阵行与 release contracts 完全一致；本文是供人查阅的展开视图。
+DSH 包兼容关系的机器可读事实源是 [`compatibility.json`](./compatibility.json)；[`release-contracts.json`](./release-contracts.json) 进一步固定当前范围、source 版本，以及每个实测版本的发布时间边界、纯依赖图包数、Standard composition 路径和摘要，`scripts/verify-dsh-release-matrix.mjs` 据此复现 source 或真实 tgz 的隔离 load。仓库自有版本规范的事实源是 [`../version-policy.json`](../version-policy.json)。发布前校验器会同时强制版本规范、当前双包 `peerDependencies`、对应矩阵行与 release contracts 完全一致；本文是供人查阅的展开视图。

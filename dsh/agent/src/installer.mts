@@ -101,13 +101,12 @@ const packageMetadata: PackageMetadata = {
 const EXPECTED_DSH_RANGE = "0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2";
 const SOURCE_DSH_VERSION = "0.1.2-rc.1";
 const LEGACY_DSH_VERSION = "0.1.1-rc.2";
-const COMPATIBLE_DSH_VERSION = "0.1.2-alpha.5";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
 if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
   throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
 }
 export const SUPPORTED_DSH_RANGE = peerRange;
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, COMPATIBLE_DSH_VERSION, SOURCE_DSH_VERSION]);
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([LEGACY_DSH_VERSION, SOURCE_DSH_VERSION]);
 if (SUPPORTED_DSH_VERSIONS.some((version) => !satisfies(version, SUPPORTED_DSH_RANGE))) {
   throw new Error(`Odai Agent tested DSH versions must satisfy ${SUPPORTED_DSH_RANGE}`);
 }

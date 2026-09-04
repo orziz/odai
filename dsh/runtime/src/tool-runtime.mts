@@ -12,7 +12,7 @@ import { createHumanCareTool } from "./human-care.mjs";
 import { createHumanSafetyTool } from "./human-safety.mjs";
 import { createHumanSafetyContinuityTool } from "./human-safety-continuity.mjs";
 import { bindResponsibilityGapToTask, createResponsibilityGapTool } from "./responsibility-gap.mjs";
-import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
+import type { RequirementSourceCandidate, ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { createResponsibilityReturnTool } from "./responsibility-return.mjs";
 import type { ResponsibilityReturnResult } from "./responsibility-return.mjs";
 import type { ResponsibilityScope } from "./responsibility-scope.mjs";
@@ -24,7 +24,8 @@ import type { SkillBundle } from "./skill-bundle.mjs";
 import { currentAgentTurn, sharedSkillSelection } from "./skill-selection-state.mjs";
 import { currentAgentStep, isSubagentSession, latestRouteReceipt } from "./runtime-support.mjs";
 import type { SkillSelection } from "./runtime-support.mjs";
-import type { DshAgent, DshEvent, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
+import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 interface RouteProtection extends UnknownRecord { scopeId?: string }
 interface ExposureOptions { turn?: number; step?: number; responsibilityReturn?: boolean }
@@ -70,14 +71,29 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       return routeProtections.get(agent) ?? activeRouteProtection(agent, evidence.events(agent));
     },
   });
+  const requirementSourcesFor = (agent: DshAgent): readonly RequirementSourceCandidate[] => {
+    const sources: RequirementSourceCandidate[] = [];
+    for (const [order, event] of sessionEvents(agent.session).entries()) {
+      if (event.type !== "user/message") continue;
+      const message = isUnknownRecord(event.data.message) ? event.data.message : event.data;
+      const source = isUnknownRecord(message.source) ? message.source : undefined;
+      if (message.role !== "user" || source?.kind !== "user" || typeof message.id !== "string" || !message.id) continue;
+      const text = extractLatestUserText([message as DshMessage]);
+      if (!text) continue;
+      sources.push(Object.freeze({ messageId: message.id, text, order }));
+    }
+    return Object.freeze(sources);
+  };
   const gapForCurrentTask = (
     agent: DshAgent,
     proposal: Readonly<ResponsibilityGapProposal>,
   ): Readonly<ResponsibilityGapProposal> => {
     const message = latestDirectUserMessage(agent);
-    return message && typeof message.id === "string" && message.id
-      ? bindResponsibilityGapToTask(proposal, message.id)
-      : proposal;
+    if (message && typeof message.id === "string" && message.id) {
+      return bindResponsibilityGapToTask(proposal, message.id, requirementSourcesFor(agent));
+    }
+    if (proposal.requirements) throw new Error("requirement provenance needs an authenticated direct-user task message");
+    return proposal;
   };
   const bundleFor = (agent: DshAgent): SkillBundle => sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
   ctx.tools.register(createContextCapabilityTool({

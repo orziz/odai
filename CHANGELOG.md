@@ -1,16 +1,22 @@
 # Changelog
 
-本文只记当前唯一 Unreleased 候选与已发布版本的对外能力、架构、迁移和评测口径；每一行分别说明真实 npm registry 状态。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
+本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.21 dual conversation-service compatibility
+## DSH 0.2.22 requirement provenance
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步升至未发布的 `0.2.21`；peer 保持 `0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2`，release matrix 实测锚点扩为 rc.2、alpha.5 与 rc.1，Agent source composition 固定为 rc.1。上游 alpha.5 与 rc.1 的 Standard composition 摘要及 `uiConversation.events/views` 客户端契约相同，因此 alpha.5 继续属于当前支持范围。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 同步升至 `0.2.22`，canonical skill 升为 `0.3.8`，runtime contract 保持 `6`；当前 DSH 支持合同仍为 `0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2`，release matrix 只保留有区分力的 rc.2 旧服务与 rc.1 新服务/source；alpha.5 由同一 SemVer 范围自然覆盖，不再另设安装、renderer 或完整 matrix 检查。controller 与 researcher、planner、reviewer、frontend 的责任拓扑不变，不新增 auditor、Executor、固定 stage 或“三省六部”运行时结构。
+- planner/reviewer 只依据当前有效且带用户原文来源的决定形成或检查验收：后续明确决定只取代与其冲突的早期要求，未冲突要求继续有效，assistant 摘要不产生用户决定。DSH responsibility gap 可携带紧凑 requirement ledger；runtime 将每段 `sourceExcerpt` 唯一反查到认证 direct-user message，校验 replacement graph 与顺序并把 active/superseded 状态纳入有界 role packet 与 digest；来源绑定不冒充语义判断，reviewer 仍须按原文核对被声明的冲突/取代关系；带显式修订的后续“继续”不会恢复旧 ledger。旧 gap 不带 ledger 时保持可路由，但 reviewer 不得据此提出 coverage finding。
+- reviewer 自行取证权限档不进入 `0.2.22`：当前 child guard 无法只为该模式开放 shell 而不扩大其他子 agent 权限，且尚无相对 packet 模式的净收益实测。本轮先以 provenance 反例和既有回归验证已证根因，不用提示词冒充机械隔离。
+
+## 2026-09-04 — DSH 0.2.21 dual conversation-service compatibility
+
+- `odai-dsh-agent@0.2.21` 与 `odai-dsh-plugin@0.2.21` 已同步发布；registry `gitHead` 均为 `7af9bfee59e9d019fc5eb1ad94ef7cf587a11698`，发布时间分别为 `2026-09-04T05:57:43.497Z` 与 `2026-09-04T05:57:18.526Z`。peer 保持 `0.1.1-rc.2 || >=0.1.2-alpha.5 <0.1.2`，release matrix 当时实际跑过 rc.2、alpha.5 与 rc.1，Agent source composition 固定为 rc.1。
 - Control Center client 的顶层依赖只保留两代共有服务；mount coordinator 通过动态 profile facade 公开的 `ctx.get` 可选读取与 `internal/service` 生命周期事件，在 rc.2 的 `conversationEvents` / `conversationViews` 和 alpha.5/rc.1 的 `uiConversation` 之间切换，并分别从 legacy Session snapshot 或 modern conversation binding 读取视图证据。新服务确定性优先，候选重启、回退及 stale cleanup 均保持唯一 event/view/launcher 注册；既不令 Web boot 等待另一代服务，也不调用 facade 禁止的 `ctx.inject`。
-- `0.2.20` 已于 `2026-09-03T03:15:23.661Z` 发布，registry `gitHead` 为 `d7b39fbf268a5d0bec54f41727028c3e5488c223`；该版本的 Agent preset 仍可加载，但不要在 alpha.5 或 rc.1 Web profile 中启用其 Control Center。`0.2.21` 尚未发布，不复用或改写 `0.2.20` 制品。
+- `0.2.20` 已于 `2026-09-03T03:15:23.661Z` 发布，registry `gitHead` 为 `d7b39fbf268a5d0bec54f41727028c3e5488c223`；该版本的 Agent preset 仍可加载，但不要在 alpha.5 或 rc.1 Web profile 中启用其 Control Center，应升级到 `0.2.21` 或后续兼容版本。
 
 ## 2026-09-03 — DSH 0.2.20 alpha.5 range compatibility
 
-- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.20`；peer 保留正式 `@deepseek-ai/dsh@0.1.1-rc.2`，并以 `>=0.1.2-alpha.5 <0.1.2` 接纳 alpha.5 起的同一 prerelease 线。当时的 release matrix 实测锚点为 rc.2 与 alpha.5；已发布 `0.2.19` 的 alpha.4 兼容只保留在历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
+- `odai-dsh-agent` 与 `odai-dsh-plugin` 已同步发布 `0.2.20`；peer 保留正式 `@deepseek-ai/dsh@0.1.1-rc.2`，并以 `>=0.1.2-alpha.5 <0.1.2` 接纳 alpha.5 起的同一 prerelease 线。当时的 release matrix 实际跑过 rc.2 与 alpha.5；已发布 `0.2.19` 的 alpha.4 兼容只保留在历史合同。canonical skill 保持 `0.3.7`、runtime contract 保持 `6`，冻结的 CLI 保持 `0.0.2`。
 - Agent source composition 跟随 alpha.5 Standard；该 Standard SHA-256 与 alpha.4 相同。rc.2 继续使用精确 legacy renderer，范围内的 `0.1.2` prerelease 使用 alpha.5 source renderer。alpha.5 的上游变化集中在升级后的存储兼容与损坏记录备份跳过；Odai 使用的 Session event、持续子 Agent 与 `send_message` 契约无新增变化。
 - Control Center 提高品牌、导航、路由标签、模型值、调度控件与表单字号；宽屏路由页把模型映射和调度方式并排，900px 以下仍恢复堆叠，并缩减角色行纵向 padding，改善高分辨率下的可读性和信息密度，不改变路由写入与 evidence 行为。
 

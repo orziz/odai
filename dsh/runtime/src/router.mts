@@ -157,7 +157,7 @@ const EXPLICIT_EXECUTION_CONTINUATION_PATTERNS = [
   /\b(?:continue|proceed|go ahead|follow the plan)\b/iu,
 ];
 const EXECUTION_REVISION_PATTERNS = [
-  /(?:但(?:是)?|不过|然而|改(?:成|为)|换(?:成|为)|不要|别|去掉|删除|新增|加上|追加|同时|还要|也要|范围)/iu,
+  /(?:但(?:是)?|不过|然而|改(?:成|为)|换(?:成|为)|不要|别|去掉|删除|新增|加上|追加|同时|还(?:要|必须|需)|也(?:要|必须|需)|范围)/iu,
   /\b(?:but|however|instead|switch|replace|remove|drop|add|also|scope)\b|\bchange\s+(?:the|this|that|its|to|from)\b/iu,
 ];
 const IMPLEMENTATION_AUTHORIZATION_PATTERNS = [
@@ -297,6 +297,11 @@ export function classifyPendingReviewerText(text: unknown): "continue" | "supers
     || matchesAny(explicit, CONTINUATION_PATTERNS)
     || matchesAny(explicit, REVIEWER_PENDING_CONTEXT_PATTERNS)) return "continue";
   return "dormant";
+}
+
+export function hasExplicitRequestRevision(text: unknown): boolean {
+  const explicit = stripQuotedMaterial(String(text ?? "")).trim();
+  return explicit.length > 0 && matchesAny(explicit, EXECUTION_REVISION_PATTERNS);
 }
 
 export function isExecutionContinuation(text: string): boolean {

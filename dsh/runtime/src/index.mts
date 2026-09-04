@@ -20,7 +20,7 @@ import {
   latestDanglingResponsibilityScope,
   responsibilityScopeStoppedEvent,
 } from "./responsibility-scope.mjs";
-import { classifyPendingReviewerText, extractLatestUserText } from "./router.mjs";
+import { classifyPendingReviewerText, extractLatestUserText, hasExplicitRequestRevision } from "./router.mjs";
 import { invalidatePersistedRoleRoute } from "./routing-config.mjs";
 import {
   inheritCompactionReasoning,
@@ -37,7 +37,7 @@ import {
 import { createSessionEvidence, resolveSessionEvidenceRoot } from "./session-evidence.mjs";
 import { currentAgentTurn } from "./skill-selection-state.mjs";
 import { latestDirectUserMessage } from "./semantic-memory.mjs";
-import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
+import { isBoundRequirementLedger, type ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { installToolRuntime } from "./tool-runtime.mjs";
 import { resolveHumanSafetyContinuityStorePath } from "./human-safety-continuity-store.mjs";
 import type {
@@ -67,6 +67,7 @@ function isResponsibilityGapProposal(data: RuntimeEventData): data is RuntimeEve
     && Array.isArray(data.evidenceRefs)
     && data.evidenceRefs.every((value) => typeof value === "string")
     && typeof data.expectedChange === "string"
+    && isBoundRequirementLedger(data.requirements)
     && typeof data.stateDigest === "string";
 }
 
@@ -223,8 +224,9 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
       if (!deferred) continue;
       const message = latestDirectUserMessage(agent);
       if (!message) return undefined;
-      const transition = classifyPendingReviewerText(extractLatestUserText([message]));
-      if (transition === "continue") return event.data;
+      const userText = extractLatestUserText([message]);
+      const transition = classifyPendingReviewerText(userText);
+      if (transition === "continue" && !(event.data.requirements && hasExplicitRequestRevision(userText))) return event.data;
       appendEvent(agent, "odai/responsibility-gap-consumed", {
         turn,
         step,

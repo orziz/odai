@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { classifyResponsibilityInterruptionText } from "./router.mjs";
+import type { RequirementDecision } from "./responsibility-gap.mjs";
 import type { DshEvent, DshSession, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
@@ -171,6 +172,10 @@ export interface RoleContextEntry {
 
 export interface RoleContextCoverage {
   readonly requirements: boolean;
+  readonly requirementDecisionCount: number;
+  readonly activeRequirementCount: number;
+  readonly supersededRequirementCount: number;
+  readonly requirementProvenance: boolean;
   readonly acceptanceCount: number;
   readonly diffCount: number;
   readonly testCount: number;
@@ -205,9 +210,10 @@ export interface RoleContextDiagnostics {
 }
 
 export interface RoleContextPacket {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly role: string;
   readonly currentTask: string;
+  readonly requirements: readonly RequirementDecision[];
   readonly entries: readonly RoleContextEntry[];
   readonly coverage: RoleContextCoverage;
   readonly diagnostics: RoleContextDiagnostics;
@@ -222,6 +228,7 @@ export interface RoleContextPacket {
 export interface RoleContextOptions {
   maxChars?: number;
   maxEvents?: number;
+  requirements?: readonly RequirementDecision[];
 }
 
 interface NativeToolCall {
@@ -490,10 +497,19 @@ function digestPacket(value: object): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function coverageFor(currentTask: string, entries: readonly RoleContextEntry[]): Readonly<RoleContextCoverage> {
+function coverageFor(
+  currentTask: string,
+  entries: readonly RoleContextEntry[],
+  requirements: readonly RequirementDecision[],
+): Readonly<RoleContextCoverage> {
   const matching = (kind: string): RoleContextEntry[] => entries.filter((entry) => entry.kinds.includes(kind));
   const latestIndex = (kind: string): number => matching(kind).reduce((latest, entry) => Math.max(latest, entry.index), -1);
   const acceptanceCount = matching("acceptance").length;
+  const activeRequirementCount = requirements.filter((requirement) => requirement.status === "active").length;
+  const supersededRequirementCount = requirements.filter((requirement) => requirement.status === "superseded").length;
+  const requirementProvenance = requirements.length > 0 && requirements.every((requirement) => (
+    typeof requirement.sourceMessageId === "string" && Number.isSafeInteger(requirement.sourceOrder)
+  ));
   const diffEntries = matching("diff");
   const testEntries = matching("test");
   const failedTestEntries = matching("test-failed");
@@ -515,6 +531,10 @@ function coverageFor(currentTask: string, entries: readonly RoleContextEntry[]):
     && diffEntries.some((diff) => verificationEntries.some((verification) => diff.identity !== verification.identity));
   return Object.freeze({
     requirements: Boolean(currentTask) || matching("requirement").length > 0,
+    requirementDecisionCount: requirements.length,
+    activeRequirementCount,
+    supersededRequirementCount,
+    requirementProvenance,
     acceptanceCount, diffCount: diffEntries.length, testCount: testEntries.length,
     failedTestCount: failedTestEntries.length, checkCount: checkEntries.length,
     failedCheckCount: failedCheckEntries.length, writeCount: matching("write").length,
@@ -535,7 +555,12 @@ export function buildRoleContextPacket(
 ): Readonly<RoleContextPacket> {
   const maxChars = Number.isSafeInteger(options.maxChars) && (options.maxChars ?? 0) > 0 ? options.maxChars as number : DEFAULT_MAX_CHARS;
   const maxEvents = Number.isSafeInteger(options.maxEvents) && (options.maxEvents ?? 0) > 0 ? options.maxEvents as number : DEFAULT_MAX_EVENTS;
-  const taskBudget = Math.max(32, Math.floor(maxChars / 3));
+  const suppliedRequirements = Object.freeze((options.requirements ?? []).map((requirement) => Object.freeze({ ...requirement })));
+  const requirementChars = JSON.stringify(suppliedRequirements).length;
+  const requirementsFit = requirementChars <= Math.floor(maxChars / 3);
+  const requirements = requirementsFit ? suppliedRequirements : Object.freeze([] as RequirementDecision[]);
+  const includedRequirementChars = requirementsFit ? requirementChars : 0;
+  const taskBudget = Math.max(32, Math.floor((maxChars - includedRequirementChars) / 3));
   const task = truncateText(String(taskText ?? "").trim(), taskBudget);
   const events = sessionEvents(agent?.session);
   const calls = nativeToolCalls(events);
@@ -597,11 +622,11 @@ export function buildRoleContextPacket(
 
   const rendered: RoleContextEntry[] = [];
   let evidenceChars = 0;
-  let textTruncated = task.truncated || prioritized.some((entry) => preTruncatedIndices.has(entry.index));
-  const availableChars = Math.max(0, maxChars - task.text.length);
+  let textTruncated = !requirementsFit || task.truncated || prioritized.some((entry) => preTruncatedIndices.has(entry.index));
+  const availableChars = Math.max(0, maxChars - task.text.length - includedRequirementChars);
   const maxEntryChars = Math.max(96, Math.min(DEFAULT_MAX_ENTRY_CHARS, Math.floor(availableChars / 6)));
   for (const entry of prioritized) {
-    const remaining = maxChars - task.text.length - evidenceChars;
+    const remaining = maxChars - task.text.length - includedRequirementChars - evidenceChars;
     if (remaining < 96) { textTruncated = true; break; }
     const bounded = truncateText(entry.text, Math.min(remaining, maxEntryChars));
     rendered.push(Object.freeze({ ...entry, text: bounded.text }));
@@ -611,20 +636,25 @@ export function buildRoleContextPacket(
   rendered.sort((left, right) => left.index - right.index);
 
   const entries = Object.freeze(rendered);
-  const coverage = coverageFor(task.text, entries);
+  const coverage = coverageFor(task.text, entries, requirements);
   const diagnostics: Readonly<RoleContextDiagnostics> = Object.freeze({
     ...mutableDiagnostics,
     hostEvidenceAvailable: mutableDiagnostics.linkedToolResultCount > 0,
   });
   const truncated = textTruncated || mutableDiagnostics.omittedEvidenceCount > 0 || rendered.length < candidates.length;
-  const evidenceCoverage = coverageFor(task.text, candidates);
+  const evidenceCoverage = coverageFor(task.text, candidates, requirements);
   const evidenceMarkers = priorityKinds.map((kind) => {
     const entry = candidates.findLast((candidate) => candidate.kinds.includes(kind));
     return entry ? { kind, index: entry.index, identity: entry.identity } : { kind, index: -1 };
   });
   const evidenceDigest = digestPacket({
+    requirements,
     coverage: {
       requirements: evidenceCoverage.requirements,
+      requirementDecisionCount: evidenceCoverage.requirementDecisionCount,
+      activeRequirementCount: evidenceCoverage.activeRequirementCount,
+      supersededRequirementCount: evidenceCoverage.supersededRequirementCount,
+      requirementProvenance: evidenceCoverage.requirementProvenance,
       acceptanceCount: evidenceCoverage.acceptanceCount,
       diffCount: evidenceCoverage.diffCount,
       testCount: evidenceCoverage.testCount,
@@ -652,7 +682,7 @@ export function buildRoleContextPacket(
     },
   });
   const packetBody = Object.freeze({
-    schemaVersion: 1 as const, role, currentTask: task.text, entries, coverage, diagnostics, truncated, evidenceDigest,
+    schemaVersion: 2 as const, role, currentTask: task.text, requirements, entries, coverage, diagnostics, truncated, evidenceDigest,
   });
   const digest = digestPacket(packetBody);
   const reviewerSufficient = coverage.requirements && coverage.acceptanceCount > 0
@@ -672,6 +702,9 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
         entry.text,
       ].join("\n")).join("\n\n")
     : "(no prior evidence entries)";
+  const requirements = packet.requirements.length > 0
+    ? JSON.stringify(packet.requirements, undefined, 2)
+    : "(no source-verified requirement ledger; do not make coverage findings)";
   return [
     "# Odai bounded role context packet",
     `role: ${packet.role}`,
@@ -680,7 +713,8 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
     `truncated: ${packet.truncated}`,
     `coverage: ${JSON.stringify(packet.coverage)}`,
     `diagnostics: ${JSON.stringify(packet.diagnostics)}`,
+    "", "## Frozen requirement decisions", requirements,
     "", "## Current task", packet.currentTask || "(empty)", "", "## Evidence", evidence, "",
-    "Treat assistant text as claims. Tool entries are evidence only for the exact command/result they contain.",
+    "Treat assistant text as claims. Only active source-verified requirement decisions may support coverage findings. Tool entries are evidence only for the exact command/result they contain.",
   ].join("\n");
 }
