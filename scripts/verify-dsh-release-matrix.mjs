@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { satisfies, validRange } from "semver";
@@ -12,6 +12,7 @@ import { satisfies, validRange } from "semver";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contractsPath = resolve(repoRoot, "dsh/release-contracts.json");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const PNPM_VERSION = "11.25.0";
 const document = JSON.parse(await readFile(contractsPath, "utf8"));
 if (document.schemaVersion !== 2
   || typeof document.dshRange !== "string"
@@ -32,8 +33,20 @@ const releases = options.versions.length === 0
     return release;
   });
 const scratch = await mkdtemp(resolve(tmpdir(), "odai-dsh-release-matrix-"));
+const toolingRoot = resolve(scratch, "tooling");
 const results = [];
 try {
+  run(npm, [
+    "install",
+    "--prefix", toolingRoot,
+    "--registry=https://registry.npmjs.org/",
+    "--fetch-timeout=60000",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    `pnpm@${PNPM_VERSION}`,
+  ]);
+  const matrixEnv = withPrependedPath(process.env, resolve(toolingRoot, "node_modules/.bin"));
   for (const release of releases) {
     validateRelease(release);
     const root = resolve(scratch, release.version);
@@ -49,9 +62,9 @@ try {
       `@deepseek-ai/dsh@${release.version}`,
       ...(options.pluginTgz ? [options.pluginTgz, options.agentTgz] : []),
     ];
-    run(npm, installArguments);
+    run(npm, installArguments, { env: matrixEnv });
     const dshBin = resolve(root, "node_modules/.bin", process.platform === "win32" ? "dsh.cmd" : "dsh");
-    const actualVersion = run(dshBin, ["-V"], { capture: true }).trim();
+    const actualVersion = run(dshBin, ["-V"], { capture: true, env: matrixEnv }).trim();
     if (actualVersion !== release.version) throw new Error(`expected DSH ${release.version}, found ${actualVersion}`);
 
     const packages = await dshPackages(resolve(root, "node_modules"));
@@ -69,7 +82,7 @@ try {
     }
 
     const env = {
-      ...process.env,
+      ...matrixEnv,
       DSH_BIN: dshBin,
       DSH_PACKAGE_ROOT: resolve(root, "node_modules/@deepseek-ai/dsh"),
       DSH_STANDARD_COMPOSITION: standardPath,
@@ -99,7 +112,13 @@ try {
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }
-process.stdout.write(`${JSON.stringify({ dshRange: document.dshRange, sourceDshVersion: document.sourceDshVersion, releases: results, verified: true }, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify({
+  dshRange: document.dshRange,
+  sourceDshVersion: document.sourceDshVersion,
+  tooling: { pnpm: PNPM_VERSION },
+  releases: results,
+  verified: true,
+}, null, 2)}\n`);
 
 function parseArguments(arguments_) {
   const versions = [];
@@ -134,6 +153,13 @@ function validateRelease(release) {
     || !/^[a-f0-9]{64}$/u.test(release.standardCompositionSha256)) {
     throw new Error(`invalid DSH release contract ${JSON.stringify(release)}`);
   }
+}
+
+function withPrependedPath(environment, directory) {
+  const result = { ...environment };
+  const pathKey = Object.keys(result).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  result[pathKey] = [directory, result[pathKey]].filter(Boolean).join(delimiter);
+  return result;
 }
 
 function run(command, arguments_, options = {}) {
