@@ -32,7 +32,15 @@ test("guard denies child writes before dispatch but leaves controller writes alo
   assert.equal(guard({ agent: controller, name: "write" }), undefined);
   assert.match(denial(guard({ agent: child, name: "write" })), /^ODAI_SUBAGENT_BOUNDARY:/u);
   assert.equal(guard({ agent: child, name: "read" }), undefined);
-  assert.deepEqual(denied, ["write"]);
+  assert.match(denial(guard({ agent: child, name: "future_side_effect" })), /^ODAI_SUBAGENT_BOUNDARY:/u);
+  assert.deepEqual(denied, ["write", "future_side_effect"]);
+});
+
+test("child read-only extensions require an explicit allowlist", () => {
+  const defaultGuard = createChildToolGuard();
+  assert.match(denial(defaultGuard({ agent: child, name: "custom_repository_reader" })), /^ODAI_SUBAGENT_BOUNDARY:/u);
+  const extendedGuard = createChildToolGuard({ additionalAllowedTools: ["custom_repository_reader"] });
+  assert.equal(extendedGuard({ agent: child, name: "custom_repository_reader" }), undefined);
 });
 
 test("additional denials are monotonic", () => {

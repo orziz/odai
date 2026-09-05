@@ -13,7 +13,17 @@ test("model route failures distinguish invalid routes from environment and trans
   assert.equal(classifyModelRouteFailure({ code: "UNKNOWN_MODEL", message: "missing" }).kind, "deterministic");
   assert.equal(classifyModelRouteFailure({ code: "PI_AI_ERROR", message: "404: model gpt-x does not exist" }).kind, "deterministic");
   assert.equal(classifyModelRouteFailure({ code: "AUTH", message: "401" }).kind, "environment");
+  assert.equal(classifyModelRouteFailure({ code: "AUTH", message: "401: requested model does not exist for this account" }).kind, "environment");
+  assert.equal(classifyModelRouteFailure({ code: "PERMISSION", message: "model not found in permitted catalog" }).kind, "environment");
   assert.equal(classifyModelRouteFailure({ code: "MISSING_CREDENTIAL", message: "missing key" }).kind, "environment");
+  assert.deepEqual(
+    classifyModelRouteFailure({ code: "PI_AI_ERROR", message: "request failed", failure: { code: "MODEL_NOT_FOUND", message: "nested missing model" } }),
+    { kind: "deterministic", code: "MODEL_NOT_FOUND", message: "nested missing model" },
+  );
+  assert.deepEqual(
+    classifyModelRouteFailure({ code: "PI_AI_ERROR", message: "request failed", failure: { code: "AUTH", message: "nested credentials failed" } }),
+    { kind: "environment", code: "AUTH", message: "nested credentials failed" },
+  );
   for (const code of ["RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT"]) {
     assert.equal(classifyModelRouteFailure({ code, message: code }).kind, "transient");
   }

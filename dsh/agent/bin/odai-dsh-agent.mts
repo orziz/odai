@@ -141,6 +141,14 @@ function assertDshVersion(): string {
   return actual;
 }
 
+function requiredOptionValue(argv: readonly string[], index: number, option: string, label: string): string {
+  const value = argv[index];
+  if (typeof value !== "string" || value.trim() === "" || value.startsWith("--")) {
+    throw new Error(`${option} requires a non-empty ${label}`);
+  }
+  return value;
+}
+
 function parseArgs(argv: readonly string[]): CliArguments {
   const parsed: CliArguments = { json: false, help: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -153,8 +161,8 @@ function parseArgs(argv: readonly string[]): CliArguments {
     } else if (arg === "--without-control-center") {
       if (parsed.controlCenter === true) throw new Error("--without-control-center conflicts with --with-control-center");
       parsed.controlCenter = false;
-    } else if (arg === "--dsh-home") parsed.dshHome = argv[++index];
-    else if (arg === "--profile") parsed.profile = argv[++index];
+    } else if (arg === "--dsh-home") parsed.dshHome = requiredOptionValue(argv, ++index, "--dsh-home", "path");
+    else if (arg === "--profile") parsed.profile = requiredOptionValue(argv, ++index, "--profile", "name");
     else if (!parsed.command && (arg === "install" || arg === "status" || arg === "uninstall" || arg === "control-center")) parsed.command = arg;
     else if (parsed.command === "control-center" && !parsed.controlCenterCommand
       && (arg === "install" || arg === "status" || arg === "uninstall")) parsed.controlCenterCommand = arg;

@@ -1,6 +1,7 @@
 import type { DshAgent, DshEvent, ToolExecution, ToolResult } from "./runtime-types.mjs";
 import { sessionEvents } from "./runtime-types.mjs";
 
+// Kept for API compatibility; child enforcement is fail-closed through DEFAULT_CHILD_ALLOWED_TOOLS.
 export const DEFAULT_CHILD_DENIED_TOOLS = Object.freeze([
   "write",
   "edit",
@@ -38,7 +39,18 @@ export const DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS = Object.freeze([
   "odai_responsibility_return",
 ] as const);
 
+export const DEFAULT_CHILD_ALLOWED_TOOLS = Object.freeze([
+  "read",
+  "read_image",
+  "glob",
+  "grep",
+  "web_search",
+  "web_fetch",
+  "odai_responsibility_return",
+] as const);
+
 export interface ToolGuardOptions {
+  additionalAllowedTools?: readonly string[];
   additionalDeniedTools?: readonly string[];
   onDenied?(execution: ToolExecution, reason: string): void;
 }
@@ -70,15 +82,16 @@ export function isSubagent(agent: DshAgent | null | undefined): boolean {
 }
 
 export function createChildToolGuard(options: ToolGuardOptions = {}): (execution: ToolExecution) => string | undefined {
-  const denied = new Set<string>([
-    ...DEFAULT_CHILD_DENIED_TOOLS,
-    ...(Array.isArray(options.additionalDeniedTools) ? options.additionalDeniedTools : []),
+  const allowed = new Set<string>([
+    ...DEFAULT_CHILD_ALLOWED_TOOLS,
+    ...(Array.isArray(options.additionalAllowedTools) ? options.additionalAllowedTools : []),
   ]);
+  const denied = new Set<string>(Array.isArray(options.additionalDeniedTools) ? options.additionalDeniedTools : []);
   const onDenied = typeof options.onDenied === "function" ? options.onDenied : () => {};
 
   return (execution) => {
     if (!isSubagent(execution?.agent)) return undefined;
-    if (!denied.has(execution?.name)) return undefined;
+    if (allowed.has(execution?.name) && !denied.has(execution?.name)) return undefined;
 
     const reason = `ODAI_SUBAGENT_BOUNDARY: child agents may not execute ${execution.name}; return evidence to the controller instead.`;
     onDenied(execution, reason);

@@ -20,12 +20,17 @@ jobs:
       - name: Typecheck and build all DSH packages
         run: npm run typecheck:dsh
       - name: Validate canonical skill
-        run: node scripts/validate-odai-skill.mjs
+        run: |
+          node scripts/validate-odai-skill.mjs
+          node --test scripts/validate-odai-skill-contracts.test.mjs
       - name: Check maintenance scripts
         run: |
           node --check scripts/validate-odai-skill.mjs
           node --check scripts/canary-isolation.mjs
           node --check scripts/odai-canary-harness.mjs
+          node --check scripts/blind-verdict.mjs
+          node --check scripts/odai-blind-harness.mjs
+          node --check scripts/odai-blind-harness.test.mjs
           node --check scripts/antigravity-canary-runner.mjs
           node --check scripts/claude-canary-runner.mjs
           node --check scripts/codex-canary-judge.mjs
@@ -63,7 +68,7 @@ jobs:
         run: node scripts/test-odai-routing.mjs
       - name: Test DSH runtime and Agent installer
         run: |
-          node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs scripts/dsh-canary-runner.test.mjs
+          node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs scripts/dsh-canary-runner.test.mjs scripts/odai-blind-harness.test.mjs
           npm --prefix dsh/plugin test
           npm --prefix dsh/agent install --ignore-scripts --no-package-lock --legacy-peer-deps
           npm --prefix dsh/agent test

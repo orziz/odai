@@ -1,13 +1,14 @@
 import { execFileSync } from "node:child_process";
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parse as parseYaml } from "yaml";
 
-import { resolveDshHome } from "./installer.mjs";
+import { assertNoSymlinkDescendants, resolveDshHome, resolveManagedDshHome } from "./installer.mjs";
+import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
 interface PackageMetadata {
   name: string;
@@ -65,6 +66,11 @@ export interface AgentControlCenterInspection {
 interface FileSnapshot {
   path: string;
   content?: Buffer;
+}
+
+interface ProfileSnapshot {
+  files: FileSnapshot[];
+  revision: string;
 }
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -141,7 +147,7 @@ async function lockDependencyIssues(target: string, dependency: string): Promise
   const version = typeof entry.version === "string" ? entry.version : undefined;
   const issues: string[] = [];
   if (specifier !== dependency) issues.push(`lockfile specifier ${specifier ?? "<missing>"} does not match dependency ${dependency}`);
-  if (!version || !version.startsWith(dependency)) {
+  if (!version || (version !== dependency && !version.startsWith(`${dependency}(`))) {
     issues.push(`lockfile version ${version ?? "<missing>"} does not resolve dependency ${dependency}`);
   }
   return issues;
@@ -217,8 +223,9 @@ async function resolvedPackage(target: string): Promise<ResolvedPackage | undefi
 export async function inspectAgentControlCenter(
   options: AgentControlCenterOptions = {},
 ): Promise<AgentControlCenterInspection> {
-  const dshHome = resolveDshHome(options.dshHome);
+  const dshHome = await resolveManagedDshHome(options.dshHome, false);
   const profile = assertProfile(options.profile ?? "web");
+  await assertNoSymlinkDescendants(dshHome, `profiles/${profile}`);
   const target = resolve(dshHome, "profiles", profile);
   const metadata = await profileMetadata(resolve(target, "package.json"));
   const dependency = metadata?.dependencies?.[packageMetadata.name];
@@ -285,56 +292,92 @@ function runPluginCommand(
   execute(command, args, processOptions);
 }
 
-async function captureProfile(target: string): Promise<FileSnapshot[]> {
-  return Promise.all(PROFILE_STATE_FILES.map(async (relativePath) => ({
+async function captureProfile(target: string): Promise<ProfileSnapshot> {
+  const files = await Promise.all(PROFILE_STATE_FILES.map(async (relativePath) => ({
     path: resolve(target, relativePath),
     content: await optionalFile(resolve(target, relativePath)),
   })));
-}
-
-async function restoreProfile(snapshot: readonly FileSnapshot[]): Promise<void> {
-  for (const file of snapshot) {
-    if (file.content === undefined) await rm(file.path, { force: true });
-    else {
-      await mkdir(dirname(file.path), { recursive: true });
-      await writeFile(file.path, file.content);
-    }
+  const digest = createHash("sha256");
+  for (const file of files) {
+    digest.update(`${file.path.split(/[\\/]/u).at(-1) ?? "state"}\0${file.content?.length ?? -1}\0`);
+    if (file.content !== undefined) digest.update(file.content);
   }
-}
-
-function previousOperand(inspection: AgentControlCenterInspection): string | undefined {
-  const dependency = inspection.dependency;
-  if (!dependency) return undefined;
-  return localDependency(dependency) ? dependency : `${packageMetadata.name}@${dependency}`;
+  return { files, revision: digest.digest("hex") };
 }
 
 async function retainRollbackEvidence(
   dshHome: string,
-  snapshot: readonly FileSnapshot[],
+  before: ProfileSnapshot,
+  after: ProfileSnapshot,
   failure: string,
 ): Promise<string> {
+  await assertNoSymlinkDescendants(dshHome, "odai/control-center-backups");
   const root = resolve(dshHome, "odai", "control-center-backups", `${Date.now()}-${randomUUID()}`);
   await mkdir(root, { recursive: true });
-  for (const file of snapshot) {
-    if (file.content !== undefined) await writeFile(resolve(root, file.path.split(/[\\/]/u).at(-1) ?? "state"), file.content);
+  await assertNoSymlinkDescendants(dshHome, "odai/control-center-backups");
+  for (const [name, snapshot] of [["before", before], ["after", after]] as const) {
+    const snapshotRoot = resolve(root, name);
+    await mkdir(snapshotRoot, { recursive: true });
+    const states: Record<string, "present" | "missing"> = {};
+    for (const file of snapshot.files) {
+      const filename = file.path.split(/[\\/]/u).at(-1) ?? "state";
+      states[filename] = file.content === undefined ? "missing" : "present";
+      if (file.content !== undefined) await writeFile(resolve(snapshotRoot, filename), file.content);
+    }
+    await writeFile(resolve(snapshotRoot, "snapshot.json"), `${JSON.stringify({ revision: snapshot.revision, files: states }, null, 2)}\n`, "utf8");
   }
   await writeFile(resolve(root, "failure.txt"), `${failure}\n`, "utf8");
   return root;
 }
 
-async function rollbackProfile(
-  before: AgentControlCenterInspection,
-  snapshot: readonly FileSnapshot[],
-  options: AgentControlCenterOptions,
-): Promise<void> {
-  const operand = previousOperand(before);
-  if (operand) runPluginCommand("add", operand, options);
-  else runPluginCommand("remove", packageMetadata.name, options);
-  await restoreProfile(snapshot);
+async function changedProfileFailure(
+  dshHome: string,
+  before: ProfileSnapshot,
+  after: ProfileSnapshot,
+  detail: string,
+  cause: unknown,
+): Promise<Error> {
+  try {
+    const backupPath = await retainRollbackEvidence(dshHome, before, after, detail);
+    return new Error(`${detail}\ncurrent profile state was preserved; recovery evidence retained at ${backupPath}`, { cause });
+  } catch (evidenceError) {
+    return new AggregateError(
+      [cause, evidenceError],
+      `${detail}\ncurrent profile state was preserved, but recovery evidence could not be retained`,
+    );
+  }
+}
+
+async function acquireControlCenterOperation(dshHome: string, profile: string): Promise<() => void> {
+  await assertNoSymlinkDescendants(dshHome, "odai/locks");
+  const lockRoot = resolve(dshHome, "odai", "locks");
+  await mkdir(lockRoot, { recursive: true, mode: 0o700 });
+  await assertNoSymlinkDescendants(dshHome, "odai/locks");
+  return acquireAgentOperationLock(resolve(lockRoot, `control-center-${profile}.lock`), `Agent Control Center ${profile} operation`);
 }
 
 export async function installAgentControlCenter(
   options: AgentControlCenterOptions = {},
+): Promise<Readonly<{
+    operation: "installed" | "updated" | "repaired" | "unchanged";
+    target: string;
+    profile: string;
+    dependency: string;
+    previousStatus: AgentControlCenterStatus;
+  }>> {
+  const dshHome = await resolveManagedDshHome(options.dshHome, true);
+  const profile = assertProfile(options.profile ?? "web");
+  const operationOptions = { ...options, dshHome, profile };
+  const releaseOperation = await acquireControlCenterOperation(dshHome, profile);
+  try {
+    return await installAgentControlCenterUnderLock(operationOptions);
+  } finally {
+    releaseOperation();
+  }
+}
+
+async function installAgentControlCenterUnderLock(
+  options: AgentControlCenterOptions,
 ): Promise<Readonly<{
     operation: "installed" | "updated" | "repaired" | "unchanged";
     target: string;
@@ -377,29 +420,43 @@ export async function installAgentControlCenter(
       previousStatus: current.status,
     });
   } catch (error) {
-    try {
-      await rollbackProfile(current, snapshot, options);
-    } catch (rollbackError) {
-      const detail = `install failed: ${errorMessage(error)}\nrollback failed: ${errorMessage(rollbackError)}`;
-      const backupPath = await retainRollbackEvidence(current.dshHome, snapshot, detail);
-      throw new Error(`${detail}\nprofile recovery evidence retained at ${backupPath}`);
+    const after = await captureProfile(current.target);
+    if (after.revision === snapshot.revision) {
+      throw new Error(`${errorMessage(error)}; Control Center profile state remained unchanged`, { cause: error });
     }
-    throw new Error(`${errorMessage(error)}; previous Control Center profile state was restored`);
+    const detail = `install failed: ${errorMessage(error)}\nautomatic rollback was not attempted because profile ownership changed`;
+    throw await changedProfileFailure(current.dshHome, snapshot, after, detail, error);
   }
 }
 
 export async function uninstallAgentControlCenter(
   options: AgentControlCenterOptions = {},
 ): Promise<Readonly<{ operation: "uninstalled" | "absent"; target: string; profile: string }>> {
-  const current = await inspectAgentControlCenter(options);
-  if (current.status === "absent") return Object.freeze({ operation: "absent", target: current.target, profile: current.profile });
-  if (current.status === "partial-drift") {
-    throw new Error(`refusing to remove partially owned Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
+  const initial = await inspectAgentControlCenter(options);
+  if (initial.status === "absent") return Object.freeze({ operation: "absent", target: initial.target, profile: initial.profile });
+  const operationOptions = { ...options, dshHome: initial.dshHome, profile: initial.profile };
+  const releaseOperation = await acquireControlCenterOperation(initial.dshHome, initial.profile);
+  try {
+    const current = await inspectAgentControlCenter(operationOptions);
+    if (current.status === "absent") return Object.freeze({ operation: "absent", target: current.target, profile: current.profile });
+    if (current.status === "partial-drift") {
+      throw new Error(`refusing to remove partially owned Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
+    }
+    const before = await captureProfile(current.target);
+    try {
+      runPluginCommand("remove", packageMetadata.name, operationOptions);
+      const removed = await inspectAgentControlCenter(operationOptions);
+      if (removed.status !== "absent") {
+        throw new Error(`DSH plugin manager did not remove the Agent Control Center completely: ${removed.issues.join("; ") || removed.status}`);
+      }
+      return Object.freeze({ operation: "uninstalled", target: removed.target, profile: removed.profile });
+    } catch (error) {
+      const after = await captureProfile(current.target);
+      if (after.revision === before.revision) throw error;
+      const detail = `uninstall failed: ${errorMessage(error)}\nautomatic rollback was not attempted because profile ownership changed`;
+      throw await changedProfileFailure(current.dshHome, before, after, detail, error);
+    }
+  } finally {
+    releaseOperation();
   }
-  runPluginCommand("remove", packageMetadata.name, options);
-  const removed = await inspectAgentControlCenter(options);
-  if (removed.status !== "absent") {
-    throw new Error(`DSH plugin manager did not remove the Agent Control Center completely: ${removed.issues.join("; ") || removed.status}`);
-  }
-  return Object.freeze({ operation: "uninstalled", target: removed.target, profile: removed.profile });
 }

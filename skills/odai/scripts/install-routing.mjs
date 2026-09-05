@@ -292,7 +292,20 @@ function assertManagedState(root, layoutValue, manifest) {
     if (conflicts.length) fail(`目标已有非 odai 管理的配置：${conflicts.join(", ")}`);
     return;
   }
-  if (manifest.id !== "odai-routing-installation" || manifest.host !== args.host) fail("无效的 odai 路由清单");
+  if (manifest.id !== "odai-routing-installation" || manifest.host !== args.host || manifest.scope !== args.scope) fail("无效的 odai 路由清单");
+  if (typeof manifest.target !== "string" || path.resolve(manifest.target) !== targetRoot) fail("旧路由清单的目标与当前配置根不匹配");
+  const expectedSetting = layoutValue.settings;
+  const installedSetting = manifest.settings;
+  if (expectedSetting) {
+    if (!installedSetting
+      || installedSetting.file !== expectedSetting.file
+      || installedSetting.key !== expectedSetting.key
+      || installedSetting.installed !== expectedSetting.value) {
+      fail("旧路由缺少可恢复的宿主设置记录");
+    }
+  } else if (installedSetting) {
+    fail("旧路由包含当前宿主不支持的设置记录");
+  }
   const accepted = new Set([...(layoutValue.knownFiles || layoutValue.managedFiles), ...layoutValue.retiredFiles]);
   for (const [relative, expected] of Object.entries(manifest.files || {})) {
     if (!accepted.has(relative)) fail(`旧路由包含未知文件：${relative}`);
@@ -316,30 +329,72 @@ function removeObsolete(root, manifest, desiredFiles) {
 
 function uninstall(root, manifestPathValue, manifest) {
   const files = Object.keys(manifest.files || {});
+  const plannedFiles = new Map();
   for (const relative of files) {
-    const file = path.join(root, relative);
     const original = manifest.originalFiles?.[relative];
-    if (original?.existed) atomicWrite(file, Buffer.from(original.content_base64 || "", "base64"));
-    else if (existsSync(file)) unlinkSync(file);
+    if (!original?.existed) {
+      plannedFiles.set(relative, null);
+      continue;
+    }
+    const content = Buffer.from(original.content_base64 || "", "base64");
+    if (sha256(content) !== original.sha256) fail(`旧路由的原始文件恢复记录已损坏：${relative}`);
+    plannedFiles.set(relative, content);
   }
-  if (manifest.settings) restoreSetting(root, manifest.settings);
-  unlinkSync(manifestPathValue);
+  const settingPlan = manifest.settings ? planSettingRestore(root, manifest.settings) : null;
+  const snapshots = new Map();
+  for (const relative of files) snapshot(root, relative, snapshots);
+  if (settingPlan) snapshot(root, settingPlan.relative, snapshots);
+  snapshot(root, manifestName, snapshots);
+
+  try {
+    for (const [relative, content] of plannedFiles) applyFileState(path.join(root, relative), content);
+    if (settingPlan) applyFileState(path.join(root, settingPlan.relative), settingPlan.content);
+    unlinkSync(manifestPathValue);
+  } catch (error) {
+    try {
+      restore(root, snapshots);
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], "路由卸载失败且无法完整回滚；请检查现有托管清单与文件状态");
+    }
+    throw error;
+  }
   return [...files, ...(manifest.settings ? [`${manifest.settings.file}#${manifest.settings.key}`] : []), manifestName];
 }
 
-function restoreSetting(root, spec) {
-  const file = path.join(root, spec.file);
-  const current = readJsonObject(file);
+function planSettingRestore(root, spec) {
+  const current = readJsonObject(path.join(root, spec.file));
   if (current[spec.key] !== spec.installed) fail(`宿主设置 ${spec.key} 已被外部修改，拒绝删除`);
   if (spec.previous?.present) current[spec.key] = spec.previous.value; else delete current[spec.key];
-  if (Object.keys(current).length === 0 && !spec.fileExistedBefore) unlinkSync(file);
-  else atomicWrite(file, Buffer.from(`${JSON.stringify(current, null, 2)}\n`));
+  return {
+    relative: spec.file,
+    content: Object.keys(current).length === 0 && !spec.fileExistedBefore
+      ? null
+      : Buffer.from(`${JSON.stringify(current, null, 2)}\n`),
+  };
+}
+
+function applyFileState(file, content) {
+  if (content === null) rmSync(file, { force: true });
+  else atomicWrite(file, content);
 }
 
 function assertSafeDestination(root, layoutValue, previouslyManaged = []) {
-  for (const relative of [...layoutValue.managedFiles, ...layoutValue.retiredFiles, ...previouslyManaged, manifestName, ...(layoutValue.settings ? [layoutValue.settings.file] : [])]) {
-    const target = path.join(root, relative);
-    if (existsSync(target) && lstatSync(target).isSymbolicLink()) fail(`托管目标是符号链接：${target}`);
+  const absoluteRoot = path.resolve(root);
+  let current = path.parse(absoluteRoot).root;
+  for (const segment of absoluteRoot.slice(current.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) fail(`托管目标或父目录是符号链接：${current}`);
+  }
+  const relatives = [...layoutValue.managedFiles, ...layoutValue.retiredFiles, ...previouslyManaged, manifestName, ...(layoutValue.settings ? [layoutValue.settings.file] : [])];
+  for (const relative of relatives) {
+    if (path.isAbsolute(relative) || relative.split(/[\\/]/u).some((segment) => segment === "..")) {
+      fail(`托管目标超出配置根：${relative}`);
+    }
+    current = absoluteRoot;
+    for (const segment of relative.split(/[\\/]/u).filter(Boolean)) {
+      current = path.join(current, segment);
+      if (existsSync(current) && lstatSync(current).isSymbolicLink()) fail(`托管目标或父目录是符号链接：${current}`);
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -170,6 +171,8 @@ function requireCleanPublishedCommit(): string {
     "--porcelain",
     "--",
     "CHANGELOG.md",
+    "package.json",
+    "package-lock.json",
     "dsh",
     "scripts",
     "skills/odai",
@@ -238,7 +241,33 @@ async function verifyPublishedPackage(name: string, version: string, expectedGit
   return false;
 }
 
-async function publishIfMissing(metadata: PackageMetadata, directory: string, gitHead: string): Promise<void> {
+interface PackedReleaseArtifacts {
+  root: string;
+  plugin: string;
+  agent: string;
+}
+
+function packReleaseArtifacts(): PackedReleaseArtifacts {
+  const root = mkdtempSync(resolve(tmpdir(), "odai-dsh-publish-"));
+  const pack = (directory: string, label: string): string => {
+    const result = npm(["pack", directory, "--pack-destination", root], { capture: true, label: `${label} release pack` });
+    const filename = capturedStdout(result).trim().split(/\r?\n/u).filter(Boolean).at(-1);
+    if (!filename) throw new Error(`${label} release pack did not report a tarball`);
+    const tarball = resolve(root, filename);
+    if (!tarball.startsWith(`${root}${sep}`) || !existsSync(tarball)) {
+      throw new Error(`${label} release pack produced an unexpected tarball path`);
+    }
+    return tarball;
+  };
+  try {
+    return { root, plugin: pack(PLUGIN_DIR, "Plugin"), agent: pack(AGENT_DIR, "Agent") };
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function publishIfMissing(metadata: PackageMetadata, tarball: string, gitHead: string): Promise<void> {
   const { name, version } = metadata;
   const versionState = npmViewField(`${name}@${version}`, "version", { allowMissing: true });
   if (versionState.kind === "found") {
@@ -249,8 +278,7 @@ async function publishIfMissing(metadata: PackageMetadata, directory: string, gi
     return;
   }
 
-  npm(["publish", "--access=public", `--registry=${REGISTRY}`], {
-    cwd: directory,
+  npm(["publish", tarball, "--access=public", `--registry=${REGISTRY}`], {
     label: `publish ${name}@${version}`,
   });
   if (!await verifyPublishedPackage(name, version, gitHead)) {
@@ -291,12 +319,21 @@ async function main(): Promise<void> {
   npm(["--prefix", AGENT_DIR, "test"], { label: "Agent tests" });
   npm(["--prefix", PLUGIN_DIR, "run", "pack:dry-run"], { label: "Plugin dry-run packaging" });
   npm(["--prefix", AGENT_DIR, "run", "pack:dry-run"], { label: "Agent dry-run packaging" });
-  run(process.execPath, [resolve(REPO_ROOT, "scripts/verify-dsh-release-matrix.mjs")], {
-    label: "Isolated DSH release-matrix verification",
-  });
-
-  await publishIfMissing(plugin, PLUGIN_DIR, gitHead);
-  await publishIfMissing(agent, AGENT_DIR, gitHead);
+  const artifacts = packReleaseArtifacts();
+  try {
+    run(process.execPath, [resolve(REPO_ROOT, "scripts/verify-dsh-packed-artifacts.mjs"), artifacts.plugin, artifacts.agent], {
+      label: "Packed DSH artifact verification",
+    });
+    run(process.execPath, [
+      resolve(REPO_ROOT, "scripts/verify-dsh-release-matrix.mjs"),
+      "--plugin-tgz", artifacts.plugin,
+      "--agent-tgz", artifacts.agent,
+    ], { label: "Isolated packed DSH release-matrix verification" });
+    await publishIfMissing(plugin, artifacts.plugin, gitHead);
+    await publishIfMissing(agent, artifacts.agent, gitHead);
+  } finally {
+    rmSync(artifacts.root, { recursive: true, force: true });
+  }
   cleanArtifacts();
   console.log(`\nPublished and verified both Odai DSH packages at version ${version}.`);
 }

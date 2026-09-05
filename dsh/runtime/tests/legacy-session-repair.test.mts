@@ -269,7 +269,7 @@ test("a live evidence lock is never reclaimed from age alone", () => {
     const evidence = createSessionEvidence({ root: scratch });
     assert.throws(
       () => evidence.append(agent, "odai/route-decided", { turn: 1, step: 1 }),
-      /being updated by another runtime/u,
+      /odai evidence is being updated/u,
     );
     assert.equal(readFileSync(lockPath, "utf8"), owner);
     assert.equal(evidence.has(agent, "odai/route-decided"), false);
@@ -299,7 +299,7 @@ test("a dead evidence owner is reclaimed only while holding the acquisition clai
   }
 });
 
-test("an acquisition claim is never reclaimed automatically", () => {
+test("a live acquisition claim is never reclaimed automatically", () => {
   const scratch = mkdtempSync(resolve(tmpdir(), "odai-evidence-claim-lock-"));
   const sessionId = "claim-lock-session";
   const digest = createHash("sha256").update(sessionId).digest("hex");
@@ -317,6 +317,26 @@ test("an acquisition claim is never reclaimed automatically", () => {
     );
     assert.equal(readFileSync(claimPath, "utf8"), claim);
     assert.equal(evidence.has(agent, "odai/route-decided"), false);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("a dead acquisition claim is reclaimed before evidence append", () => {
+  const scratch = mkdtempSync(resolve(tmpdir(), "odai-evidence-dead-claim-"));
+  const sessionId = "dead-claim-session";
+  const digest = createHash("sha256").update(sessionId).digest("hex");
+  const claimPath = resolve(scratch, `${digest}.jsonl.lock.claim`);
+  const child = spawnSync(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+  assert.equal(child.status, 0);
+  assert.ok(Number.isSafeInteger(child.pid) && child.pid > 0);
+  const agent = testAgent(sessionId);
+  try {
+    writeFileSync(claimPath, `${child.pid}:dead-claim\n`, "utf8");
+    const evidence = createSessionEvidence({ root: scratch });
+    evidence.append(agent, "odai/route-decided", { turn: 1, step: 1 });
+    assert.equal(readStoredSessionEvidence(scratch, sessionId).length, 1);
+    assert.equal(existsSync(claimPath), false);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

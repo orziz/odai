@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -17,6 +17,10 @@ const roles = ["controller", "planner", "reviewer"];
 try {
   testBuilds();
   testInstallLifecycle();
+  testUninstallSettingsDriftIsAtomic();
+  testManifestPathEscapeIsRejected();
+  testParentSymlinkIsRejected();
+  testTargetSymlinkIsRejected();
   testUnmanagedResearcherConflict();
   testRetiredArguments();
   console.log("odai routing keeps one controller, controller-owned implementation, and only configured researcher, planner, reviewer, or frontend responsibilities.");
@@ -111,6 +115,100 @@ function testInstallLifecycle() {
   }
 }
 
+function testUninstallSettingsDriftIsAtomic() {
+  const project = temp("odai-routing-uninstall-atomic-");
+  try {
+    const installed = runNode(installer, installArgs(project, "claude"));
+    assert.equal(installed.status, 0, installed.stderr);
+    const config = path.join(project, ".claude");
+    const manifestFile = path.join(config, "odai-routing.json");
+    const managedFile = path.join(config, "agents", "odai-controller.md");
+    writeFileSync(path.join(config, "settings.local.json"), `${JSON.stringify({ agent: "external" }, null, 2)}\n`);
+
+    const removed = runNode(installer, ["--host", "claude", "--scope", "project", "--target", project, "--uninstall", "--yes"]);
+    assert.notEqual(removed.status, 0);
+    assert.match(removed.stderr, /已被外部修改/u);
+    assert.ok(existsSync(manifestFile), "failed uninstall must preserve its manifest");
+    assert.ok(existsSync(managedFile), "failed uninstall must preserve managed files");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+function testManifestPathEscapeIsRejected() {
+  const root = temp("odai-routing-manifest-escape-");
+  const project = path.join(root, "project");
+  const victim = path.join(root, "victim.json");
+  try {
+    mkdirSync(project);
+    writeFileSync(victim, '{"preserved":true}\n', "utf8");
+    const installed = runNode(installer, installArgs(project));
+    assert.equal(installed.status, 0, installed.stderr);
+    const manifestFile = path.join(project, ".codex", "odai-routing.json");
+    const manifest = json(manifestFile);
+    manifest.settings = {
+      file: "../../victim.json",
+      key: "agent",
+      installed: "odai-controller",
+      fileExistedBefore: true,
+      previous: { present: false, value: null },
+    };
+    writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    const removed = runNode(installer, [...installArgs(project), "--uninstall"]);
+    assert.notEqual(removed.status, 0);
+    assert.match(removed.stderr, /不支持的设置记录/u);
+    assert.equal(readFileSync(victim, "utf8"), '{"preserved":true}\n');
+    for (const relative of Object.keys(manifest.files)) {
+      assert.equal(existsSync(path.join(project, ".codex", relative)), true, relative);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function testParentSymlinkIsRejected() {
+  const project = temp("odai-routing-parent-link-");
+  const outside = temp("odai-routing-parent-link-outside-");
+  try {
+    const config = path.join(project, ".codex");
+    mkdirSync(config, { recursive: true });
+    try {
+      symlinkSync(outside, path.join(config, "agents"), process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error?.code)) return;
+      throw error;
+    }
+    const installed = runNode(installer, installArgs(project));
+    assert.notEqual(installed.status, 0);
+    assert.match(installed.stderr, /符号链接/u);
+    assert.deepEqual(readdirSync(outside), []);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+}
+
+function testTargetSymlinkIsRejected() {
+  const actual = temp("odai-routing-target-symlink-actual-");
+  const parent = temp("odai-routing-target-symlink-parent-");
+  const linked = path.join(parent, "linked-project");
+  try {
+    try {
+      symlinkSync(actual, linked, "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error?.code)) return;
+      throw error;
+    }
+    const installed = runNode(installer, installArgs(linked));
+    assert.notEqual(installed.status, 0);
+    assert.match(installed.stderr, /符号链接/u);
+    assert.equal(existsSync(path.join(actual, ".codex")), false);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+    rmSync(actual, { recursive: true, force: true });
+  }
+}
+
 function testUnmanagedResearcherConflict() {
   const project = temp("odai-routing-unmanaged-researcher-");
   try {
@@ -152,9 +250,9 @@ function buildArgs(host, out) {
   ];
 }
 
-function installArgs(project) {
+function installArgs(project, host = "codex") {
   return [
-    "--host", "codex", "--scope", "project", "--target", project,
+    "--host", host, "--scope", "project", "--target", project,
     "--controller-model", "controller-model",
     "--planner-model", "planner-model",
     "--reviewer-model", "reviewer-model",

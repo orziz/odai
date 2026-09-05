@@ -46,16 +46,26 @@ function nestedFailure(error: UnknownRecord): UnknownRecord | undefined {
   return isUnknownRecord(error.failure) ? error.failure : undefined;
 }
 
-function errorCode(error: unknown): string {
-  if (!isUnknownRecord(error)) return "UNKNOWN";
-  const code = error.code ?? nestedFailure(error)?.code;
-  return typeof code === "string" && code.trim() ? code.trim().toUpperCase() : "UNKNOWN";
+function normalizedCode(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim().toUpperCase() : undefined;
 }
 
-function errorMessage(error: unknown): string {
-  if (!isUnknownRecord(error)) return String(error);
-  const message = error.message ?? nestedFailure(error)?.message;
-  return typeof message === "string" && message.trim() ? message.trim() : String(error);
+function knownCode(code: string | undefined): boolean {
+  return code === "ABORTED"
+    || (code !== undefined && (DETERMINISTIC_CODES.has(code) || ENVIRONMENT_CODES.has(code) || TRANSIENT_CODES.has(code)));
+}
+
+function failureDetails(error: unknown): { code: string; message: string } {
+  if (!isUnknownRecord(error)) return { code: "UNKNOWN", message: String(error) };
+  const nested = nestedFailure(error);
+  const outerCode = normalizedCode(error.code);
+  const nestedCode = normalizedCode(nested?.code);
+  const selected = knownCode(outerCode) || nestedCode === undefined ? error : nested;
+  const message = selected?.message ?? error.message ?? nested?.message;
+  return {
+    code: selected === nested ? nestedCode ?? "UNKNOWN" : outerCode ?? "UNKNOWN",
+    message: typeof message === "string" && message.trim() ? message.trim() : String(error),
+  };
 }
 
 function explicitMissingModel(message: string): boolean {
@@ -63,13 +73,12 @@ function explicitMissingModel(message: string): boolean {
 }
 
 export function classifyModelRouteFailure(error: unknown): Readonly<ModelRouteFailure> {
-  const code = errorCode(error);
-  const message = errorMessage(error);
+  const { code, message } = failureDetails(error);
   let kind: ModelRouteFailureKind = "unknown";
-  if (DETERMINISTIC_CODES.has(code) || explicitMissingModel(message)) kind = "deterministic";
-  else if (ENVIRONMENT_CODES.has(code)) kind = "environment";
+  if (ENVIRONMENT_CODES.has(code)) kind = "environment";
   else if (TRANSIENT_CODES.has(code)) kind = "transient";
   else if (code === "ABORTED") kind = "cancelled";
+  else if (DETERMINISTIC_CODES.has(code) || explicitMissingModel(message)) kind = "deterministic";
   return Object.freeze({ kind, code, message });
 }
 

@@ -4,18 +4,22 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { applyDeterministicOverrides } from "./blind-verdict.mjs";
 
 const SCRIPT_VERSION = 1;
 const DEFAULT_PLAN = "plans/odai-blind-cases.json";
@@ -88,7 +92,7 @@ function runAsync(command, args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: process.env,
+      env: options.env || process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -108,6 +112,37 @@ function runAsync(command, args, options = {}) {
     });
     child.stdin.end(options.input || "");
   });
+}
+
+async function runIsolatedCodex(command, args, options) {
+  const isolatedHome = mkdtempSync(path.join(tmpdir(), "odai-blind-codex-home-"));
+  const codexHome = path.join(isolatedHome, ".codex");
+  ensureDir(codexHome);
+  const sourceCodexHome = path.resolve(process.env.CODEX_HOME || path.join(homedir(), ".codex"));
+  const sourceAuth = path.join(sourceCodexHome, "auth.json");
+  if (existsSync(sourceAuth)) copyFileSync(sourceAuth, path.join(codexHome, "auth.json"));
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("ODAI_") || name === "DSH_HOME" || name === "DSH_AGENTS_HOME" || name === "AGENTS_HOME") {
+      delete env[name];
+    }
+  }
+  Object.assign(env, {
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    CODEX_HOME: codexHome,
+    XDG_CONFIG_HOME: path.join(isolatedHome, ".config"),
+    XDG_DATA_HOME: path.join(isolatedHome, ".local", "share"),
+    XDG_CACHE_HOME: path.join(isolatedHome, ".cache"),
+  });
+  try {
+    return await runAsync(command, args, {
+      ...options,
+      env,
+    });
+  } finally {
+    rmSync(isolatedHome, { recursive: true, force: true });
+  }
 }
 
 function parseArgs(argv) {
@@ -454,8 +489,8 @@ async function runCell(protocol, arm, testCase) {
   ensureDir(outDir);
   const finalFile = path.join(outDir, "final.md");
   const started = Date.now();
-  const result = await runAsync(protocol.settings.codexCommand, [
-    "exec", "--ephemeral", "--sandbox", protocol.settings.runnerSandbox,
+  const result = await runIsolatedCodex(protocol.settings.codexCommand, [
+    "exec", "--ephemeral", "--ignore-user-config", "--sandbox", protocol.settings.runnerSandbox,
     "--model", protocol.settings.runnerModel,
     "-c", `model_reasoning_effort=${JSON.stringify(protocol.settings.runnerEffort)}`,
     "-C", cell, "--json", "-o", finalFile, "-",
@@ -573,8 +608,8 @@ async function judgeCase(protocol, testCase, recordsByArm) {
   const outputFile = path.join(judgeDir, "judge.json");
   writeJson(schemaFile, judgeSchema(candidateIds));
   writeText(path.join(judgeDir, "prompt.md"), prompt);
-  const result = await runAsync(protocol.settings.codexCommand, [
-    "exec", "--ephemeral", "--sandbox", "read-only",
+  const result = await runIsolatedCodex(protocol.settings.codexCommand, [
+    "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only",
     "--model", protocol.settings.judgeModel,
     "-c", `model_reasoning_effort=${JSON.stringify(protocol.settings.judgeEffort)}`,
     "-C", judgeDir, "--skip-git-repo-check", "--output-schema", schemaFile,
@@ -590,18 +625,7 @@ async function judgeCase(protocol, testCase, recordsByArm) {
   if (new Set(verdict.ranking).size !== candidateIds.length || verdict.ranking.some((id) => !candidateIds.includes(id))) {
     verdict.ranking = [...candidateIds].sort((a, b) => verdict.candidates[b].score - verdict.candidates[a].score || a.localeCompare(b));
   }
-  for (const id of candidateIds) {
-    const armId = mapping[id];
-    const gate = recordsByArm[armId].deterministicGate;
-    if (!gate.ok) {
-      verdict.candidates[id].score = Math.min(verdict.candidates[id].score, gate.cap);
-      verdict.candidates[id].pass = false;
-      verdict.candidates[id].critical_failure = true;
-      verdict.candidates[id].reason = `${verdict.candidates[id].reason} Deterministic override: ${gate.note}.`;
-    } else {
-      verdict.candidates[id].pass = verdict.candidates[id].score >= 3 && !verdict.candidates[id].critical_failure;
-    }
-  }
+  applyDeterministicOverrides(verdict, candidateIds, mapping, recordsByArm);
   const decoded = {
     caseId: testCase.id,
     mapping,

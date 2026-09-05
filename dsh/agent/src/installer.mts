@@ -6,6 +6,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -14,8 +15,10 @@ import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { satisfies, validRange } from "semver";
+import { satisfies, valid, validRange } from "semver";
 import { parse as parseYaml } from "yaml";
+
+import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
 interface PackageMetadata {
   name: string;
@@ -44,6 +47,7 @@ interface TargetInspection {
   issues: string[];
   version?: string;
   dshVersion?: string;
+  revision?: string;
 }
 
 type PathState = "missing" | "symlink" | "directory" | "file" | "other";
@@ -141,9 +145,52 @@ export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = pro
   return resolve(trimmed);
 }
 
+export async function resolveManagedDshHome(configured: string | undefined, create: boolean): Promise<string> {
+  const requested = resolveDshHome(configured);
+  const state = await pathState(requested);
+  if (state === "missing") {
+    if (!create) return requested;
+    await mkdir(requested, { recursive: true, mode: 0o700 });
+  } else if (state !== "directory" && state !== "symlink") {
+    throw new Error(`DSH home is not a directory: ${requested}`);
+  }
+  const canonical = await realpath(requested);
+  if (await pathState(canonical) !== "directory") throw new Error(`DSH home is not a regular directory: ${canonical}`);
+  return canonical;
+}
+
+export async function assertNoSymlinkDescendants(root: string, relativePath: string): Promise<void> {
+  if (relativePath.split(/[\\/]/u).some((segment) => segment === "..")) {
+    throw new Error(`managed DSH path escapes its root: ${relativePath}`);
+  }
+  const rootState = await pathState(root);
+  if (rootState === "missing") return;
+  if (rootState !== "directory") throw new Error(`managed DSH root is not a regular directory: ${root}`);
+  let current = root;
+  const segments = relativePath.split(/[\\/]/u).filter(Boolean);
+  for (let index = 0; index < segments.length; index += 1) {
+    current = resolve(current, segments[index]);
+    const state = await pathState(current);
+    if (state === "missing") return;
+    if (state === "symlink") throw new Error(`symbolic link is not allowed in managed DSH path: ${current}`);
+    if (index < segments.length - 1 && state !== "directory") {
+      throw new Error(`managed DSH parent is not a directory: ${current}`);
+    }
+  }
+}
+
+async function acquirePresetOperation(dshHome: string, presetId: string): Promise<() => void> {
+  await assertNoSymlinkDescendants(dshHome, "odai/locks");
+  const lockRoot = resolve(dshHome, "odai", "locks");
+  await mkdir(lockRoot, { recursive: true, mode: 0o700 });
+  await assertNoSymlinkDescendants(dshHome, "odai/locks");
+  return acquireAgentOperationLock(resolve(lockRoot, `agent-preset-${presetId}.lock`), `Agent preset ${presetId} operation`);
+}
+
 export async function inspectAgentInstallation(options: AgentInstallerOptions = {}) {
   const presetId = assertPresetId(options.presetId ?? DEFAULT_PRESET_ID);
-  const dshHome = resolveDshHome(options.dshHome);
+  const dshHome = await resolveManagedDshHome(options.dshHome, false);
+  await assertNoSymlinkDescendants(dshHome, ".agent-presets");
   const target = resolve(dshHome, ".agent-presets", presetId);
   const state = await inspectTarget(target, presetId);
   return Object.freeze({ dshHome, presetId, target, ...state });
@@ -151,7 +198,20 @@ export async function inspectAgentInstallation(options: AgentInstallerOptions = 
 
 export async function installAgentPreset(options: AgentInstallerOptions = {}) {
   const presetId = assertPresetId(options.presetId ?? DEFAULT_PRESET_ID);
-  const dshHome = resolveDshHome(options.dshHome);
+  const dshHome = await resolveManagedDshHome(options.dshHome, true);
+  await assertNoSymlinkDescendants(dshHome, ".agent-presets");
+  const targetRoot = resolve(dshHome, ".agent-presets");
+  await mkdir(targetRoot, { recursive: true, mode: 0o700 });
+  await assertNoSymlinkDescendants(dshHome, ".agent-presets");
+  const releaseOperation = await acquirePresetOperation(dshHome, presetId);
+  try {
+    return await installAgentPresetUnderLock(options, presetId, dshHome);
+  } finally {
+    releaseOperation();
+  }
+}
+
+async function installAgentPresetUnderLock(options: AgentInstallerOptions, presetId: string, dshHome: string) {
   const sourceRoot = resolve(options.sourceRoot ?? defaultSourceRoot);
   const dshVersion = options.dshVersion ?? SUPPORTED_DSH_VERSION;
   if (!supportsDshVersion(dshVersion)) {
@@ -172,7 +232,7 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
   await mkdir(targetRoot, { recursive: true, mode: 0o700 });
   const staging = resolve(targetRoot, `.${presetId}.tmp-${process.pid}-${randomUUID()}`);
   const backup = resolve(targetRoot, `.${presetId}.backup-${process.pid}-${randomUUID()}`);
-  let backupCreated = false;
+  let backupState: "none" | "unverified" | "confirmed" = "none";
 
   try {
     await cp(sourceRoot, staging, { recursive: true, errorOnExist: true });
@@ -200,12 +260,20 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
 
     if (current.status === "installed") {
       await rename(target, backup);
-      backupCreated = true;
+      backupState = "unverified";
+      const claimed = await inspectTarget(backup, presetId);
+      if (claimed.status !== "installed" || claimed.revision !== current.revision) {
+        throw new Error(`preset changed before replacement; unverified target preserved at ${backup}`);
+      }
+      backupState = "confirmed";
+    } else {
+      const latest = await inspectTarget(target, presetId);
+      if (latest.status !== "absent") throw new Error(`preset target appeared during installation; refusing to replace ${target}`);
     }
     await rename(staging, target);
-    if (backupCreated) {
+    if (backupState === "confirmed") {
       await rm(backup, { recursive: true, force: true });
-      backupCreated = false;
+      backupState = "none";
     }
 
     return Object.freeze({
@@ -219,14 +287,32 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
       security: "DSH user presets have the same privileges as shell access; install only reviewed preset code.",
     });
   } catch (error) {
-    await rm(staging, { recursive: true, force: true });
-    if (backupCreated) {
+    if (backupState === "unverified") {
+      throw new Error(`agent preset update stopped before ownership was confirmed; moved target preserved at ${backup}: ${errorMessage(error)}`, { cause: error });
+    }
+    if (backupState === "confirmed") {
       const targetState = await pathState(target);
-      if (targetState === "missing") await rename(backup, target);
+      if (targetState === "missing") {
+        try {
+          await rename(backup, target);
+          backupState = "none";
+        } catch (restoreError) {
+          throw new AggregateError(
+            [error, restoreError],
+            `agent preset update failed and the previous preset could not be restored; backup preserved at ${backup}`,
+          );
+        }
+      } else {
+        throw new Error(
+          `agent preset update failed after replacing the target; previous preset backup preserved at ${backup}: ${errorMessage(error)}`,
+          { cause: error },
+        );
+      }
     }
     throw error;
   } finally {
-    await rm(backup, { recursive: true, force: true });
+    await rm(staging, { recursive: true, force: true });
+    if (backupState === "none") await rm(backup, { recursive: true, force: true });
   }
 }
 
@@ -235,16 +321,36 @@ export async function uninstallAgentPreset(options: AgentInstallerOptions = {}) 
   if (inspected.status === "absent") {
     return Object.freeze({ operation: "absent", target: inspected.target, presetId: inspected.presetId });
   }
-  if (inspected.status === "drifted") {
-    throw new Error(`refusing to remove modified preset at ${inspected.target}: ${inspected.issues.join("; ")}`);
+  const releaseOperation = await acquirePresetOperation(inspected.dshHome, inspected.presetId);
+  try {
+    await assertNoSymlinkDescendants(inspected.dshHome, ".agent-presets");
+    const current = await inspectTarget(inspected.target, inspected.presetId);
+    if (current.status === "drifted") {
+      throw new Error(`refusing to remove modified preset at ${inspected.target}: ${current.issues.join("; ")}`);
+    }
+    if (current.status === "absent") {
+      return Object.freeze({ operation: "absent", target: inspected.target, presetId: inspected.presetId });
+    }
+    await assertPresetIsNotDefault(inspected.dshHome, inspected.presetId);
+    const quarantine = resolve(dirname(inspected.target), `.${inspected.presetId}.uninstall-${process.pid}-${randomUUID()}`);
+    await rename(inspected.target, quarantine);
+    const claimed = await inspectTarget(quarantine, inspected.presetId);
+    if (claimed.status !== "installed" || claimed.revision !== current.revision) {
+      throw new Error(`preset changed before uninstall ownership was confirmed; moved target preserved at ${quarantine}`);
+    }
+    try {
+      await rm(quarantine, { recursive: true });
+    } catch (error) {
+      throw new Error(`confirmed preset could not be removed completely; remaining quarantine retained at ${quarantine}: ${errorMessage(error)}`, { cause: error });
+    }
+    return Object.freeze({
+      operation: "uninstalled",
+      target: inspected.target,
+      presetId: inspected.presetId,
+    });
+  } finally {
+    releaseOperation();
   }
-  await assertPresetIsNotDefault(inspected.dshHome, inspected.presetId);
-  await rm(inspected.target, { recursive: true, force: true });
-  return Object.freeze({
-    operation: "uninstalled",
-    target: inspected.target,
-    presetId: inspected.presetId,
-  });
 }
 
 async function assertPresetIsNotDefault(dshHome: string, presetId: string): Promise<void> {
@@ -274,8 +380,10 @@ async function inspectTarget(target: string, presetId: string): Promise<TargetIn
   if (state !== "directory") return { status: "drifted", issues: ["target is not a regular directory"] };
 
   let manifest: unknown;
+  let manifestSource: Buffer;
   try {
-    manifest = JSON.parse(await readFile(resolve(target, MANIFEST_FILE), "utf8"));
+    manifestSource = await readFile(resolve(target, MANIFEST_FILE));
+    manifest = JSON.parse(manifestSource.toString("utf8"));
   } catch (error) {
     return { status: "drifted", issues: [`managed manifest is unavailable: ${errorMessage(error)}`] };
   }
@@ -304,6 +412,7 @@ async function inspectTarget(target: string, presetId: string): Promise<TargetIn
     issues,
     version: isRecord(manifest) && typeof manifest.version === "string" ? manifest.version : undefined,
     dshVersion: isRecord(manifest) && typeof manifest.dshVersion === "string" ? manifest.dshVersion : undefined,
+    revision: issues.length === 0 ? createHash("sha256").update(manifestSource).digest("hex") : undefined,
   };
 }
 
@@ -318,15 +427,24 @@ function validateManifest(manifest: unknown, presetId: string): string[] {
   const issues: string[] = [];
   if (!isRecord(manifest) || manifest.schemaVersion !== 1) issues.push("unsupported managed manifest schema");
   if (!isRecord(manifest) || manifest.package !== packageMetadata.name) issues.push("managed manifest package mismatch");
+  if (!isRecord(manifest) || typeof manifest.version !== "string" || valid(manifest.version) === null) {
+    issues.push("managed manifest version is invalid");
+  }
+  if (!isRecord(manifest) || typeof manifest.dshVersion !== "string" || valid(manifest.dshVersion) === null) {
+    issues.push("managed manifest DSH version is invalid");
+  }
   if (!isRecord(manifest) || manifest.presetId !== presetId) issues.push("managed manifest preset id mismatch");
   if (!isRecord(manifest) || !isRecord(manifest.files)
-    || !Object.values(manifest.files).every((value) => typeof value === "string")) {
+    || !Object.values(manifest.files).every((value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value))) {
     issues.push("managed manifest file map is invalid");
   }
   return issues;
 }
 
 async function assertSource(sourceRoot: string): Promise<void> {
+  if (await pathState(sourceRoot) !== "directory") {
+    throw new Error(`agent package source must be a regular directory and not a symbolic link: ${sourceRoot}`);
+  }
   for (const path of requiredFiles) {
     const state = await pathState(resolve(sourceRoot, path));
     if (state !== "file") throw new Error(`agent package is incomplete: missing ${path}`);
@@ -334,6 +452,7 @@ async function assertSource(sourceRoot: string): Promise<void> {
 }
 
 async function tightenTree(root: string): Promise<void> {
+  if (await pathState(root) !== "directory") throw new Error(`managed preset root is not a regular directory: ${root}`);
   await chmod(root, 0o700);
   const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -24,6 +24,7 @@ interface ProfileFixture {
   resolvedVersion?: string;
   complete?: boolean;
   lockDependency?: string | null;
+  lockResolvedVersion?: string;
 }
 
 const packageMetadata = JSON.parse(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
@@ -66,7 +67,10 @@ async function writeProfile(dshHome: string, fixture: ProfileFixture): Promise<s
       ".": {
         dependencies: {
           "odai-dsh-plugin": { specifier: targetVersion, version: targetVersion },
-          ...(lockDependency ? { "odai-dsh-agent": { specifier: lockDependency, version: lockDependency } } : {}),
+          ...(lockDependency ? { "odai-dsh-agent": {
+            specifier: lockDependency,
+            version: fixture.lockResolvedVersion ?? lockDependency,
+          } } : {}),
         },
       },
     },
@@ -150,6 +154,7 @@ test("Control Center inspection distinguishes provenance, versions, and partial 
     ["bundle only", { bundles: ["odai-dsh-agent"] }, "partial-drift"],
     ["resolved mismatch", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: previousVersion }, "partial-drift"],
     ["lock mismatch", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, lockDependency: previousVersion }, "partial-drift"],
+    ["lock prefix collision", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, lockResolvedVersion: `${targetVersion}0` }, "partial-drift"],
     ["range source", { dependency: `^${targetVersion}`, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion }, "unknown-source"],
     ["missing runtime", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, complete: false }, "partial-drift"],
   ];
@@ -189,7 +194,7 @@ test("explicit repair replaces a broken local source and preserves Plugin coexis
   }
 });
 
-test("failed local-source repair rolls back profile metadata without touching the preset or Plugin", async () => {
+test("failed local-source repair preserves changed profile state and captures recovery evidence", async () => {
   const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-rollback-"));
   const dshHome = resolve(scratch, "home");
   const presetSentinel = resolve(dshHome, ".agent-presets/odai/preset.yml");
@@ -202,28 +207,70 @@ test("failed local-source repair rolls back profile metadata without touching th
     await mkdir(resolve(presetSentinel, ".."), { recursive: true });
     await writeFile(presetSentinel, "preset remains\n");
     const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
-    let attempt = 0;
-    const execute = (_command: string, args: string[]): string => {
-      attempt += 1;
+    let attempts = 0;
+    const execute = (): string => {
+      attempts += 1;
       const packagePath = resolve(profileRoot, "package.json");
       const profile = JSON.parse(readFileSync(packagePath, "utf8"));
-      if (attempt === 1) {
-        profile.dependencies["odai-dsh-agent"] = targetVersion;
-        writeFileSync(packagePath, `${JSON.stringify(profile, null, 2)}\n`);
-        throw new Error("injected install failure");
-      }
-      assert.match(args.join(" "), /add link:\/repo\/dsh\/agent/u);
-      return "";
+      profile.dependencies["odai-dsh-agent"] = targetVersion;
+      writeFileSync(packagePath, `${JSON.stringify(profile, null, 2)}\n`);
+      throw new Error("injected install failure");
     };
     await assert.rejects(
       installAgentControlCenter({ dshHome, execute }),
-      /previous Control Center profile state was restored/u,
+      /automatic rollback was not attempted[\s\S]*current profile state was preserved/u,
     );
-    assert.equal(await readFile(resolve(profileRoot, "package.json"), "utf8"), before);
+    assert.equal(attempts, 1);
+    const after = await readFile(resolve(profileRoot, "package.json"), "utf8");
+    assert.notEqual(after, before);
+    assert.equal(JSON.parse(after).dependencies["odai-dsh-agent"], targetVersion);
     assert.equal(await readFile(presetSentinel, "utf8"), "preset remains\n");
-    const profile = JSON.parse(before);
-    assert.equal(profile.dependencies["odai-dsh-plugin"], targetVersion);
-    assert.equal(profile.dsh.profile.bundles.includes("odai-dsh-plugin"), true);
+    const backups = await readdir(resolve(dshHome, "odai/control-center-backups"));
+    assert.equal(backups.length, 1);
+    const evidenceRoot = resolve(dshHome, "odai/control-center-backups", backups[0]);
+    assert.equal(await readFile(resolve(evidenceRoot, "before/package.json"), "utf8"), before);
+    assert.equal(await readFile(resolve(evidenceRoot, "after/package.json"), "utf8"), after);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("failed Control Center command with unchanged profile performs no inverse command", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-unchanged-failure-"));
+  const dshHome = resolve(scratch, "home");
+  try {
+    const profileRoot = await writeProfile(dshHome, {
+      dependency: "link:/repo/dsh/agent",
+      bundles: ["odai-dsh-agent"],
+      resolvedVersion: targetVersion,
+    });
+    const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
+    let attempts = 0;
+    await assert.rejects(
+      installAgentControlCenter({ dshHome, execute: () => { attempts += 1; throw new Error("no mutation"); } }),
+      /profile state remained unchanged/u,
+    );
+    assert.equal(attempts, 1);
+    assert.equal(await readFile(resolve(profileRoot, "package.json"), "utf8"), before);
+    await assert.rejects(readdir(resolve(dshHome, "odai/control-center-backups")), /ENOENT/u);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("Control Center operation lock blocks concurrent commands", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-lock-"));
+  const dshHome = resolve(scratch, "home");
+  try {
+    await writeProfile(dshHome, { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion });
+    const lockRoot = resolve(dshHome, "odai/locks");
+    await mkdir(lockRoot, { recursive: true });
+    await writeFile(resolve(lockRoot, "control-center-web.lock"), `${process.pid}:held-by-test\n`, "utf8");
+    let attempts = 0;
+    const execute = (): string => { attempts += 1; return ""; };
+    await assert.rejects(installAgentControlCenter({ dshHome, packageSpec: "different", execute }), /already in progress/u);
+    await assert.rejects(uninstallAgentControlCenter({ dshHome, execute }), /already in progress/u);
+    assert.equal(attempts, 0);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }

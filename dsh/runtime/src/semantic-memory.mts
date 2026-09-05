@@ -202,12 +202,43 @@ export function claimSemanticMemoryTurn(agent: DshAgent, turn: unknown, step: un
   return true;
 }
 
-const MANAGEMENT_INTENT = Object.freeze({
-  confirm: /(?:确认|接受|启用|采用).{0,16}(?:记忆|候选)|\b(?:confirm|accept|activate)\b.{0,16}\bmemory\b/iu,
-  correct: /(?:更正|纠正|修改|改写|改为|改成).{0,24}(?:记忆|偏好|决定|约束)|\b(?:correct|update|change)\b.{0,24}\bmemory\b/iu,
-  forget: /(?:忘掉|忘记|删除|移除|清除).{0,24}(?:记忆|偏好|决定|约束)|\b(?:forget|delete|remove)\b.{0,24}\bmemory\b/iu,
-  mode: /(?:开启|启用|关闭|停用).{0,16}(?:长期|语义)?记忆|(?:长期|语义)?记忆.{0,16}(?:开启|启用|关闭|停用)|\b(?:enable|disable|turn on|turn off)\b.{0,24}\bmemory\b/iu,
-});
+type ManagementAuthorization =
+  | { action: "confirm"; id: string }
+  | { action: "forget"; id: string }
+  | { action: "correct"; excerpt: string }
+  | { action: "set-mode"; mode: MemoryMode; excerpt: string };
+
+const COMMAND_END = "[。.!！]?";
+
+function escapedPattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function exactIdCommand(action: "confirm" | "forget", id: string): RegExp {
+  const verb = action === "confirm" ? "(?:确认|接受|采用|启用)" : "(?:忘掉|忘记|删除|移除|清除)";
+  const englishVerb = action === "confirm" ? "(?:confirm|accept|activate)" : "(?:forget|delete|remove)";
+  const literal = escapedPattern(id);
+  return new RegExp(
+    `^(?:请\\s*)?(?:${verb}(?:这条|该条)?(?:候选)?记忆|(?:please\\s+)?${englishVerb}(?:\\s+(?:this|the))?\\s+(?:candidate\\s+)?memory(?:\\s+(?:with\\s+)?id)?)[\\s:#：]*${literal}${COMMAND_END}$`,
+    "iu",
+  );
+}
+
+function exactCorrectionCommand(excerpt: string): RegExp {
+  const literal = escapedPattern(normalizeWhitespace(excerpt));
+  return new RegExp(
+    `^(?:请\\s*)?(?:(?:更正|纠正|修改|改写)(?:这条|该条)?(?:记忆|偏好|决定|约束)?[\\s:：]*|(?:把|将).{1,128}?(?:改为|改成)[\\s:：]*|(?:please\\s+)?(?:correct|update|change)(?:\\s+(?:this|the))?\\s+(?:memory|preference|decision|constraint)(?:\\s+to)?[\\s:：]*)${literal}${COMMAND_END}$`,
+    "iu",
+  );
+}
+
+function exactModeCommand(mode: MemoryMode, excerpt: string): RegExp {
+  const direction = mode === "auto"
+    ? "(?:(?:开启|启用)(?:长期|语义)?记忆|(?:长期|语义)?记忆(?:开启|启用)|(?:enable|turn on)\\s+(?:long-term\\s+|semantic\\s+)?memory)"
+    : "(?:(?:关闭|停用|禁用)(?:长期|语义)?记忆|(?:长期|语义)?记忆(?:关闭|停用|禁用)|(?:disable|turn off)\\s+(?:long-term\\s+|semantic\\s+)?memory)";
+  const literal = escapedPattern(normalizeWhitespace(excerpt));
+  return new RegExp(`^(?:请\\s*|please\\s+)?(?=${direction}${COMMAND_END}$)${literal}${COMMAND_END}$`, "iu");
+}
 
 export const MEMORY_PROMPT = [
   "## Odai long-term semantic memory",
@@ -365,12 +396,22 @@ function inferredSubject(value: string, category: MemoryCategory): string {
 function sentenceSegments(text: string): string[] {
   const segments: string[] = [];
   let fenced = false;
+  let quotedBlock = false;
   for (const line of text.split(/\r?\n/u)) {
+    const trimmed = line.trim();
     if (/^\s*```/u.test(line)) {
       fenced = !fenced;
       continue;
     }
-    if (fenced || /^\s*>/u.test(line)) continue;
+    if (trimmed === "") {
+      quotedBlock = false;
+      continue;
+    }
+    if (fenced || /^\s*>/u.test(line) || quotedBlock) continue;
+    if (/[:：]\s*$/u.test(trimmed) && matchesAny(trimmed, QUOTED_OR_REPORTED_PATTERNS)) {
+      quotedBlock = true;
+      continue;
+    }
     for (const match of line.matchAll(/[^。！？!?；;]+[。！？!?；;]?/gu)) {
       const value = match[0].trim();
       if (value) segments.push(value);
@@ -676,9 +717,17 @@ function requireCurrentExcerpt(agent: DshAgent, excerpt: unknown): { message: Ds
   return { message, text };
 }
 
-function requireManagementIntent(text: string, action: keyof typeof MANAGEMENT_INTENT): void {
-  const pattern = MANAGEMENT_INTENT[action];
-  if (!pattern?.test(text)) throw new Error(`the current direct human message does not authorize memory ${action}`);
+function requireManagementIntent(text: string, request: ManagementAuthorization): void {
+  const command = normalizeWhitespace(text);
+  let authorized = false;
+  if (request.action === "confirm" || request.action === "forget") {
+    authorized = exactIdCommand(request.action, request.id).test(command);
+  } else if (request.action === "correct") {
+    authorized = exactCorrectionCommand(request.excerpt).test(command);
+  } else {
+    authorized = exactModeCommand(request.mode, request.excerpt).test(command);
+  }
+  if (!authorized) throw new Error(`the current direct human message does not authorize memory ${request.action}`);
 }
 
 function scopeForRequest(scope: unknown, cwd: unknown, excerpt?: unknown): Readonly<MemoryScope> | undefined {
@@ -858,8 +907,10 @@ export function createSemanticMemoryTool(
       if (args.action === "set-mode") {
         if (!isMemoryMode(args.mode)) throw new TypeError("mode must be auto or off");
         const mode = args.mode;
-        const { text } = requireCurrentExcerpt(agent, args.excerpt);
-        requireManagementIntent(text, "mode");
+        if (typeof args.excerpt !== "string") throw new TypeError("excerpt is required for set-mode");
+        const excerpt = args.excerpt;
+        const { text } = requireCurrentExcerpt(agent, excerpt);
+        requireManagementIntent(text, { action: "set-mode", mode, excerpt });
         const result = mutateMemoryStore(storePath, (store) => {
           if (store.settings.mode === mode) return { changed: false, reasonCode: "unchanged" };
           store.settings.mode = mode;
@@ -876,7 +927,7 @@ export function createSemanticMemoryTool(
       if (args.action === "consider" || args.action === "correct") {
         if (typeof args.excerpt !== "string") throw new TypeError("excerpt is required for consider/correct");
         const { message, text } = requireCurrentExcerpt(agent, args.excerpt);
-        if (args.action === "correct") requireManagementIntent(text, "correct");
+        if (args.action === "correct") requireManagementIntent(text, { action: "correct", excerpt: args.excerpt });
         if (!isMemoryCategory(args.category)) throw new TypeError("category is required for consider/correct");
         if (typeof args.subject !== "string") throw new TypeError("subject is required for consider/correct");
         if (args.scope === "session") {
@@ -920,14 +971,14 @@ export function createSemanticMemoryTool(
       const current = latestDirectUserMessage(agent);
       const currentText = messageText(current);
       if (!current) throw new Error("a current open turn with a direct human message is required");
-      if (["confirm", "forget"].includes(args.action)
-        && (typeof args.id !== "string" || args.id === "")) {
+      const requestedId = typeof args.id === "string" ? args.id : "";
+      if (["confirm", "forget"].includes(args.action) && requestedId === "") {
         throw new TypeError("id is required for confirm/forget");
       }
       if (args.action === "confirm") {
-        requireManagementIntent(currentText, "confirm");
+        requireManagementIntent(currentText, { action: "confirm", id: requestedId });
         const result = mutateMemoryStore<MemoryOperationOutcome>(storePath, (store) => {
-          const entry = accessibleEntries(store, cwd).find((item) => item.id === args.id);
+          const entry = accessibleEntries(store, cwd).find((item) => item.id === requestedId);
           if (!entry) return { changed: false, reasonCode: "not-found" };
           if (suppressesGovernance(entry.value)) return { changed: false, reasonCode: "governance-suppressing" };
           if (entry.status === "active") return { changed: false, reasonCode: "already-active", entry: entrySummary(entry) };
@@ -947,7 +998,7 @@ export function createSemanticMemoryTool(
           entry.updatedAt = Date.now();
           return { changed: true, reasonCode: "confirmed", entry: entrySummary(entry) };
         });
-        if (result.changed) onChanged(agent, { action: "confirm", id: args.id });
+        if (result.changed) onChanged(agent, { action: "confirm", id: requestedId });
         return Promise.resolve(resultValue("confirm", settings, storePath, result.entry ? [result.entry] : [], {
           changed: result.changed,
           reasonCode: result.reasonCode,
@@ -955,20 +1006,20 @@ export function createSemanticMemoryTool(
       }
 
       if (args.action === "forget") {
-        requireManagementIntent(currentText, "forget");
+        requireManagementIntent(currentText, { action: "forget", id: requestedId });
         const result = mutateMemoryStore(storePath, (store) => {
           const visible = accessibleEntries(store, cwd);
-          if (!visible.some((entry) => entry.id === args.id)) return { changed: false, reasonCode: "not-found" };
+          if (!visible.some((entry) => entry.id === requestedId)) return { changed: false, reasonCode: "not-found" };
           store.entries = store.entries
-            .filter((entry) => entry.id !== args.id)
+            .filter((entry) => entry.id !== requestedId)
             .map((entry) => ({
               ...entry,
-              supersedes: entry.supersedes.filter((id) => id !== args.id),
-              conflictsWith: entry.conflictsWith.filter((id) => id !== args.id),
+              supersedes: entry.supersedes.filter((id) => id !== requestedId),
+              conflictsWith: entry.conflictsWith.filter((id) => id !== requestedId),
             }));
           return { changed: true, reasonCode: "forgotten" };
         });
-        if (result.changed) onChanged(agent, { action: "forget", id: args.id });
+        if (result.changed) onChanged(agent, { action: "forget", id: requestedId });
         return Promise.resolve(resultValue("forget", settings, storePath, [], {
           changed: result.changed,
           reasonCode: result.reasonCode,

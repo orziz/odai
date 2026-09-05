@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -17,6 +17,10 @@ import {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorCode(error: unknown): string | undefined {
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function jsonRecord(text: string): Record<string, unknown> {
@@ -160,6 +164,76 @@ test("managed preset refuses updates and removal after local drift", async () =>
   }
 });
 
+test("preset lifecycle rejects linked managed parents and source roots", async (context) => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-symlink-boundary-"));
+  const sourceRoot = resolve(scratch, "source");
+  const dshHome = resolve(scratch, "home");
+  const external = resolve(scratch, "external");
+  try {
+    await writeFixture(sourceRoot, "runtime");
+    await mkdir(dshHome, { recursive: true });
+    await mkdir(external, { recursive: true });
+    await writeFile(resolve(external, "sentinel.txt"), "preserved\n", "utf8");
+    try {
+      await symlink(external, resolve(dshHome, ".agent-presets"), process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (new Set(["EPERM", "EACCES", "ENOTSUP"]).has(errorCode(error) ?? "")) {
+        context.skip("symbolic links are unavailable in this environment");
+        return;
+      }
+      throw error;
+    }
+    await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), /symbolic link is not allowed/u);
+    await assert.rejects(uninstallAgentPreset({ dshHome }), /symbolic link is not allowed/u);
+    assert.equal(await readFile(resolve(external, "sentinel.txt"), "utf8"), "preserved\n");
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("preset lifecycle rejects a symlinked source root", async (context) => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-source-link-"));
+  const actualSource = resolve(scratch, "actual-source");
+  const linkedSource = resolve(scratch, "linked-source");
+  const dshHome = resolve(scratch, "home");
+  try {
+    await writeFixture(actualSource, "runtime");
+    try {
+      await symlink(actualSource, linkedSource, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (new Set(["EPERM", "EACCES", "ENOTSUP"]).has(errorCode(error) ?? "")) {
+        context.skip("symbolic links are unavailable in this environment");
+        return;
+      }
+      throw error;
+    }
+    await assert.rejects(installAgentPreset({ dshHome, sourceRoot: linkedSource }), /source must be a regular directory/u);
+    await assert.rejects(stat(resolve(dshHome, ".agent-presets", "odai")), /ENOENT/u);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("preset operation lock blocks concurrent lifecycle mutation", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-operation-lock-"));
+  const sourceRoot = resolve(scratch, "source");
+  const dshHome = resolve(scratch, "home");
+  try {
+    await writeFixture(sourceRoot, "first runtime");
+    const installed = await installAgentPreset({ dshHome, sourceRoot });
+    const before = await readFile(resolve(installed.target, "runtime/index.mjs"), "utf8");
+    const lock = resolve(dshHome, "odai/locks/agent-preset-odai.lock");
+    await writeFile(lock, `${process.pid}:held-by-test\n`, "utf8");
+    await writeFile(resolve(sourceRoot, "runtime/index.mjs"), "export default 'second runtime';\n", "utf8");
+    await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), /already in progress/u);
+    await assert.rejects(uninstallAgentPreset({ dshHome }), /already in progress/u);
+    assert.equal(await readFile(resolve(installed.target, "runtime/index.mjs"), "utf8"), before);
+    await rm(lock);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test("uninstall refuses to leave an invalid default preset", async () => {
   const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-default-"));
   const sourceRoot = resolve(scratch, "source");
@@ -197,6 +271,36 @@ test("published metadata describes complete DSH capabilities in Chinese", async 
   assert.doesNotMatch(controlCenterPatch, /control-center-host/u);
   assert.match(presetMetadata, /^name: odai 治理模式$/mu);
   assert.match(presetMetadata, /^description: 完整继承 DSH 标准模式 全部能力，并叠加 odai 治理、证据与自动路由，以 odai 为总控。$/mu);
+});
+
+test("failed update cleanup is guarded by confirmed backup disposition", async () => {
+  const source = await readFile(resolve(import.meta.dirname, "../src/installer.mts"), "utf8");
+  assert.match(source, /backupState = "unverified"/u);
+  assert.match(source, /backupState = "confirmed"/u);
+  assert.match(source, /if \(backupState === "none"\) await rm\(backup/u);
+  assert.doesNotMatch(source, /finally \{\s*await rm\(backup/u);
+  assert.match(source, /preserved at/u);
+});
+
+test("managed preset rejects manifests missing identity fields", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-manifest-identity-"));
+  const sourceRoot = resolve(scratch, "source");
+  const dshHome = resolve(scratch, "home");
+  try {
+    await writeFixture(sourceRoot, "runtime");
+    const installed = await installAgentPreset({ dshHome, sourceRoot });
+    const manifestPath = resolve(installed.target, ".odai-agent.json");
+    const manifest = jsonRecord(await readFile(manifestPath, "utf8"));
+    delete manifest.version;
+    delete manifest.dshVersion;
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const inspection = await inspectAgentInstallation({ dshHome });
+    assert.equal(inspection.status, "drifted");
+    assert.match(inspection.issues.join("; "), /manifest version.*manifest DSH version/iu);
+    await assert.rejects(uninstallAgentPreset({ dshHome }), /refusing to remove modified preset/u);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 });
 
 test("DSH home resolution honors explicit path before the environment", () => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -297,6 +298,14 @@ test("owned store locks reject live writers, reclaim dead owners, and preserve s
       /is being updated; retry/u,
     );
     rmSync(lockPath);
+
+    const deadClaimOwner = spawnSync(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+    assert.equal(deadClaimOwner.status, 0);
+    assert.ok(Number.isSafeInteger(deadClaimOwner.pid) && deadClaimOwner.pid > 0);
+    writeFileSync(`${lockPath}.claim`, `${deadClaimOwner.pid}:dead-claim\n`, "utf8");
+    const releaseAfterDeadClaim = acquireOwnedStoreLock(configPath, "Odai output configuration");
+    releaseAfterDeadClaim();
+    assert.equal(existsSync(`${lockPath}.claim`), false);
 
     writeFileSync(lockPath, "2147483647:dead-owner\n", "utf8");
     const releaseDeadReplacement = acquireOwnedStoreLock(configPath, "Odai output configuration");

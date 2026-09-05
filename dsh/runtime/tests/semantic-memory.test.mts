@@ -134,6 +134,9 @@ test("automatic discovery admits durable direct statements and rejects unsafe lo
   const negatives = [
     "这个项目以后统一使用 pnpm 吗？",
     "例如：这个项目以后统一使用 pnpm。",
+    "例如：\n以后默认使用 npm。",
+    "他说：\n本项目以后统一使用 yarn。",
+    "For example:\nGoing forward, always use npm.",
     "```text\n这个项目以后统一使用 pnpm。\n```",
     "我猜以后可能默认使用 pnpm。",
     "这次先用 pnpm。",
@@ -614,6 +617,57 @@ test("correction supersedes conflicts while forget and clear physically erase co
     const cleared = await tool.execute({ action: "clear", scope: "project" }, toolExecution(tool, authorized.agent));
     assert.equal(cleared.changed, true);
     assert.equal(readMemoryStore(storePath).entries.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("memory management authorization binds affirmative action, target, and mode", async () => {
+  const root = mkdtempSync(resolve(tmpdir(), "odai-memory-bound-auth-"));
+  try {
+    const storePath = resolveMemoryStorePath(undefined, { DSH_HOME: root });
+    const cwd = resolve(root, "project");
+    mkdirSync(cwd);
+    const original = agentFor({ id: "bound-original", cwd, text: "这个项目以后统一使用 pnpm。" });
+    capture(storePath, original);
+    const tool = createSemanticMemoryTool(storePath);
+    const activeId = memoryEntry(readMemoryStore(storePath).entries).id;
+    const pendingAgent = agentFor({ id: "bound-pending", cwd, turn: 2, text: "请考虑把本项目的输出格式偏好记为 json" });
+    const pending = await tool.execute({
+      action: "consider",
+      scope: "project",
+      category: "preference",
+      subject: "output-format",
+      excerpt: "本项目的输出格式偏好记为 json",
+    }, toolExecution(tool, pendingAgent.agent));
+    const pendingId = memoryEntry(pending.entries).id;
+
+    for (const [text, args] of [
+      [`不要删除这条记忆 ${activeId}`, { action: "forget", id: activeId }],
+      [`删除这条记忆 ${activeId}`, { action: "forget", id: pendingId }],
+      [`确认这条候选记忆 ${pendingId}`, { action: "confirm", id: activeId }],
+      ["开启语义记忆", { action: "set-mode", mode: "off", excerpt: "开启语义记忆" }],
+      ["不要关闭语义记忆", { action: "set-mode", mode: "off", excerpt: "关闭语义记忆" }],
+    ] as const) {
+      const before = readFileSync(storePath, "utf8");
+      const request = agentFor({ id: `bound-reject-${text.length}`, cwd, turn: 3, text });
+      await assert.rejects(async () => tool.execute(args, toolExecution(tool, request.agent)), /does not authorize/u);
+      assert.equal(readFileSync(storePath, "utf8"), before);
+    }
+
+    const negatedCorrection = "不要更正这条记忆：这个项目以后统一使用 npm。";
+    const correctionAgent = agentFor({ id: "bound-correction", cwd, turn: 4, text: negatedCorrection });
+    await assert.rejects(async () => tool.execute({
+      action: "correct",
+      scope: "project",
+      category: "decision",
+      subject: "package-manager",
+      excerpt: "这个项目以后统一使用 npm。",
+    }, toolExecution(tool, correctionAgent.agent)), /does not authorize/u);
+
+    const confirmation = agentFor({ id: "bound-confirm", cwd, turn: 5, text: `Confirm candidate memory ${pendingId}` });
+    const confirmed = await tool.execute({ action: "confirm", id: pendingId }, toolExecution(tool, confirmation.agent));
+    assert.equal(confirmed.changed, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

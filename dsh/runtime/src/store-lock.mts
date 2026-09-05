@@ -5,6 +5,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeSync,
 } from "node:fs";
@@ -67,24 +68,55 @@ function releaseLock(handle: number, lockPath: string, owner: string): void {
   rmSync(lockPath);
 }
 
+function acquireClaim(claimPath: string, label: string): { handle: number; owner: string } {
+  const owner = `${process.pid}:${randomUUID()}`;
+  try {
+    return { handle: createLock(claimPath, owner), owner };
+  } catch (error) {
+    if (errorCode(error) !== "EEXIST") throw error;
+  }
+
+  const current = readLockOwner(claimPath);
+  if (current === undefined || processIsAlive(current.pid)) {
+    throw new Error(`${label} lock acquisition is already in progress; retry the tool call`);
+  }
+
+  const displacedPath = `${claimPath}.recovery-${process.pid}-${randomUUID()}`;
+  try {
+    renameSync(claimPath, displacedPath);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw new Error(`${label} lock acquisition changed during recovery; retry the tool call`);
+    }
+    throw error;
+  }
+
+  let displacedWasStale = false;
+  try {
+    const displaced = readLockOwner(displacedPath);
+    if (displaced?.value !== current.value) {
+      throw new Error(`${label} lock acquisition ownership changed during recovery; displaced successor preserved at ${displacedPath}; retry the tool call`);
+    }
+    displacedWasStale = true;
+    return { handle: createLock(claimPath, owner), owner };
+  } finally {
+    if (displacedWasStale) rmSync(displacedPath, { force: true });
+  }
+}
+
 export function acquireOwnedStoreLock(path: string, label: string): () => void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const lockPath = `${path}.lock`;
   const claimPath = `${lockPath}.claim`;
   const owner = `${process.pid}:${randomUUID()}`;
-  const claimOwner = `${process.pid}:${randomUUID()}`;
-  let claimHandle: number;
-  try {
-    claimHandle = createLock(claimPath, claimOwner);
-  } catch (error) {
-    if (errorCode(error) === "EEXIST") {
-      throw new Error(`${label} lock acquisition is already in progress; retry the tool call`);
-    }
-    throw error;
-  }
+  const claim = acquireClaim(claimPath, label);
 
   let handle: number | undefined;
   try {
+    const activeClaim = readLockOwner(claimPath);
+    if (activeClaim?.value !== claim.owner) {
+      throw new Error(`${label} lock acquisition ownership changed before update; retry the tool call`);
+    }
     try {
       handle = createLock(lockPath, owner);
     } catch (error) {
@@ -98,7 +130,7 @@ export function acquireOwnedStoreLock(path: string, label: string): () => void {
     }
   } finally {
     try {
-      releaseLock(claimHandle, claimPath, claimOwner);
+      releaseLock(claim.handle, claimPath, claim.owner);
     } catch (error) {
       if (handle !== undefined) {
         try {

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -7,12 +7,12 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  rmSync,
   statSync,
   writeSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import { acquireOwnedStoreLock } from "./store-lock.mjs";
 import type { DshAgent, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
@@ -217,96 +217,6 @@ function stateFor(agent: DshAgent | undefined, root: string, logger: EvidenceLog
   return state;
 }
 
-function errorCode(error: unknown): string | undefined {
-  if (error === null || typeof error !== "object" || !("code" in error)) return undefined;
-  return typeof error.code === "string" ? error.code : undefined;
-}
-
-function readLockOwner(lockPath: string): { value: string; pid: number } | undefined {
-  try {
-    const value = readFileSync(lockPath, "utf8").trim();
-    const separator = value.indexOf(":");
-    const pid = Number(separator < 0 ? "" : value.slice(0, separator));
-    return Number.isSafeInteger(pid) && pid > 0 && separator < value.length - 1 ? { value, pid } : undefined;
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errorCode(error) !== "ESRCH";
-  }
-}
-
-function createLock(lockPath: string, owner: string): number {
-  const handle = openSync(lockPath, "wx", 0o600);
-  try {
-    const content = Buffer.from(`${owner}\n`, "utf8");
-    if (writeSync(handle, content, 0, content.length) !== content.length) {
-      throw new Error(`short write while acquiring odai evidence lock: ${lockPath}`);
-    }
-    fsyncSync(handle);
-    return handle;
-  } catch (error) {
-    closeSync(handle);
-    rmSync(lockPath, { force: true });
-    throw error;
-  }
-}
-
-function releaseLock(handle: number, lockPath: string, owner: string): void {
-  closeSync(handle);
-  const current = readLockOwner(lockPath);
-  if (current === undefined) throw new Error(`odai evidence lock disappeared before release: ${lockPath}`);
-  if (current.value !== owner) throw new Error(`odai evidence lock ownership changed before release: ${lockPath}`);
-  rmSync(lockPath);
-}
-
-function acquireLock(path: string): () => void {
-  const lockPath = `${path}.lock`;
-  const claimPath = `${lockPath}.claim`;
-  const owner = `${process.pid}:${randomUUID()}`;
-  const claimOwner = `${process.pid}:${randomUUID()}`;
-  let claimHandle: number;
-  try {
-    claimHandle = createLock(claimPath, claimOwner);
-  } catch (error) {
-    if (errorCode(error) === "EEXIST") throw new Error(`odai evidence lock acquisition is already in progress: ${path}`);
-    throw error;
-  }
-
-  let handle: number | undefined;
-  try {
-    try {
-      handle = createLock(lockPath, owner);
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-      const current = readLockOwner(lockPath);
-      if (current === undefined || processIsAlive(current.pid)) throw new Error(`odai evidence is being updated by another runtime: ${path}`);
-      rmSync(lockPath);
-      handle = createLock(lockPath, owner);
-    }
-  } finally {
-    try {
-      releaseLock(claimHandle, claimPath, claimOwner);
-    } catch (error) {
-      if (handle !== undefined) {
-        try { releaseLock(handle, lockPath, owner); } catch {}
-        handle = undefined;
-      }
-      throw error;
-    }
-  }
-
-  if (handle === undefined) throw new Error(`could not lock odai evidence: ${path}`);
-  const ownedHandle = handle;
-  return () => releaseLock(ownedHandle, lockPath, owner);
-}
 
 function syncDirectory(path: string): void {
   let handle: number | undefined;
@@ -323,7 +233,7 @@ function syncDirectory(path: string): void {
 function persistRecord(root: string, sessionId: string, record: StoredEvidenceRecord, logger: EvidenceLogger): boolean {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = evidencePath(root, sessionId);
-  const release = acquireLock(path);
+  const release = acquireOwnedStoreLock(path, "odai evidence");
   try {
     const stored = readStoredState(root, sessionId, logger, true);
     if (stored.ids.has(record.id)) return false;
