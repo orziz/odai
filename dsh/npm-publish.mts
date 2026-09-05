@@ -9,6 +9,9 @@ import type { SpawnSyncReturns } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
+import { identifyReleaseArtifact, publishVerifiedArtifacts } from "./release-artifacts.mjs";
+import type { ReleaseArtifact } from "./release-artifacts.mjs";
+
 const REGISTRY = "https://registry.npmjs.org/";
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const DSH_DIR = MODULE_DIR.endsWith(`${sep}build`) ? resolve(MODULE_DIR, "..") : MODULE_DIR;
@@ -223,22 +226,15 @@ function requireNonDowngrade(metadata: PackageMetadata): string {
   return latest;
 }
 
-async function verifyPublishedPackage(name: string, version: string, expectedGitHead: string): Promise<boolean> {
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    const versionState = npmViewField(`${name}@${version}`, "version", { allowMissing: true });
-    if (versionState.kind === "found") {
-      if (versionState.value !== version) {
-        throw new Error(`Registry returned version ${versionState.value} for ${name}@${version}.`);
-      }
-      const gitHeadState = npmViewField(`${name}@${version}`, "gitHead");
-      if (gitHeadState.kind !== "found") throw new Error(`${name}@${version} has no published gitHead.`);
-      const publishedGitHead = gitHeadState.value;
-      if (publishedGitHead === expectedGitHead) return true;
-      throw new Error(`${name}@${version} exists with gitHead ${publishedGitHead || "<missing>"}, expected ${expectedGitHead}.`);
-    }
-    if (attempt < 5) await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_500));
+function lookupPublishedArtifact(artifact: ReleaseArtifact): unknown {
+  const spec = `${artifact.name}@${artifact.version}`;
+  const result = npmViewField(spec, "--json", { allowMissing: true });
+  if (result.kind === "missing") return undefined;
+  try {
+    return JSON.parse(result.value) as unknown;
+  } catch (error) {
+    throw new Error(`Registry returned invalid metadata for ${spec}.`, { cause: error });
   }
-  return false;
 }
 
 interface PackedReleaseArtifacts {
@@ -265,26 +261,6 @@ function packReleaseArtifacts(): PackedReleaseArtifacts {
     rmSync(root, { recursive: true, force: true });
     throw error;
   }
-}
-
-async function publishIfMissing(metadata: PackageMetadata, tarball: string, gitHead: string): Promise<void> {
-  const { name, version } = metadata;
-  const versionState = npmViewField(`${name}@${version}`, "version", { allowMissing: true });
-  if (versionState.kind === "found") {
-    if (!await verifyPublishedPackage(name, version, gitHead)) {
-      throw new Error(`Registry verification failed for existing ${name}@${version}.`);
-    }
-    console.log(`${name}@${version} is already published from this commit; skipping.`);
-    return;
-  }
-
-  npm(["publish", tarball, "--access=public", `--registry=${REGISTRY}`], {
-    label: `publish ${name}@${version}`,
-  });
-  if (!await verifyPublishedPackage(name, version, gitHead)) {
-    throw new Error(`Registry verification failed for ${name}@${version}.`);
-  }
-  console.log(`Verified ${name}@${version} on npm.`);
 }
 
 async function main(): Promise<void> {
@@ -321,6 +297,10 @@ async function main(): Promise<void> {
   npm(["--prefix", AGENT_DIR, "run", "pack:dry-run"], { label: "Agent dry-run packaging" });
   const artifacts = packReleaseArtifacts();
   try {
+    const releases = [
+      identifyReleaseArtifact(plugin, artifacts.plugin),
+      identifyReleaseArtifact(agent, artifacts.agent),
+    ];
     run(process.execPath, [resolve(REPO_ROOT, "scripts/verify-dsh-packed-artifacts.mjs"), artifacts.plugin, artifacts.agent], {
       label: "Packed DSH artifact verification",
     });
@@ -329,8 +309,17 @@ async function main(): Promise<void> {
       "--plugin-tgz", artifacts.plugin,
       "--agent-tgz", artifacts.agent,
     ], { label: "Isolated packed DSH release-matrix verification" });
-    await publishIfMissing(plugin, artifacts.plugin, gitHead);
-    await publishIfMissing(agent, artifacts.agent, gitHead);
+    await publishVerifiedArtifacts(releases, {
+      lookup: lookupPublishedArtifact,
+      publish: ({ name, version, tarball }) => {
+        npm(["publish", tarball, "--access=public", `--registry=${REGISTRY}`], {
+          label: `publish ${name}@${version}`,
+        });
+      },
+      report: ({ name, version, integrity }, alreadyPublished) => {
+        console.log(`${name}@${version}: ${alreadyPublished ? "already published; skipping" : "published and verified"} (${integrity}).`);
+      },
+    });
   } finally {
     rmSync(artifacts.root, { recursive: true, force: true });
   }

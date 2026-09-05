@@ -4,7 +4,7 @@
 
 | odai-dsh-plugin | odai-dsh-agent | 支持的 @deepseek-ai/dsh | 说明 |
 | --- | --- | --- | --- |
-| `0.2.25` | `0.2.25` | `0.1.2-rc.1` | 当前未发布候选；沿用 rc.1 合同，补齐技能纠错与验收语义、运行时授权、安装恢复和制品校验；新候选安装制品矩阵仍须在发布前通过 |
+| `0.2.25` | `0.2.25` | `0.1.2-rc.1` | 当前部分发布单元：Plugin 已发布、Agent 待完成；沿用 rc.1 合同，补齐技能纠错与验收语义、运行时授权、安装恢复和制品校验；继续发布须验证同一批制品及安装矩阵 |
 | `0.2.23` | `0.2.23` | `0.1.2-rc.1` | 已发布；正常 runtime 与安装器退役全部 rc.2 协议/Session 分支；仅保留显式 `legacy-session-repair` 处理升级 DSH 后被历史 Odai event 阻断的旧 session；修复 Plugin-only Control Center host 的 late-`connection` 注册；alpha.1 因缺少 npm 制品及无损外部 event 迁移路径而暂不支持 |
 | `0.2.22` | `0.2.22` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | release matrix 只跑 rc.2 旧服务与 rc.1 新服务/source；alpha.5 由范围覆盖，不另设重复检查；增加带认证用户原文来源的 active/superseded requirement provenance，不增加角色或 stage |
 | `0.2.21` | `0.2.21` | `0.1.1-rc.2` 或 `>=0.1.2-alpha.5 <0.1.2` | 已发布；当时实际跑过 rc.2、alpha.5 与 rc.1，以 rc.1 Standard 为 source；Control Center 分别适配旧 conversation services 与 `uiConversation.events/views` |

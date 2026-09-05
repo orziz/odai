@@ -2,9 +2,10 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.25
+## Unreleased — DSH 0.2.25（部分发布，Agent 待完成）
 
-- Plugin 与 Agent 同步进入未发布的 `0.2.25` 候选；`0.2.23` 已由 registry 占用，新增改动不复用历史版本号。按仓库版本策略跳过含禁用数字的后继值；peer 保持精确 `@deepseek-ai/dsh@0.1.2-rc.1`，canonical skill 保持 `0.3.8`，runtime contract 保持 `6`。
+- `odai-dsh-plugin@0.2.25` 已于 `2026-09-05T20:30:13.756Z` 发布，registry 未提供 `gitHead`；Agent `0.2.25` 尚未发布。当前发布单元仍为 `0.2.25`，只允许以同一份已验证制品继续完成；已发布包若有内容变化，必须另用未消耗版本。peer 保持精确 `@deepseek-ai/dsh@0.1.2-rc.1`，canonical skill 保持 `0.3.8`，runtime contract 保持 `6`。
+- 仓库发布工具以已验证 tgz 的 SHA-512 对照 registry 的 `dist.integrity`，不再要求 tarball 发布路径自动生成 `gitHead`；包名、版本或摘要缺失/不符均拒绝，两个包的既有记录在任何发布动作前一起核验。保留推送提交、洁净源码、精确内容和安装矩阵检查，并在调用 npm 前复验制品未变；工具修复不写入 npm 包内容，不据此重发已存在的包。
 - canonical 正文区分授权变更与遗漏补做；感知方案在未对齐时只供讨论，明确授权内的实现细节自主决定；独立复核按实际判断缺口选择，明确要求的独立性仍是验收属性；每份证据绑定交付对象，配套测试不代替主任务完成。
 - 收敛安装与运行时恢复：canonical 路由将 manifest 绑定当前 host/scope/target/layout，拒绝父级链接和清单路径逃逸，并让卸载在设置漂移时保持原状；Agent 校验完整 manifest 身份和精确 lockfile 版本，拒绝 symlinked managed/source roots，以 owner-token operation lock 串行生命周期，并在原子 quarantine 后复验 revision，未确认目录与失败更新备份均不删除。Control Center 不再用逆命令或旧快照覆盖可能的并发 successor，改为保留当前状态及 before/after recovery evidence；CLI 缺值立即拒绝。runtime 的 child 工具边界改为 fail-closed allowlist，死亡 PID 的 acquisition claim 通过原子改名受控恢复，ownership 变化时保留 successor 并失败，认证/权限及 nested model 错误按结构优先分类；跨行示例不自动记忆，管理动作绑定当前肯定命令、精确 ID/excerpt 与 mode 方向。发布洁净门覆盖根构建输入，最终发布对同一 tgz 执行精确文件 allowlist、metadata/docs/runtime/canonical/client/patch 字节一致性和导出目标检查；blind harness 使用一次性 Codex home 隔离用户配置，并在 deterministic cap 后重排行列。canonical skill 与 runtime contract 版本保持不变。
 
