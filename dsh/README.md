@@ -16,7 +16,7 @@ A planner route identical to the current controller remains inline and does not 
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the current `0.2.23` candidate supports exactly `dsh@0.1.2-rc.1`. rc.2 and the earlier open prerelease range are retired.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the current `0.2.25` candidate supports exactly `dsh@0.1.2-rc.1`. rc.2 and the earlier open prerelease range are retired.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -125,6 +125,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The current `0.2.23` candidate accepts exactly `@deepseek-ai/dsh@0.1.2-rc.1`; its release matrix has one rc.1 anchor and the Agent publishes that Standard composition without a legacy renderer. Runtime session history uses the public immutable `snapshotEvents()` API. The official `dsh-v0.1.3-alpha.1` tag keeps the same Standard digest and builds successfully, but remains unsupported until a published npm graph can be verified and historical external Odai events have a valid v0-to-v1 migration path. Published Odai versions retain their historical compatibility entries. Release contracts pin the current exact peer, source version, Standard path, and digest, so a moved package or changed row fails the matrix.
+The current `0.2.25` candidate accepts exactly `@deepseek-ai/dsh@0.1.2-rc.1`; its release matrix has one rc.1 anchor and the Agent publishes that Standard composition without a legacy renderer. Runtime session history uses the public immutable `snapshotEvents()` API. The official `dsh-v0.1.3-alpha.1` tag keeps the same Standard digest and builds successfully, but remains unsupported until a published npm graph can be verified and historical external Odai events have a valid v0-to-v1 migration path. Published Odai versions retain their historical compatibility entries. Release contracts pin the current exact peer, source version, Standard path, and digest, so a moved package or changed row fails the matrix.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.
