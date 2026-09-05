@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前普通模型结果覆盖 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。这些记录形成于 `odai-canary-isolation/v1` 生效前，保留为历史能力与成本证据；新正式结果须逐题取得 runner 与 judge 隔离回执。
+- 当前普通模型结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
 - 可选宿主能力路由单列在 [`docs/routing-results.md`](docs/routing-results.md)，不迁移为普通模型成绩。试跑、复跑、失败管线和临时模型故障仍只由 Git 历史与本地证据承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
 
@@ -148,7 +148,7 @@ node scripts/odai-canary-harness.mjs --suite ab --skill-mode off --out /tmp/odai
 
 全量 on 已在相同题面、fixture、runner 配置和 harness 语义下覆盖 A/B case 时，可以抽取对应 runner 证据，不为形式重复执行。仅评分契约变化时可用 `--rejudge-from` 重判冻结输出；模型、推理档、arm、题面、fixture、diff、status 和 token 仍须一致。重判不得改写 runner 输出，也不得把同一 case 的多次行为输出、分数或 token 拼成一条记录；同一 runner 输出无论重判几次都只算一个行为样本，只替换最终采用分，不得冒充复跑或稳定性证据。
 
-模型、题面、fixture、评分语义和 case 相关运行时行为等价时，当前能力表可在多份有效证据中采用完成度最高的一份；指纹不同但变化与该 case 无关时不自动作废。必须整份采用同一轮的 runner 输出、diff、status、裁判、读取轨迹与 token，不得跨轮拼接。这证明当前组合已展示的能力上限；稳定性另看各轮分布。
+模型、题面、fixture、评分语义和 case 相关运行时行为等价时，当前能力表可逐题从多份有效证据中采用完成度最高的一份，汇总表允许由这些逐题 adopted evidence 组成；指纹不同但变化与该 case 无关时不自动作废。每个 case 必须整份采用同一轮的 runner 输出、diff、status、裁判、读取轨迹与 token，不得把一次输出配上另一次分数或 token。这证明当前组合已展示的能力上限。稳定性若需评价，另行预设独立重复次数并报告分布；单次首跑不称为稳定性证据。
 
 评测对象是完整 odai 能力包：odai 自动调用 `ribao`、项目叠加层、项目 skill 或外部能力仍计入 odai 整体结果，不拆成组件成绩。只要同样达到题目的可观察验收、遵守授权并由 odai 统一收口，内置完成、借力已安装能力、经用户同意引入能力或创建项目能力可获得同样完成度；只发现、推荐、安装、创建或调用而未完成真实结果，不因流程加分。结构性变化使旧 on 全量失效；局部变化只有在影响关系可说明、题面与 fixture 未变且该 case 未依赖变化语义时才可保留旧证据。读取轨迹可辅助判断但不能单独证明无影响。
 

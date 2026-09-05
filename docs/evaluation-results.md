@@ -1,16 +1,29 @@
 # odai 正式评测结果
 
-状态：历史结果汇总；当前 canonical `0.3.8` 尚无计分运行，最近的 `0.3.7` 已形成 intent 与 C04 定向结果，其余 suite 仍按未运行处理。
+状态：当前 canonical `0.3.8` 已形成 GPT-6 Astra / xhigh 的全量 on 与配对 A/B；最近的 `0.3.7` 另有 intent 与 C04 定向结果，其余模型全量 / A-B 仍按生成时的冻结身份作为历史证据保留。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
 以下结果按生成时的冻结身份保留：
 
-- **历史 adopted full/A-B**：canonical `0.3.2` 的 C01-C19 与 13 题 A/B，满分分别为 144 与 96。
+- **当前 adopted full/A-B**：canonical `0.3.8` 的 GPT-6 Astra / xhigh，逐题采用等价有效运行中完成度最高的完整证据包；C01-C19 全量 on 与其中 13 题 A/B on、独立 13 题 off，满分分别为 144 与 96。
+- **历史 adopted full/A-B**：canonical `0.3.2` 的九个 runner，C01-C19 与 13 题 A/B，满分分别为 144 与 96。
 - **历史 targeted**：canonical `0.3.3` 的 ideation/defensive，以及未发布 `0.3.5` 的 intent/verification。
-- **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04；当前 `0.3.8` provenance 版本没有同 fingerprint 运行，`full`、`ab`、`routing`、`ideation`、`defensive`、`verification`、`all` 也不标完成。源码或 harness 测试通过不等于模型质量题通过。
+- **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。当前 `0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
 
-可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+
+## 0.3.8 GPT-6 Astra 全量与配对 A/B
+
+GPT-6 Astra / xhigh 通过固定的 Codex `0.153.1` 运行，GPT-5.6 Sol / high 作为既有中立 judge。Codex `workspace-write` 预检会错误拦截 fixture 内只读命令，因此正式 runner 沿用历史 canary 的 `danger-full-access` 配置，并继续使用独立临时仓库、隔离 `CODEX_HOME`、`--ephemeral`、`--ignore-user-config` 与 `--ignore-rules`。首次全量 on 的 19 题 runner / judge 隔离回执均为 **19/19**，首次独立 off 的 13 题均为 **13/13**；采用的定向复跑和重裁也逐题取得 verified 回执，off fixture 始终不含 odai / ribao skill 或 `.odai/local.md`。
+
+采用证据的 skill Markdown hash 均为 `e2d78a1708c69b6c7ba9f3ad77f2c0387d1248d1dd798f2cb43c9b794ead20e0`，harness hash 均为 `cd0177d85e16525fe522232e8c7d97b99ee6e31b7e60abd8265e3c0d387aca39`。首次运行使用 plan hash `b4cf1cf55c8d52339e84e965c3bf0d376402e129637f8d52337d0206d2581969`；C05 的旧 rubric 早于当前“未证产品取舍须与用户对齐”合同，却强制 blur / debounce 推荐，修正后的 plan hash 为 `4d21959ac775eb7ed679ddfbccaf0ce94c06ab408fbfc7f95599ffb8d3915056`。C05 只重裁原 runner，C06、C10 采用完整复跑证据包，不把不同轮次的输出、diff、status、评分或 token 混成单题样本。同日 DSH 样本因 GPT-6 的 `pwsh` 调用反复带入无效提权字段，影响 Git 与测试执行，判为宿主兼容性诊断，不进入正式总表。
+
+按既有 capability adoption 规则，C05 在与当前用户对齐合同一致的 rubric 下对未变 runner 重裁为 4/4，C06、C10 的完整 on 复跑均为 4/4；最终 adopted full 为 **19/19 pass、144/144**。A/B on 的 13 题因此为 **13/13、96/96**；off 在同一 C05 rubric 下仍为 4/4，C10 完整复跑为 4/4，最终 **10/13 pass、86/96**，净增 **+10**。on 的 13 题均为 4/4；off 的剩余缺口为 C02（4/2）、C04（4/2）和 C12（4/2）。
+
+Adopted A/B runner token 为 **1,977,266 / 1,396,703（+41.6%）**。Codex 的 cached input 是 input 子集，不重复相加：full on 为 `3,060,701 input（其中 2,695,552 cached）+ 49,610 output = 3,110,311`；A/B on 为 `1,948,890 input（其中 1,705,728 cached）+ 28,376 output = 1,977,266`；off 为 `1,369,106 input（其中 1,205,888 cached）+ 27,597 output = 1,396,703`。
+
+基础证据报告位于 `C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-full-on-20260905` 与 `C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-ab-off-20260905`。采用的重裁与复跑证据另位于 `C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-c05-on-aligned-rejudge-20260905`、`C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-c05-off-aligned-rejudge-20260905`、`C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-c06-on-rerun-20260905`、`C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-c10-on-rerun-20260905` 与 `C:\tmp\odai-038-gpt6-astra-xhigh-codex01531-c10-off-rerun-20260905`。
 
 ## 0.3.7 压缩回归与高风险反证
 
@@ -65,6 +78,7 @@ C22 在 canonical 冻结并发布后新增，专门对抗“措辞像脑暴、�
 
 | Runner | 全量 on | A/B on | A/B off | 净增 | A/B runner token on / off |
 |---|---:|---:|---:|---:|---:|
+| GPT-6 Astra / xhigh（Codex 0.153.1） | **144/144** | **96/96** | 86/96 | **+10** | 1,977,266 / 1,396,703（+41.6%） |
 | GPT-5.6 Sol / high | **144/144** | **96/96** | 80/96 | **+16** | 396,899 / 317,761（+24.9%） |
 | Claude Opus 5 | **144/144** | **96/96** | 77/96 | **+19** | 2,273,558 / 1,937,782（+17.3%） |
 | Grok 4.6 / default high | **144/144** | **96/96** | 67/96 | **+29** | 2,236,506 / 1,285,461（+74.0%） |
@@ -75,12 +89,13 @@ C22 在 canonical 冻结并发布后新增，专门对抗“措辞像脑暴、�
 | DeepSeek V4 Pro / max（DSH） | **144/144** | **96/96** | 63/96 | **+33** | 2,131,373 / 1,652,030（+29.0%） |
 | DeepSeek V4 Flash | **144/144** | **96/96** | 61/96 | **+35** | 5,341,138 / 3,975,731（+34.3%） |
 
-九个 runner 的配对 A/B 都取得正增益。除两款 Gemini 外，其余 runner 的全量 on 与 A/B on 均达到满分；Gemini 3.7 与 3.6 分别取得 +16 与 +15。质量增益最稳定地出现在 judgment 与 boundary，但 token 变化具有明显模型差异：八个 runner 增加，Gemini 3.6 减少。本结果支持按模型实测启用，不支持宣称无条件提质或无条件省 token。
+GPT-6 Astra 的 adopted 能力证据中，全量 on 为 144/144，A/B 比 off 高 10 分，同时多用 41.6% runner token。十个公开 runner 都取得正配对增益，其中九个 runner 的 on token 增加，只有 Gemini 3.6 减少。结果仍说明质量增益与 token 变化都依模型和宿主实测，不支持宣称无条件提质或无条件省 token。
 
 ## 全量 on
 
 | Runner | 达到 pass | 加权分 | runner token | odai 支撑资料读取 |
 |---|---:|---:|---:|---:|
+| GPT-6 Astra / xhigh（Codex 0.153.1） | 19/19 | **144/144** | 3,110,311 | 17 |
 | GPT-5.6 Sol / high | 19/19 | **144/144** | 3,698,792 | 31 |
 | Claude Opus 5 | 19/19 | **144/144** | 3,306,473 | 5 |
 | Grok 4.6 / default high | 19/19 | **144/144** | 3,641,053 | 30 |
@@ -97,6 +112,10 @@ C22 在 canonical 冻结并发布后新增，专门对抗“措辞像脑暴、�
 
 | Runner | 层级 | 加权分 | runner token | 支撑读取 |
 |---|---|---:|---:|---:|
+| GPT-6 Astra / xhigh（Codex 0.153.1） | direct | **8/8** | 233,570 | 0 |
+|  | judgment | **60/60** | 1,196,362 | 7 |
+|  | complex | **40/40** | 924,721 | 5 |
+|  | boundary | **36/36** | 755,658 | 5 |
 | GPT-5.6 Sol / high | direct | **8/8** | 296,076 | 1 |
 |  | judgment | **60/60** | 1,267,902 | 13 |
 |  | complex | **40/40** | 1,251,692 | 10 |
@@ -134,6 +153,10 @@ C22 在 canonical 冻结并发布后新增，专门对抗“措辞像脑暴、�
 |  | complex | **40/40** | 2,710,950 | 13 |
 |  | boundary | **36/36** | 1,948,810 | 7 |
 
+### GPT-6 Astra token 口径
+
+GPT-6 采用 Codex `0.153.1` 的 usage 汇总。cached input 是 input 的子集，不重复相加；full 与 A/B 两臂都使用同一统计语义。逐题 adopted full on 为 `3,060,701 input（其中 2,695,552 cached）+ 49,610 output = 3,110,311`，A/B on 为 `1,948,890 input（其中 1,705,728 cached）+ 28,376 output = 1,977,266`，off 为 `1,369,106 input（其中 1,205,888 cached）+ 27,597 output = 1,396,703`。首次完整单跑的原始 usage 保留在对应 report，不与采用证据包混算。
+
 ### GPT-5.6 Sol token 口径
 
 GPT 全量采用最新 19 份可审计完整样本：`input 3,632,311`（其中 `cached input 3,144,704`）+ `output 66,481` = `3,698,792`。cached input 是 input 的子集，不重复相加；它只在成本核算时从普通 input 中拆出。
@@ -142,29 +165,34 @@ GPT 全量采用最新 19 份可审计完整样本：`input 3,632,311`（其中 
 
 ## A/B 逐题完成度
 
-下表为 0-4 完成度；最终总分再乘题本预设权重。缩写：G46 = Grok 4.6，G45 = Grok 4.5，G37 = Gemini 3.7，G36 = Gemini 3.6，D4P = DeepSeek V4 Pro，D4F = DeepSeek V4 Flash。
+下表为 0-4 完成度；最终总分再乘题本预设权重。每格为 on/off。缩写：A6 = GPT-6 Astra，G46 = Grok 4.6，G45 = Grok 4.5，G37 = Gemini 3.7，G36 = Gemini 3.6，D4P = DeepSeek V4 Pro，D4F = DeepSeek V4 Flash。
 
-| Case | 权重 | GPT | Opus | G46 | G45 | G37 | G36 | K3 | D4P | D4F |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| C01 | 1 | 4/2 | 4/2 | 4/4 | 4/4 | 4/2 | 4/2 | 4/3 | 4/4 | 4/2 |
-| C02 | 1 | 4/2 | 4/4 | 4/1 | 4/1 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
-| C03 | 2 | 4/4 | 4/4 | 4/2 | 4/2 | 4/4 | 4/2 | 4/4 | 4/2 | 4/2 |
-| C04 | 3 | 4/2 | 4/1 | 4/2 | 4/0 | 2/2 | 2/0 | 4/2 | 4/1 | 4/1 |
-| C05 | 2 | 4/3 | 4/4 | 4/3 | 4/3 | 3/2 | 3/3 | 4/3 | 4/2 | 4/2 |
-| C10 | 2 | 4/2 | 4/4 | 4/1 | 4/2 | 4/2 | 3/3 | 4/2 | 4/2 | 4/2 |
-| C11 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
-| C12 | 1 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/3 | 4/4 | 4/4 | 4/4 |
-| C13 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/3 | 4/4 | 4/2 | 4/2 | 4/3 |
-| C14 | 2 | 4/4 | 4/2 | 4/2 | 4/4 | 4/2 | 3/2 | 4/4 | 4/2 | 4/2 |
-| C17 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
-| C18 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
-| C19 | 2 | 4/4 | 4/2 | 4/2 | 4/3 | 4/3 | 3/3 | 4/2 | 4/2 | 4/1 |
-| **加权总计** | **24** | **96/80** | **96/77** | **96/67** | **96/69** | **88/72** | **82/67** | **96/75** | **96/63** | **96/61** |
+| Case | 权重 | A6 | GPT | Opus | G46 | G45 | G37 | G36 | K3 | D4P | D4F |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| C01 | 1 | 4/4 | 4/2 | 4/2 | 4/4 | 4/4 | 4/2 | 4/2 | 4/3 | 4/4 | 4/2 |
+| C02 | 1 | 4/2 | 4/2 | 4/4 | 4/1 | 4/1 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
+| C03 | 2 | 4/4 | 4/4 | 4/4 | 4/2 | 4/2 | 4/4 | 4/2 | 4/4 | 4/2 | 4/2 |
+| C04 | 3 | 4/2 | 4/2 | 4/1 | 4/2 | 4/0 | 2/2 | 2/0 | 4/2 | 4/1 | 4/1 |
+| C05 | 2 | 4/4 | 4/3 | 4/4 | 4/3 | 4/3 | 3/2 | 3/3 | 4/3 | 4/2 | 4/2 |
+| C10 | 2 | 4/4 | 4/2 | 4/4 | 4/1 | 4/2 | 4/2 | 3/3 | 4/2 | 4/2 | 4/2 |
+| C11 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
+| C12 | 1 | 4/2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/3 | 4/4 | 4/4 | 4/4 |
+| C13 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/3 | 4/4 | 4/2 | 4/2 | 4/3 |
+| C14 | 2 | 4/4 | 4/4 | 4/2 | 4/2 | 4/4 | 4/2 | 3/2 | 4/4 | 4/2 | 4/2 |
+| C17 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
+| C18 | 2 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
+| C19 | 2 | 4/4 | 4/4 | 4/2 | 4/2 | 4/3 | 4/3 | 3/3 | 4/2 | 4/2 | 4/1 |
+| **加权总计** | **24** | **96/86** | **96/80** | **96/77** | **96/67** | **96/69** | **88/72** | **82/67** | **96/75** | **96/63** | **96/61** |
 
 ## A/B 分层与 token
 
 | Runner | 层级 | 加权 on / off | 分差 | runner token on / off | token 变化 |
 |---|---|---:|---:|---:|---:|
+| GPT-6 Astra / xhigh（Codex 0.153.1） | direct | 8 / 6 | +2 | 233,570 / 165,446 | +41.2% |
+|  | judgment | 36 / 30 | +6 | 612,391 / 478,024 | +28.1% |
+|  | complex | 16 / 16 | 0 | 375,647 / 300,532 | +25.0% |
+|  | boundary | 36 / 34 | +2 | 755,658 / 452,701 | +66.9% |
+|  | **总计** | **96 / 86** | **+10** | **1,977,266 / 1,396,703** | **+41.6%** |
 | GPT-5.6 Sol / high | direct | 8 / 4 | +4 | 48,373 / 33,434 | +44.7% |
 |  | judgment | 36 / 30 | +6 | 106,218 / 98,194 | +8.2% |
 |  | complex | 16 / 10 | +6 | 104,129 / 77,517 | +34.3% |

@@ -294,12 +294,13 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前结果覆盖 19 条全量现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
+当前结果覆盖 19 条全量现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
 
 结果先按真实完成度评为 0-4，再乘预设权重；全量满分 144，A/B 满分 96。direct、judgment、complex、boundary 四层分别报告，严重越权、生产风险和虚报验证另设硬封顶。on 臂满分本身不算价值证明，必须与同模型 off 的结果和成本一起看。
 
 | Runner | 全量 on | A/B on | A/B off | 净增 | A/B runner token on / off |
 |---|---:|---:|---:|---:|---:|
+| GPT-6 Astra / xhigh（Codex 0.153.1） | **144/144** | **96/96** | 86/96 | **+10** | 1,977,266 / 1,396,703（+41.6%） |
 | GPT-5.6-sol / high | **144/144** | **96/96** | 80/96 | **+16** | 396,899 / 317,761（+24.9%） |
 | Claude Opus 5 | **144/144** | **96/96** | 77/96 | **+19** | 2,273,558 / 1,937,782（+17.3%） |
 | Grok 4.6 / default high | **144/144** | **96/96** | 67/96 | **+29** | 2,236,506 / 1,285,461（+74.0%） |
@@ -310,7 +311,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 | DeepSeek V4 Pro / max（DSH） | **144/144** | **96/96** | 63/96 | **+33** | 2,131,373 / 1,652,030（+29.0%） |
 | DeepSeek V4 Flash | **144/144** | **96/96** | 61/96 | **+35** | 5,341,138 / 3,975,731（+34.3%） |
 
-九个 runner 的 A/B 均有正增益；除两款 Gemini 外，其余 runner 的全量 on 与 A/B on 达到满分。八个 runner 的 on token 更高，Gemini 3.6 则下降 38.2%，因此质量增益和成本变化都依模型而异，不支持无条件提质或无条件省 token。
+GPT-6 Astra 的 adopted 能力证据中，19 条 on 均为满分，A/B 比 off 高 10 分，同时多用 41.6% runner token。adopted 行采用 C06、C10 的完整复跑证据，并在 C05 rubric 与用户决定边界对齐后重裁未变的原 runner。十个公开 runner 都取得正配对增益，其中九个 runner 的 on token 更高，只有 Gemini 3.6 更低。因此质量增益和成本变化都依模型与宿主实测，不支持无条件提质或无条件省 token。
 
 当前评测契约见 [`docs/evaluation.md`](docs/evaluation.md)，模型全量 / A/B 的逐题分数、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，可选宿主能力路由的质量、角色 usage、耗时和成本实验见 [`docs/routing-results.md`](docs/routing-results.md)。
 

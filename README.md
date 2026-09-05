@@ -294,12 +294,13 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current results cover 19 realistic full-plan tasks and a 13-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. Fingerprints preserve exact reproducibility; unrelated routing assets or maintenance edits do not invalidate an entire result table when the prompt, fixture, model configuration, scoring semantics, and case-relevant skill behavior remain equivalent. Gemini 3.7 and DeepSeek V4 Pro (DSH) ran under the cross-platform `odai-canary-isolation/v1` contract; the other published rows predate that contract and are retained as historical capability evidence.
+The current results cover 19 realistic full-plan tasks and a 13-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. Fingerprints preserve exact reproducibility; unrelated routing assets or maintenance edits do not invalidate an entire result table when the prompt, fixture, model configuration, scoring semantics, and case-relevant skill behavior remain equivalent. GPT-6 Astra, Gemini 3.7, and DeepSeek V4 Pro (DSH) ran under the cross-platform `odai-canary-isolation/v1` contract; the other published rows predate that contract and are retained as historical capability evidence.
 
 Each result first receives a 0-4 completion score, then the predefined case weight is applied. The full plan is worth 144 points and the A/B subset 96. Direct, judgment, complex, and boundary work are reported separately, while severe scope, production-risk, and false-verification violations have hard score caps. A perfect treatment score alone is not evidence of value; it must be read against the same model's control result and cost.
 
 | Runner | full on | A/B on | A/B off | gain | A/B runner tokens on / off |
 |---|---:|---:|---:|---:|---:|
+| GPT-6 Astra / xhigh (Codex 0.153.1) | **144/144** | **96/96** | 86/96 | **+10** | 1,977,266 / 1,396,703 (+41.6%) |
 | GPT-5.6-sol / high | **144/144** | **96/96** | 80/96 | **+16** | 396,899 / 317,761 (+24.9%) |
 | Claude Opus 5 | **144/144** | **96/96** | 77/96 | **+19** | 2,273,558 / 1,937,782 (+17.3%) |
 | Grok 4.6 / default high | **144/144** | **96/96** | 67/96 | **+29** | 2,236,506 / 1,285,461 (+74.0%) |
@@ -310,7 +311,7 @@ Each result first receives a 0-4 completion score, then the predefined case weig
 | DeepSeek V4 Pro / max (DSH) | **144/144** | **96/96** | 63/96 | **+33** | 2,131,373 / 1,652,030 (+29.0%) |
 | DeepSeek V4 Flash | **144/144** | **96/96** | 61/96 | **+35** | 5,341,138 / 3,975,731 (+34.3%) |
 
-All nine runners produced a positive paired gain. Every runner except the two Gemini versions reached full on scores in both the full suite and A/B subset. Eight runners used more tokens with odai, while Gemini 3.6 used 38.2% fewer, so both quality gains and cost changes remain model-dependent—not unconditional improvement or token savings.
+GPT-6 Astra's adopted capability evidence is perfect on all 19 treatment cases and scores 10 points above its control while using 41.6% more runner tokens. The adopted row uses complete C06 and C10 rerun evidence and rejudges the unchanged C05 runner after aligning that rubric with the user-decision contract. All ten published runners have positive paired gains, while nine used more tokens with odai and Gemini 3.6 used fewer. Quality gains and cost changes therefore remain model- and host-dependent, not unconditional improvement or token savings.
 
 See [`docs/evaluation.md`](docs/evaluation.md) for the current contract, [`docs/evaluation-results.md`](docs/evaluation-results.md) for model full-suite/A-B scores and token details, and [`docs/routing-results.md`](docs/routing-results.md) for optional host-routing quality, role usage, latency, and cost experiments.
 

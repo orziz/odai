@@ -50,7 +50,7 @@ runner 只看到自然用户请求和独立 fixture，不看到验收、失败�
 
 ## A/B 与路由
 
-同模型 on / off 使用相同题面、fixture、推理档和评分契约。runner token 只在同一模型、宿主和 usage 口径内比较；cached input 是 input 子集，不重复相加。完整 `full` 运行若在相同契约下覆盖 `ab`，可抽取同一轮完整证据，不重复运行 runner，也不得跨轮拼接输出、diff、status、评分或 token。
+同模型 on / off 使用相同题面、fixture、推理档和评分契约。runner token 只在同一模型、宿主和 usage 口径内比较；cached token 按 adapter 的真实事件契约解释：Codex 的 cached input 是 input 子集，不重复相加，当前 DSH 的 `inputTokens` 与 `cacheReadTokens` 不重叠，总量为两者与 `outputTokens` 之和。完整 `full` 运行若在相同契约下覆盖 `ab`，可直接抽取同题证据，不为形式重复运行。能力表也可按题从等价的有效运行中采用完成度最高的一份完整证据包，但同一 case 的输出、diff、status、评分、读取轨迹和 token 必须来自同一 runner 样本，不得跨轮拼成虚构样本。若另行评估稳定性，须预先定义独立重复次数并报告分布，不能把单次首跑或 adopted 能力表冒充稳定性结论。
 
 Codex 路由观测使用 `--codex-routing-telemetry`。安装映射不等于真实调用；配置、请求和角色自报都不能替代实际 thread、provider/model、reasoning effort、usage 与 route receipt。当前实现只有 controller 持续拥有任务和实施；researcher、planner、reviewer、frontend 仅在独立工作能改变结果时启动。C20 与历史路由样本单列在 [`routing-results.md`](routing-results.md)，不混入普通模型 A/B 成绩。
 
