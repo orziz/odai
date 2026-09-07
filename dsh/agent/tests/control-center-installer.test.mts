@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -124,7 +124,7 @@ test("Agent Control Center registry install is explicit, exact, idempotent, and 
     assert.equal((await inspectAgentControlCenter({ dshHome })).status, "current");
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0]?.args, ["plugin", "--profile", "web", "add", `odai-dsh-agent@${targetVersion}`, "--save-exact"]);
-    assert.equal(calls[0]?.options.env?.DSH_HOME, dshHome);
+    assert.equal(calls[0]?.options.env?.DSH_HOME, await realpath(dshHome));
 
     assert.equal((await installAgentControlCenter({ dshHome, execute })).operation, "unchanged");
     assert.equal(calls.length, 1);

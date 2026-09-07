@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -316,7 +316,43 @@ test("installer writes through DSH_HOME when no explicit home is provided", asyn
     await writeFixture(sourceRoot, "runtime");
     process.env.DSH_HOME = resolve(scratch, "environment-home");
     const installed = await installAgentPreset({ sourceRoot });
-    assert.equal(installed.target, resolve(process.env.DSH_HOME, ".agent-presets/odai"));
+    assert.equal(installed.target, resolve(await realpath(process.env.DSH_HOME), ".agent-presets/odai"));
+  } finally {
+    if (previous === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previous;
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("installer shares one canonical home through a DSH_HOME parent alias", async (context) => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-home-alias-"));
+  const sourceRoot = resolve(scratch, "source");
+  const parent = resolve(scratch, "actual-parent");
+  const alias = resolve(scratch, "linked-parent");
+  const previous = process.env.DSH_HOME;
+  try {
+    await writeFixture(sourceRoot, "runtime");
+    await mkdir(parent);
+    try {
+      await symlink(parent, alias, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (new Set(["EPERM", "EACCES", "ENOTSUP"]).has(errorCode(error) ?? "")) {
+        context.skip("symbolic links are unavailable in this environment");
+        return;
+      }
+      throw error;
+    }
+    process.env.DSH_HOME = resolve(alias, "home");
+    const canonicalHome = resolve(await realpath(parent), "home");
+    const target = resolve(canonicalHome, ".agent-presets/odai");
+    const installed = await installAgentPreset({ sourceRoot });
+    assert.equal(installed.operation, "installed");
+    assert.equal(installed.target, target);
+    assert.equal((await inspectAgentInstallation({ dshHome: canonicalHome })).status, "installed");
+    const removed = await uninstallAgentPreset({ dshHome: canonicalHome });
+    assert.equal(removed.operation, "uninstalled");
+    assert.equal(removed.target, target);
+    assert.equal((await inspectAgentInstallation()).status, "absent");
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previous;

@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -265,4 +265,5 @@ function runNode(file, args) {
 }
 function json(file) { return JSON.parse(readFileSync(file, "utf8")); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
-function temp(prefix) { return mkdtempSync(path.join(tmpdir(), prefix)); }
+// Ordinary fixtures need physical paths; link rejection cases create their own links.
+function temp(prefix) { return realpathSync(mkdtempSync(path.join(tmpdir(), prefix))); }
