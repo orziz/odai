@@ -2,9 +2,17 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.25（部分发布，Agent 待完成）
+## Unreleased — DSH 0.2.26 / canonical 0.3.9
 
-- `odai-dsh-plugin@0.2.25` 已于 `2026-09-05T20:30:13.756Z` 发布，registry 未提供 `gitHead`；Agent `0.2.25` 尚未发布。当前发布单元仍为 `0.2.25`，只允许以同一份已验证制品继续完成；已发布包若有内容变化，必须另用未消耗版本。peer 保持精确 `@deepseek-ai/dsh@0.1.2-rc.1`，canonical skill 保持 `0.3.8`，runtime contract 保持 `6`。
+- 精神内核与 `事｜实｜法｜成｜界` 的定义原文保持不变。主校验器新增五项的唯一性、非空责任、所属章节与非阶段/不外显约束；合同测试改为在临时副本中实际删除、置空、重复、错置或替换定义并调用主校验器，保留精神内核及意图边界的删除反例，不再检查校验器源码是否包含特定字符串写法。
+- canonical 入口与授权正文退役“充分且唯一的意图”门槛：区分用户结果分歧与实现选择，明确委托内自主判断，既有授权按实际上下文延续；未决用户取舍、扩围、外部后果、参考只读及高影响证据边界继续有效。支撑入口先定位实际缺口，支撑资料由编号清单改为缺口与干预的对应关系。
+- 协作正文区分调用前的收益依据与调用后的实际贡献，不要求首次调用先有历史实测；独立复核、模型升级和成本证明分别验真，用量未知不冒充节省，也不否定已核实的交付。角色合同回到该唯一 owner。重试遵循修正证据与宿主停止条件；项目 skill 不再设“两次以上”固定门槛，安装与创建仍须授权，已覆盖的授权不重复询问。
+- 失稳支撑区分预期红测、已查明的环境缺失与真实判断缺口；前两者不自动证明能力失稳，授权、停止条件、安全门和必要重验仍有效。删除无引用的临时 canary harness 副本，同步中英文资料地图，并把现有 canary harness 基础设施单测接入 CI。
+- 两个 npm 包使用未发布候选 `0.2.26`，canonical skill 为 `0.3.9`，runtime contract 保持 `6`；required files、读取接口、角色拓扑与 rc.1 peer 不变。`0.2.25` 两包均已发布，不能复用其版本承载新内容。两个包的完整测试、精确打包内容校验与 rc.1 实际压缩包的隔离安装和加载矩阵通过；发布状态仍以真实 registry 事件为准。本轮未运行题本或模型评测，不宣称质量、token 或成本增益。
+
+## 2026-09-05 — DSH 0.2.25 governance and integration
+
+- `odai-dsh-plugin@0.2.25` 与 `odai-dsh-agent@0.2.25` 均已发布；官方 registry 的发布时间分别为 `2026-09-05T20:30:13.756Z` 与 `2026-09-05T20:57:46.508Z`。Plugin registry 未提供 `gitHead`。该版 peer 为精确 `@deepseek-ai/dsh@0.1.2-rc.1`，canonical skill 为 `0.3.8`，runtime contract 为 `6`。
 - 仓库发布工具以已验证 tgz 的 SHA-512 对照 registry 的 `dist.integrity`，不再要求 tarball 发布路径自动生成 `gitHead`；包名、版本或摘要缺失/不符均拒绝，两个包的既有记录在任何发布动作前一起核验。保留推送提交、洁净源码、精确内容和安装矩阵检查，并在调用 npm 前复验制品未变；工具修复不写入 npm 包内容，不据此重发已存在的包。
 - canonical 正文区分授权变更与遗漏补做；感知方案在未对齐时只供讨论，明确授权内的实现细节自主决定；独立复核按实际判断缺口选择，明确要求的独立性仍是验收属性；每份证据绑定交付对象，配套测试不代替主任务完成。
 - 收敛安装与运行时恢复：canonical 路由将 manifest 绑定当前 host/scope/target/layout，拒绝父级链接和清单路径逃逸，并让卸载在设置漂移时保持原状；Agent 校验完整 manifest 身份和精确 lockfile 版本，拒绝 symlinked managed/source roots，以 owner-token operation lock 串行生命周期，并在原子 quarantine 后复验 revision，未确认目录与失败更新备份均不删除。Control Center 不再用逆命令或旧快照覆盖可能的并发 successor，改为保留当前状态及 before/after recovery evidence；CLI 缺值立即拒绝。runtime 的 child 工具边界改为 fail-closed allowlist，死亡 PID 的 acquisition claim 通过原子改名受控恢复，ownership 变化时保留 successor 并失败，认证/权限及 nested model 错误按结构优先分类；跨行示例不自动记忆，管理动作绑定当前肯定命令、精确 ID/excerpt 与 mode 方向。发布洁净门覆盖根构建输入，最终发布对同一 tgz 执行精确文件 allowlist、metadata/docs/runtime/canonical/client/patch 字节一致性和导出目标检查；blind harness 使用一次性 Codex home 隔离用户配置，并在 deterministic cap 后重排行列。canonical skill 与 runtime contract 版本保持不变。

@@ -20,13 +20,13 @@ test("repository policy covers every current owned version carrier", () => {
   const result = assertRepositoryVersionPolicy({ repoRoot });
   assert.deepEqual(result.forbiddenDigits, ["4"]);
   assert.deepEqual(
-    result.versions.map(({ path, field, version }) => `${path}#${field}=${version}`),
+    result.versions.map(({ path, field }) => `${path}#${field}`),
     [
-      "cli/package.json#version=0.0.2",
-      "dsh/plugin/package.json#version=0.2.25",
-      "dsh/agent/package.json#version=0.2.25",
-      "skills/odai/manifest.json#skillVersion=0.3.8",
-      "skills/odai/manifest.json#runtimeContract=6",
+      "cli/package.json#version",
+      "dsh/plugin/package.json#version",
+      "dsh/agent/package.json#version",
+      "skills/odai/manifest.json#skillVersion",
+      "skills/odai/manifest.json#runtimeContract",
     ],
   );
 });

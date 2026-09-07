@@ -1,12 +1,12 @@
 # odai DSH 能力路由报告
 
-更新时间：2026-09-04
+历史验证截止：2026-09-04；状态说明更新：2026-09-07
 
 本报告只记录 DeepSeek Harness（DSH）能力路由的产品契约、机械验证和冻结对照。普通单模型全量与 A/B 结果见 [`evaluation-results.md`](evaluation-results.md)。单次路由样本用于证明真实换模、边界、质量和资源足迹，不用于宣称路由稳定优于单一充分能力总控。
 
-> 当前 DSH 发布线为 `0.2.22`，canonical 为 `0.3.8`、runtime contract 保持 `6`：controller 是唯一持续任务线程并拥有实施；可选责任仍只有 researcher、planner、reviewer、frontend。`0.2.22` 只补带认证用户原文来源的 active/superseded requirement provenance，不增加 auditor、Executor、stage 或“三省六部”运行时结构。manifest schema 2 仍是角色/reference owner 拓扑，DSH 由 controller-only reference bridge 按当前 turn snapshot 读取 canonical references。独立 Executor、route card 与 Codex stage runner 已退役。下文含 Executor 或 stage 的数值全部是退役历史证据，保留用于解释删除决定，不是当前能力或配置说明。
+> 当前候选为 DSH `0.2.26` / canonical `0.3.9` / runtime contract `6`，尚未运行新的计分路由评测。当前配置和兼容边界见 [`dsh/README.md`](../dsh/README.md)。下列产品契约与机械验证按 `0.2.22` 历史口径保留：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。该版补充带认证用户原文来源的 active/superseded requirement provenance，使用 manifest schema 2 与 controller-only reference bridge。独立 Executor、route card 与 Codex stage runner 已退役，相关数值只用于解释删除决定，不是当前能力或配置说明。
 
-## 当前发布契约
+## `0.2.22` 路由契约（历史）
 
 ### 默认行为
 
@@ -69,7 +69,7 @@ Researcher 的运行时触发只判断任务是否匹配，不感知 provider �
 | Plugin/Agent pack dry-run | 通过 | Plugin 192 文件、Agent 201 文件；临时 bundled source 与 tgz 均已清理 |
 | 双版本 installed-artifact release matrix | 通过 | 真实 Plugin/Agent tgz 在 DSH rc.2 与 alpha.2 隔离安装；分别为 188 / 215 包纯依赖图，Standard digest、official session compatibility、Plugin load 与 Agent scope/child guard 均通过 |
 
-这组验证证明当前源码、迁移和打包机制，不替代付费模型质量样本。最近一次普通 canonical intent/C04 定向结果仍是 `0.3.7`，见 [`evaluation-results.md`](evaluation-results.md)；当前 `0.3.8` 候选尚无新的 DSH 计分路由运行，下面样本按各自旧指纹保留。
+这组历史验证只覆盖当时的源码、迁移和打包机制，不替代模型质量样本，也不迁移为当前候选的通过证明。普通 canonical 已有 `0.3.8` 全量/A-B 与 `0.3.7` intent/C04 定向结果，见 [`evaluation-results.md`](evaluation-results.md)；这些结果不证明 DSH 路由质量，下面样本按各自旧指纹保留。
 
 ## 退役与历史质量/成本证据
 
@@ -159,7 +159,7 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 | 12 文件冻结迁移 | Sol/high controller -> Luna/max executor | 只改 12 个目标值；项目测试通过 | 218,731 | 222.9s | $0.213 |
 | 同一迁移单模型对照 | Sol/high controller | 同等改动与验证结果 | 137,261 | 63.6s | $0.201 |
 
-独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是 `0.3.7` 删除 Executor、route card 与 stage 机制的直接依据；当前 `0.3.8` 候选延续该结论，不提供恢复开关。
+独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是 `0.3.7` 删除 Executor、route card 与 stage 机制的直接依据；当前候选延续该结论，不提供恢复开关。
 
 ## 历史架构摘要
 
@@ -192,4 +192,4 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 5. observe 的价值是诊断、证据协议和 fail-closed，不是独立判断的替代品；frontend 只在明确专业缺口和显式映射下升级。
 6. `0.2.22` 不选择任何责任模型。历史 Sol/Luna/Terra 都是冻结实验映射，不应被读成包默认。
 7. Researcher 触发不感知价格；配置只是用户显式选择，不是降本证明，缺权威价格与实际 usage 时不得作节省承诺。
-8. 当前 `0.3.8` 尚无新计分样本；最近的 `0.3.7` 普通 canonical 结果不包含 requirement provenance 路由对照。质量与成本结论只覆盖表中旧指纹，provider cache、上下文档位和输出长度会显著改变单次结果。
+8. 当前 `0.3.9` 尚无新计分路由样本；普通 canonical 的模型结果不包含 requirement provenance 路由对照。质量与成本结论只覆盖表中旧指纹，provider cache、上下文档位和输出长度会显著改变单次结果。

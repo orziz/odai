@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- 当前 canonical `0.3.9` 尚未运行模型评测；下列成绩按各自冻结身份保留，不作为新候选的通过证明。
 - 当前普通模型结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
 - 可选宿主能力路由单列在 [`docs/routing-results.md`](docs/routing-results.md)，不迁移为普通模型成绩。试跑、复跑、失败管线和临时模型故障仍只由 Git 历史与本地证据承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -83,8 +84,11 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 
 ```bash
 node scripts/validate-odai-skill.mjs
+node --test scripts/validate-odai-skill-contracts.test.mjs
 git diff --check
 ```
+
+合同测试在临时副本中实际删除或置空精神内核、五项定义与意图边界，调用主校验器确认拒绝，并以原文通过排除环境假失败；它保护文本合同，不替代模型行为评测。
 
 改可选 Hooks runtime、策略示例或适配生成器时补充：
 
@@ -109,7 +113,7 @@ node skills/odai/scripts/install-routing.mjs --host codex --scope project --targ
 
 Codex 自定义角色必须由 `config.toml` 的 `[agents.<name>]` 与 `config_file` 显式注册；仅复制角色 TOML 不算可用。用户只在安装或更新时确认一次模型映射，正常任务不得要求用户指定角色、内部策略或运行命令。安装器默认 `auto`，注册 controller、planner、reviewer 以及显式提供的 researcher/frontend，不制造每轮前置流程。单一充分 controller 直接闭环，其他责任按真实缺口调用。内部角色必须设置 `ODAI_ROUTING_ACTIVE=1` 防止递归。
 
-controller 是唯一持续任务线程、实施 owner 与最终交付 owner，不是额外模型调用。planner 只在独立判断能改变路线时使用，回交后由 controller 恢复实施；reviewer 只在独立判断能改变放行结果时使用；researcher/frontend 仍须由可观察缺口证明净收益。小任务直接闭环，高风险只提高证据、授权和验收强度，不自动制造角色。每次责任调用必须核对实际 thread、模型、推理强度、usage、耗时与结果，不能凭角色自报或启动请求认定成功。
+controller 是唯一持续任务线程、实施 owner 与最终交付 owner，不是额外模型调用。planner 只在独立判断能改变路线时使用，回交后由 controller 恢复实施；reviewer 只在独立判断能改变放行结果时使用；researcher/frontend 同样须有具体缺口与收益依据。小任务直接闭环，高风险只提高证据、授权和验收强度，不自动制造角色。调用前判断预期贡献，调用后分别核对执行、独立性、指定能力与实际代价；缺少用量不宣称节省，也不抹掉已有交付证据。具体判据由 `references/leverage.md` 统一维护，DSH 的机械放行仍服从 runtime 自身合同。
 
 安装器会在不覆盖无关设置的前提下合并既有 Codex 配置，并把原始配置摘要与内容记入托管清单；更新与卸载先核对当前托管哈希，卸载再精确恢复原配置。非合并位置只处理空目标或自身完整托管且未被外部修改的配置。新版更新会根据旧清单安全移除已退役的 Hook、Executor 与 stage runner 托管文件，不删除未由 odai 托管的项目配置。Codex、Claude Code 与 Copilot 都只生成当前角色配置；未取得等价宿主证据时不得宣称真实路由已核实。修改路由契约时，必须同时复核角色正文、生成器、安装器、role runner、三个宿主外壳与真实新会话行为。
 

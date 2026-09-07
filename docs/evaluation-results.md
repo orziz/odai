@@ -1,15 +1,15 @@
 # odai 正式评测结果
 
-状态：当前 canonical `0.3.8` 已形成 GPT-6 Astra / xhigh 的全量 on 与配对 A/B；最近的 `0.3.7` 另有 intent 与 C04 定向结果，其余模型全量 / A-B 仍按生成时的冻结身份作为历史证据保留。
+状态：当前 canonical `0.3.9` 尚未运行模型评测。`0.3.8` 已形成 GPT-6 Astra / xhigh 的全量 on 与配对 A/B；`0.3.7` 另有 intent 与 C04 定向结果。以下结果按各自冻结身份保留，不作为 `0.3.9` 的通过证明。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
 以下结果按生成时的冻结身份保留：
 
-- **当前 adopted full/A-B**：canonical `0.3.8` 的 GPT-6 Astra / xhigh，逐题采用等价有效运行中完成度最高的完整证据包；C01-C19 全量 on 与其中 13 题 A/B on、独立 13 题 off，满分分别为 144 与 96。
+- **最近 adopted full/A-B**：canonical `0.3.8` 的 GPT-6 Astra / xhigh，逐题采用等价有效运行中完成度最高的完整证据包；C01-C19 全量 on 与其中 13 题 A/B on、独立 13 题 off，满分分别为 144 与 96。
 - **历史 adopted full/A-B**：canonical `0.3.2` 的九个 runner，C01-C19 与 13 题 A/B，满分分别为 144 与 96。
 - **历史 targeted**：canonical `0.3.3` 的 ideation/defensive，以及未发布 `0.3.5` 的 intent/verification。
-- **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。当前 `0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
+- **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。`0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
 
 可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
 

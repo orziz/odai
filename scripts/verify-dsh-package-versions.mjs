@@ -42,10 +42,10 @@ const releaseContracts = readReleaseContracts();
 if (releaseContracts.dshRange !== release.dshRange
   || releaseContracts.sourceDshVersion !== release.sourceDshVersion
   || JSON.stringify(releaseContracts.dshVersions) !== JSON.stringify(release.dshVersions)) {
-  throw new Error(`dsh/release-contracts.json must match the ${packageVersion} range, source, and tested anchors`);
+  throw new Error(`dsh/release-contracts.json must match the ${packageVersion} range, source, and matrix targets`);
 }
 
-process.stdout.write(`DSH package versions match: ${packageVersion}; peer @deepseek-ai/dsh ${release.dshRange}; tested ${release.dshVersions.join(", ")}; compatibility matrix verified\n`);
+process.stdout.write(`DSH package versions match: ${packageVersion}; peer @deepseek-ai/dsh ${release.dshRange}; matrix targets ${release.dshVersions.join(", ")}; compatibility metadata verified\n`);
 
 function readPackage(relativePath, expectedName, surface) {
   const packageJson = JSON.parse(readFileSync(resolve(repoRoot, relativePath), "utf8"));
@@ -90,7 +90,7 @@ function readReleaseContracts() {
     return release.version;
   });
   if (new Set(versions).size !== versions.length) throw new Error(`${relativePath} must list unique releases`);
-  if (!versions.includes(document.sourceDshVersion)) throw new Error(`${relativePath} sourceDshVersion must be a tested release`);
+  if (!versions.includes(document.sourceDshVersion)) throw new Error(`${relativePath} sourceDshVersion must be a matrix target`);
   return { dshRange: document.dshRange, sourceDshVersion: document.sourceDshVersion, dshVersions: versions };
 }
 
@@ -135,10 +135,10 @@ function readCompatibilityMatrix() {
     const sourceDshVersion = entry.sourceDshVersion ?? exactDshVersions.at(-1);
     if (typeof dshRange !== "string" || validRange(dshRange) === null
       || exactDshVersions.some((version) => !satisfies(version, dshRange))) {
-      throw new Error(`${label} must declare a valid dshRange containing every tested version`);
+      throw new Error(`${label} must declare a valid dshRange containing every matrix target`);
     }
     if (!exactDshVersions.includes(sourceDshVersion)) {
-      throw new Error(`${label} sourceDshVersion must be a tested version`);
+      throw new Error(`${label} sourceDshVersion must be a matrix target`);
     }
     for (const version of packageVersions) {
       if (releases.has(version)) {

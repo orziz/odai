@@ -23,6 +23,8 @@ jobs:
         run: |
           node scripts/validate-odai-skill.mjs
           node --test scripts/validate-odai-skill-contracts.test.mjs
+      - name: Test canary harness infrastructure
+        run: node --test scripts/odai-canary-harness.test.mjs
       - name: Check maintenance scripts
         run: |
           node --check scripts/validate-odai-skill.mjs

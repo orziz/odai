@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The current `0.2.25` Plugin and Agent candidate accepts exactly `dsh@0.1.2-rc.1` and retires rc.2 compatibility and its legacy Agent renderer. It fixes Plugin-only Control Center startup by registering the host when Web publishes `connection` after the Odai runtime, and the unavailable-host message now states that no separate Control Center package is required. `dsh@0.1.3-alpha.1` has a byte-identical Standard composition and builds from its official tag, but remains outside the peer contract because npm has no release artifact for matrix verification and its v0-to-v1 Session migration refuses historical external Odai events. Published package versions retain their historical compatibility entries. Normal package lifecycle and runtime paths do not inspect old session logs; after upgrading DSH from rc.2 to rc.1, a blocked old session can be handled only through the explicit stopped-process `npx odai-dsh-plugin legacy-session-repair --yes` utility. The Plugin command requires `pnpm` on `PATH`. Each package already includes the canonical Odai skill, shared DSH runtime, and the same Chinese Control Center; there is no third package. Plugin exposes Control Center automatically. Interactive Agent install describes the existing profile source/version and asks at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, or other text leaves the Web profile unchanged. Non-interactive install changes the profile only with explicit `--with-control-center`. The Agent preserves every capability from the pinned DSH Standard preset and adds Odai as a scoped extension. Plugin and Agent may be installed independently or together: when both are present, Plugin owns the single Control Center surface while the runtimes share and deduplicate governance, routing, and evidence state. The existing provider-neutral `odai-cli` remains a separate product.
+The current `0.2.26` Plugin and Agent candidate accepts exactly `dsh@0.1.2-rc.1` and retires rc.2 compatibility and its legacy Agent renderer. It fixes Plugin-only Control Center startup by registering the host when Web publishes `connection` after the Odai runtime, and the unavailable-host message now states that no separate Control Center package is required. `dsh@0.1.3-alpha.1` has a byte-identical Standard composition and builds from its official tag, but remains outside the peer contract because npm has no release artifact for matrix verification and its v0-to-v1 Session migration refuses historical external Odai events. Published package versions retain their historical compatibility entries. Normal package lifecycle and runtime paths do not inspect old session logs; after upgrading DSH from rc.2 to rc.1, a blocked old session can be handled only through the explicit stopped-process `npx odai-dsh-plugin legacy-session-repair --yes` utility. The Plugin command requires `pnpm` on `PATH`. Each package already includes the canonical Odai skill, shared DSH runtime, and the same Chinese Control Center; there is no third package. Plugin exposes Control Center automatically. Interactive Agent install describes the existing profile source/version and asks at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, or other text leaves the Web profile unchanged. Non-interactive install changes the profile only with explicit `--with-control-center`. The Agent preserves every capability from the pinned DSH Standard preset and adds Odai as a scoped extension. Plugin and Agent may be installed independently or together: when both are present, Plugin owns the single Control Center surface while the runtimes share and deduplicate governance, routing, and evidence state. The existing provider-neutral `odai-cli` remains a separate product.
 
 Both DSH packages default output to **soft concise**. Users can explicitly select normal output or the optional **economy mode**, which combines concise presentation with a user-adjustable provider output ceiling: it defaults to `500` when economy is requested without another value. The ceiling never changes child-agent, compaction, checkpoint, or internal context budgets and may be exceeded or ignored by the provider. See [`dsh/README.md`](dsh/README.md#install-and-use) for the complete three-mode contract.
 
@@ -160,12 +160,11 @@ The point is not to slow the agent down. The point is to make sure it is fast in
                              |
                   new evidence updates the path
 
-Only complex or long-running work loads durable state,
-trusted memory, agent coordination, independent challenge, or consensus;
-existing memory stays authoritative instead of being mirrored.
+Add support for an actual gap, then remove it when stable;
+persist state for resumption and delegate for a distinct contribution.
 ```
 
-The framework owns the task from understanding through delivery. Six flat references provide only the boundary, craft, executable planning and durable handoff, verification, support, or external capability guidance needed at the moment; there is no separate orchestrator workflow or user-selected domain package.
+The framework owns the task from understanding through delivery. Eight on-demand references own boundaries, planning, craft, verification, recovery support, external capabilities, everyday care, and crisis safety. Each addresses only the current gap.
 
 odai's complete capability is not just its entry text. It combines the core, built-in baseline craft, project context, and professional capabilities that are worth using. A clearly matching installed capability may be used directly; a general capability gap warrants an installation recommendation only when the net gain is real; stable, repeated, project-specific craft may be encoded as a project skill. Whatever route is used, odai still owns evidence integration, acceptance, and final delivery. Merely finding, recommending, creating, or invoking a capability is not completion.
 
@@ -176,12 +175,13 @@ The internal structure is organized by responsibility, not by mandatory stages:
 | Layer | Purpose |
 | --- | --- |
 | Kernel | Core principle, adaptive progression, minimum boundaries, and loading map |
+| `care.md` | Non-crisis everyday support, reduced action burden, and user-controlled response styles |
 | `human-safety.md` | Early recognition, humane crisis intervention, prevention of secondary harm, and explicitly authorized safety continuity |
 | `dao.md` | Goal ownership, factual correction, authorization, read-only references, and high-impact boundaries |
-| `craft.md` | Lightweight planning, implementation, design, UI and real-time interaction, writing, and review |
+| `craft.md` | Implementation, design, UI and real-time interaction, writing, and review for an agreed result |
 | `planning.md` | Executable engineering plans, requirement coverage, work-package dependencies, durable handoffs, and recovery order |
 | `verification.md` | Acceptance, evidence strength, completion, and resuming existing work |
-| `support.md` | Self-calibration, performance recovery, durable state and memory, relationship continuity, consensus, and repeated review |
+| `support.md` | Minimal recovery support, restored autonomy, and memory boundaries; planning owns resumable task state |
 | `leverage.md` | Capability escalation and delegation, external capability discovery, net-benefit decisions, installation, creation, composition, and agent collaboration |
 
 Domain depth is inferred from the task instead of selected as a package. Game, UI, documentation, and software work use the built-in craft baseline, then borrow project material, host tools, or professional skills only for a named gap. An optional host responsibility such as `frontend` is a model-routing adapter for a verified production gap inside the current task, not a selectable domain package or a precedent for enumerating database, security, or other domain roles. Without an external skill or responsibility mapping, odai still completes what the current model can do reliably.
@@ -293,6 +293,8 @@ Replace `all` with `codex`, `claude`, `copilot`, `gemini`, `grok`, or `kimi` whe
 Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapter does not pretend that Stop validation is enforceable. The runtime checks structured write tools and project-declared commands only. It does not parse arbitrary shell writes or infer user intent, target files, or test strategy. Hooks are a lightweight fuse alongside host permissions, sandboxing, and human confirmation—not a complete security boundary. Review the generated adapter and `.odai/hooks.json` before enabling them.
 
 ## Evaluation
+
+Canonical `0.3.9` has not run model evaluations. The table retains the frozen `0.3.8` GPT-6 Astra results and earlier runs; it does not certify the new candidate.
 
 The current results cover 19 realistic full-plan tasks and a 13-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. Fingerprints preserve exact reproducibility; unrelated routing assets or maintenance edits do not invalidate an entire result table when the prompt, fixture, model configuration, scoring semantics, and case-relevant skill behavior remain equivalent. GPT-6 Astra, Gemini 3.7, and DeepSeek V4 Pro (DSH) ran under the cross-platform `odai-canary-isolation/v1` contract; the other published rows predate that contract and are retained as historical capability evidence.
 

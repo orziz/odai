@@ -58,6 +58,7 @@ if (!existsSync(skillFile)) fail("SKILL.md: missing");
 const skillText = existsSync(skillFile) ? readFileSync(skillFile, "utf8") : "";
 validateFrontmatter(skillText);
 validateConstitution(skillText);
+validateCurrentJudgment(skillText);
 validateStructure();
 validateBehavior();
 validateOpenaiMetadata();
@@ -149,6 +150,34 @@ function validateConstitution(text) {
   }
 }
 
+function validateCurrentJudgment(text) {
+  const section = text.match(/^## 当前判断\r?\n([\s\S]*?)(?=^## )/m)?.[1] || "";
+  // Protect the five distinct responsibilities, not only their names in the
+  // navigation string. These content anchors do not prove model behavior.
+  const contracts = new Map([
+    ["事", [/交付/u, /结果/u, /不能丢|不可遗漏|必须保留/u]],
+    ["实", [/事实/u, /假设/u, /建议/u, /待决定/u, /做法|路线/u]],
+    ["法", [/完整/u, /解决/u, /改动/u, /风险/u, /成本/u, /维护/u]],
+    ["成", [/证据/u, /结果/u, /主要风险/u]],
+    ["界", [/授权/u, /后果/u, /用户决定/u, /保护/u]],
+  ]);
+  const definitions = [...section.matchAll(/^- \*\*([^*\r\n]+)\*\*：([^\r\n]*)/gm)];
+  if (definitions.length !== contracts.size || definitions.some(([, name]) => !contracts.has(name))) {
+    fail("SKILL.md: current judgment must contain exactly the five owned definitions");
+  }
+  for (const [name, patterns] of contracts) {
+    const matches = definitions.filter(([, label]) => label === name);
+    if (matches.length !== 1) {
+      fail(`SKILL.md: current judgment ${name} must have exactly one definition`);
+    } else if (patterns.some((pattern) => !pattern.test(matches[0][2]))) {
+      fail(`SKILL.md: current judgment ${name} lost its responsibility`);
+    }
+  }
+  if (!/五项不是阶段，也不外显/u.test(section)) {
+    fail("SKILL.md: current judgment must remain non-staged and implicit");
+  }
+}
+
 function validateStructure() {
   const checks = [
     {
@@ -156,8 +185,8 @@ function validateStructure() {
       headings: ["精神内核", "当前判断", "按表现分配支撑", "共同行动边界", "完成"],
       anchors: [
         "`事｜实｜法｜成｜界`",
-        "行动前须有充分且唯一的意图证据",
-        "不能让目标变唯一",
+        "目标足够清楚且当前动作已获授权就推进",
+        "不能替代缺失的用户决定",
         "**自主完成**",
         "**探索构想**",
         "讨论不授权写入或实施",
@@ -244,9 +273,10 @@ function validateBehavior() {
         /宿主已证能力[^。\n]*实际表现[^。\n]*最低充分能力/,
         /已暴露不再问，未暴露不猜/,
         /总控持有目标、状态、实施、修正与交付/,
-        /独立责任只有能改变结果且净收益已证时才用/,
+        /独立责任只为具体缺口使用[^。\n]*预期收益须有依据[^。\n]*实际贡献由回交证据验证/,
         /自主完成[\s\S]{0,160}直接闭环[^。\n]*不额外制造计划、清单或状态/,
         /结构化支撑[\s\S]{0,180}稳定后撤回/,
+        /预期红测和已查明的环境缺失不单独触发支撑升级/,
         /支撑只能补当前缺口[^。\n]*不能降低目标、删减验收/,
         /危机保护[\s\S]{0,260}明确自残、轻生或即时危险时任务让位/,
       ],
@@ -259,8 +289,13 @@ function validateBehavior() {
         /用户点名局部结果[^。\n]*只改完成它所需对象/,
         /背景、约束、样式、示例和参考实现默认只读[^。\n]*不产生写入授权/,
         /根因和手段先作为待验证输入/,
-        /方向性改进有多个合理交付物[^。\n]*完整呈现[^。\n]*范围分歧[^。\n]*真实结果、非目标与不可接受退化/,
+        /多种实现方式不等于多种用户目标[^。\n]*普通实现细节自主决定/,
+        /只有未决分歧会实质改变交付结果、价值取舍、写入范围或难撤回后果[^。\n]*现有上下文不能决定[^。\n]*才请用户选择/,
+        /用户已明确委托模型判断的范围内[^。\n]*自主作出有依据的取舍/,
+        /委托不覆盖未说明的扩围或外部后果/,
         /低成本或可撤回不能替代对齐/,
+        /实施、提交或发布授权只作用于已对齐的目标、范围与后果[^。\n]*不能替代缺失的用户决定/,
+        /实施授权由当前请求、上下文和仍有效的既有授权共同确定[^。\n]*不要求固定措辞/,
         /用户纠正使目标、范围或授权变化时[^。\n]*重新对齐受影响部分/,
         /只指出遗漏、未执行或错误完成声明时[^。\n]*在仍有效的授权内补做并重验/,
         /状态依事实与事件改变[^。\n]*未结束原位更新[^。\n]*叙述不算迁移/,
@@ -393,10 +428,14 @@ function validateBehavior() {
         /用户明确要求独立复核时[^。\n]*独立性本身就是验收属性/,
         /frontend[^。\n]*不是领域资料包/,
         /高后果只提高证据、授权和验收强度，不自动制造角色调用/,
+        /预期不是已证收益[^。\n]*不要求首次调用先有该调用的历史结果/,
+        /同一模型的独立上下文可以提供独立复核[^。\n]*不能冒充模型升级/,
+        /用量缺失限制成本结论[^。\n]*不抹掉已核实的交付证据/,
+        /只有新的可核查修正依据才支持重试[^。\n]*停止条件/,
         /路由是否成立看实际调用，不看配置或自报/,
         /不能取得所需能力时，继续当前能力可安全推进的部分/,
         /未安装路由器时，odai 仍完整可用/,
-        /安装或启用前征得用户同意/,
+        /安装或启用须有用户授权[^。\n]*既有授权已覆盖[^。\n]*不重复询问/,
         /单一能力已能完整解决就不组合/,
         /review 只读/,
       ],
@@ -518,7 +557,7 @@ function validateRoutingSources() {
   }
   const roleSources = [
     ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施、修正回路与最终交付", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "总控在当前上下文做最小修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
-    ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", "不宣称节省成本"]],
+    ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", referenceFile("leverage")]],
     ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "mode: direct", "mode: planned", "target", "evidence", "scope", "decision", "交回总控", "review: none", "accept", "stop", "steps", "增量重规划", "researcher 来源账本"]],
     ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整 `accept`", "`pass`、`fail` 或 `unresolved`", "route: execution", "route: planning", "route: user", "route: blocked", "不得制造额外流程"]],
     ["frontend", readFileSync(roleFiles[4], "utf8"), ["frontend 专业责任", "不是第二个总控", "允许与禁止范围", "总控或 planner", "当前任务线程", "有界独立上下文", referenceFile("craft"), "局部修复保持最小", "不写入本通用责任合同"]],

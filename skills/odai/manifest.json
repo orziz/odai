@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "name": "odai",
-  "skillVersion": "0.3.8",
+  "skillVersion": "0.3.9",
   "runtimeContract": 6,
   "roleFiles": {
     "controller": "assets/routing-roles/controller.md",

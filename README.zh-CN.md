@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前 `0.2.25` Plugin 与 Agent 候选精确支持 `dsh@0.1.2-rc.1`，并退役 rc.2 兼容及其 Agent legacy renderer。Plugin-only Web profile 现在会在 DSH 延后发布 `connection` 服务时注册 Control Center host，不再出现 client 已加载但 `/odai-control-center` 未注册；host 不可用提示也会明确说明无需另装 Control Center 包。`dsh@0.1.3-alpha.1` 的 Standard composition 与 rc.1 逐字节相同，官方 tag 也能完成构建，但暂不进入 peer 合同：npm 尚无可供 release matrix 验证的发布制品，且其 v0→v1 Session 迁移会拒绝历史外部 Odai 事件。已发布版本继续保留各自的历史兼容记录。正常安装、更新、卸载和 runtime 不检查旧 session 日志；从 rc.2 升级 DSH 到 rc.1 后，若旧 session 被历史 Odai event 阻断，只能先停掉所有 DSH 进程，再显式运行一次 `npx odai-dsh-plugin legacy-session-repair --yes`。Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 会说明现有 profile 的来源和版本，并在 `[Y/n]` 询问；直接回车、`y` 或 `yes` 确认，EOF、`n`、`no` 或其他文本不修改 Web profile。非交互安装必须显式传 `--with-control-center` 才会修改 profile。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
+当前 `0.2.26` Plugin 与 Agent 候选精确支持 `dsh@0.1.2-rc.1`，并退役 rc.2 兼容及其 Agent legacy renderer。Plugin-only Web profile 现在会在 DSH 延后发布 `connection` 服务时注册 Control Center host，不再出现 client 已加载但 `/odai-control-center` 未注册；host 不可用提示也会明确说明无需另装 Control Center 包。`dsh@0.1.3-alpha.1` 的 Standard composition 与 rc.1 逐字节相同，官方 tag 也能完成构建，但暂不进入 peer 合同：npm 尚无可供 release matrix 验证的发布制品，且其 v0→v1 Session 迁移会拒绝历史外部 Odai 事件。已发布版本继续保留各自的历史兼容记录。正常安装、更新、卸载和 runtime 不检查旧 session 日志；从 rc.2 升级 DSH 到 rc.1 后，若旧 session 被历史 Odai event 阻断，只能先停掉所有 DSH 进程，再显式运行一次 `npx odai-dsh-plugin legacy-session-repair --yes`。Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 会说明现有 profile 的来源和版本，并在 `[Y/n]` 询问；直接回车、`y` 或 `yes` 确认，EOF、`n`、`no` 或其他文本不修改 Web profile。非交互安装必须显式传 `--with-control-center` 才会修改 profile。Agent 完整保留所固定 DSH Standard preset 的全部能力，再以 scoped 扩展叠加 Odai。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
 
 两个 DSH 包都默认使用**软精简**输出。用户可以显式切换到正常模式，或启用可选的**经济模式**：它在软精简基础上增加可调的 provider 输出 ceiling；用户只说“经济模式”而未给其他值时默认使用 `500`。该 ceiling 不会影响子代理、compaction、checkpoint 或内部上下文预算，provider 仍可能超过或忽略它。完整三档契约见 [`dsh/README.md`](dsh/README.md#install-and-use)。
 
@@ -160,12 +160,11 @@ odai 会从当前宿主的真实能力目录配置一个 controller 与 planner�
                              |
                        新证据及时改路
 
-只有复杂或长期任务才加载持久状态、
-可信记忆、agent 协作、独立挑战或合议；
-已有记忆载体优先复用，不另建第二套真相。
+按实际缺口取得支撑，稳定后撤回；
+确需续作才外化状态，确有独立贡献才协作。
 ```
 
-odai 从理解到交付持续负责当前任务。六份扁平资料只补当下需要的边界、工艺、可执行计划与持久交接、验证、支撑或外部能力；不存在另一套 orchestrator 流程，也不让用户选择领域包。
+odai 从理解到交付持续负责当前任务。八份按需资料分别负责边界、计划、制作、验证、失稳支撑、外部能力、日常关怀与危机保护，各自只补当前缺口。
 
 odai 的完整能力不只是入口文本，而是“内核 + 内置基本工艺 + 项目上下文 + 值得借用的专业能力”。已安装且明确匹配的能力可直接借用；通用缺口只在净增益成立时推荐安装；稳定、反复且项目专属的工艺才值得固化成项目 skill。不论路线如何，odai 都负责整合原始证据、验收与最终交付；仅仅“找到、推荐、创建或调用了能力”不算成事。
 
@@ -176,12 +175,13 @@ odai 的完整能力不只是入口文本，而是“内核 + 内置基本工艺
 | 层级 | 职责 |
 | --- | --- |
 | 根内核 | 总纲、自适应推进、最小底线与加载地图 |
+| `care.md` | 非危机日常关怀、降低行动负担与用户可控的回应风格 |
 | `human-safety.md` | 人身与心理危机的早期识别、自然干预、二次伤害防止与授权安全连续性 |
 | `dao.md` | 事的所有权、事实校准、授权、参考只读与高影响边界 |
-| `craft.md` | 轻量规划、实施、设计、UI / 实时交互、文档与审查 |
+| `craft.md` | 已决定结果的实施、设计、UI / 实时交互、文档与审查工艺 |
 | `planning.md` | 可执行工程计划、需求覆盖、工作包依赖、持久交接与恢复顺序 |
 | `verification.md` | 验收、证据强度、完成判断与旧任务恢复 |
-| `support.md` | 自我校准、表现恢复、长期状态与记忆、关系连续性、合议与连续审查 |
+| `support.md` | 失稳后的最小支撑、恢复自主与记忆边界；续作状态由 planning 统一维护 |
 | `leverage.md` | 能力升降、外部能力的发现、净增益、安装、创建、组合与 agent 协作 |
 
 领域深度由任务事实自动判断，不让用户选择内部资料包。游戏、UI、文档和软件任务先使用内置工艺，再只为明确缺口借用项目资料、宿主工具或专业技能。`frontend` 这类可选宿主责任只在当前任务已证制作缺口内适配用户配置的模型与预算，不是可选领域包，也不构成按数据库、安全等领域继续枚举角色的先例；没有外部技能或责任映射时，odai 仍完成当前模型能够可靠完成的部分。
@@ -293,6 +293,8 @@ node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
 Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会伪造 Stop 验收。Hooks 只检查结构化写工具和项目明确配置的命令，不解析任意 shell 写入，也不推断用户意图、目标文件或测试方案；它们是权限、沙箱和人工确认之外的轻量保险丝，不是完整安全边界。启用前应审查生成配置与 `.odai/hooks.json`。
 
 ## 评测
+
+当前 canonical `0.3.9` 尚未运行模型评测。下表保留 `0.3.8` 的 GPT-6 Astra 与更早版本的冻结结果，不作为新候选的通过证明。
 
 当前结果覆盖 19 条全量现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
 

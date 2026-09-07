@@ -2155,7 +2155,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   };
   const planning = await tools.get("odai_reference").execute({ reference: "planning" }, { agent });
   assert.equal(planning.reference, "planning");
-  assert.equal(planning.skillVersion, "0.3.8");
+  assert.equal(planning.skillVersion, "0.3.9");
   assert.equal(planning.runtimeContract, 6);
   assert.match(planning.digest, /^[a-f0-9]{64}$/u);
   assert.match(planning.contract, /工程实施计划/u);
