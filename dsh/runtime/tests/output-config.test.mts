@@ -152,9 +152,15 @@ test("output policy validates explicit user-owned values and renders bounded gui
   assert.throws(() => resolveOutputPolicy({ concise: true, model: "forbidden" }), /unknown fields: model/u);
   assert.throws(() => resolveOutputPolicy(Object.create({ concise: true })), /own boolean property/u);
   assert.equal(renderOutputPolicyPrompt({ concise: false }), "");
-  assert.match(renderOutputPolicyPrompt({ concise: true }), /never permits omitting required results/u);
-  assert.match(renderOutputPolicyPrompt({ concise: true }), /never reduces child-agent, compaction, checkpoint/u);
-  assert.match(renderOutputPolicyPrompt({ concise: false, maxTokens: 2_500 }), /provider enforcement is not guaranteed/iu);
+  const concisePrompt = renderOutputPolicyPrompt({ concise: true });
+  assert.match(concisePrompt, /unless the user explicitly asks for detail/u);
+  assert.match(concisePrompt, /never permits omitting required results, evidence, risks, blockers, or verification/u);
+  assert.match(concisePrompt, /never reduces child-agent, compaction, checkpoint/u);
+  assert.doesNotMatch(concisePrompt, /overrides this ceiling/u);
+  const maxOnlyPrompt = renderOutputPolicyPrompt({ concise: false, maxTokens: 2_500 });
+  assert.match(maxOnlyPrompt, /provider enforcement is not guaranteed/iu);
+  assert.match(maxOnlyPrompt, /never permits omitting required results, evidence, risks, blockers, or verification/u);
+  assert.match(maxOnlyPrompt, /planner or frontend maxTokens overrides this ceiling/u);
 });
 
 test("in-place responsibility budgets report unconfigured, inherited, and explicit ceilings", () => {

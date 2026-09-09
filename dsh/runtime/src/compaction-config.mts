@@ -53,6 +53,8 @@ export const COMPACTION_STATE_PROTOCOL = [
   "Additional checkpoint integrity protocol:",
   "- Treat facts explicitly marked CURRENT, corrected, or authoritative as the active state.",
   "- Facts marked SUPERSEDED, REJECTED, obsolete, or historical may be retained only as rejected history; never describe them as current, latest, selected, or pending.",
+  "- Preserve the full user objective, unfulfilled requirements and prohibitions with their source pointers; a local correction or completed slice does not replace unrelated requirements.",
+  "- Keep completed, unverified, failed, and unknown action outcomes distinct. Missing receipts do not prove an action never ran; preserve the query or idempotency condition before any retry.",
   "- Preserve opaque identifiers, paths, commands, status values, delimiters, and numeric values byte-for-byte when they determine continuation state.",
   "- Before emitting the checkpoint, self-check that no rejected fact is framed as active and that no active value conflicts with another section.",
 ].join("\n");
@@ -194,9 +196,9 @@ export function applyCompactionTarget(
 
 export function applyCompactionStateProtocol(
   options: CompactionRequestOptions | undefined,
-  target: CompactionTarget | undefined,
+  _target?: CompactionTarget,
 ): boolean {
-  if (options?.purpose !== "compaction" || target === undefined) return false;
+  if (options?.purpose !== "compaction") return false;
   if (!Array.isArray(options.messages) || !Object.isExtensible(options)) {
     throw new Error("configured Odai compaction model requires a mutable message envelope for checkpoint integrity");
   }

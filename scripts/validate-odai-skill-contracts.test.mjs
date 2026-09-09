@@ -88,21 +88,30 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       skillText.replace("五项不是阶段，也不外显。", ""), /current judgment/u);
 
     const intentBoundaries = [
+      "围绕用户要的结果判断，只保留会改变行动的要求、事实、约束和待决项",
       "目标足够清楚且当前动作已获授权就推进",
       "多种实现方式不等于多种用户目标",
-      "只有未决分歧会实质改变交付结果、价值取舍、写入范围或难撤回后果",
-      "用户已明确委托模型判断的范围内",
-      "委托不覆盖未说明的扩围或外部后果",
-      "实施、提交或发布授权只作用于已对齐的目标、范围与后果，不能替代缺失的用户决定",
+      "上下文无法裁决且分歧会改变结果、价值取舍、写入范围或难撤回后果",
+      "委托判断不补事实、授权、扩围或外部后果",
+      "材料标为未决的取舍，在用户决定或裁决证据出现前不得写成主方案、默认值或验收",
+      "给出权衡和建议并保留决定点，不阻断其余交付",
+      "实施、提交或发布授权只对已对齐的目标、范围和后果有效，不能替代缺失的用户决定",
       "低成本或可撤回不能替代对齐",
       "探索、决定与实施不自动切换",
-      "实施授权由当前请求、上下文和仍有效的既有授权共同确定",
-      "用户纠正使目标、范围或授权变化时",
-      "只指出遗漏、未执行或错误完成声明时",
+      "实施授权看当前请求、上下文和有效授权",
+      "用户纠正目标、范围或授权时，只重对齐受影响部分",
+      "指出漏做或错报完成时，在有效授权内补做重验",
+      "旧任务证据、计划、摘要或模型自报不替代当前验收",
+      "验证随影响面扩展：局部只跑命中检查，共享改动覆盖受影响消费者，不跑无关全量",
+      "完成只看当前要求、产物和相称验证",
+      "已安装技能明确匹配且能改变结果时完整读取",
     ];
     for (const [index, boundary] of intentBoundaries.entries()) {
       await rejects(`missing intent boundary ${index + 1}`, skillText.replace(boundary, ""), /SKILL\.md: missing/u);
     }
+
+    const minimalLookupGate = "先查最可能作答的权威来源，不预先捆绑广泛盘点或旁证，答案充分即停";
+    await rejects("simple lookup must not pre-batch broad discovery", skillText.replace(minimalLookupGate, ""), /missing adaptive support/u);
 
     const supportGate = "预期红测和已查明的环境缺失不单独触发支撑升级";
     await rejects("ordinary feedback is not proof of instability", skillText.replace(supportGate, ""), /missing adaptive support/u);

@@ -166,6 +166,7 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
           ...(invalidation.backupPath ? { backupPath: invalidation.backupPath } : {}),
           ...(invalidation.error ? { cleanupError: invalidation.error } : {}),
         });
+        applyCompactionStateProtocol(options, undefined);
         inheritCompactionReasoning(options, ctx.sessions, config.compaction.cacheRetention);
         for await (const chunk of downstream) yield chunk;
         return;
@@ -179,9 +180,12 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
       for await (const chunk of downstream) {
         buffered.push(chunk);
         if (chunk.type === "finish" && ["error", "aborted"].includes(chunk.reason?.kind ?? "")) {
-          terminalFailure = chunk.reason?.failure;
+          terminalFailure = chunk.reason?.kind === "aborted"
+            ? { code: "ABORTED", message: "Compaction stream aborted", failure: chunk.reason.failure }
+            : chunk.reason?.failure ?? new Error("Compaction stream finished with error");
         }
       }
+      if (options.signal?.aborted) terminalFailure = { code: "ABORTED", message: "Compaction cancelled" };
       if (!terminalFailure) {
         record({
           status: "applied",
@@ -232,6 +236,7 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
       }
       restoreOriginal();
       const fallbackOptions: CompactionRequest = { ...original, messages: original.messages };
+      applyCompactionStateProtocol(fallbackOptions, undefined);
       inheritCompactionReasoning(fallbackOptions, ctx.sessions, config.compaction.cacheRetention);
       compactionFallbackRequests.add(fallbackOptions);
       record({

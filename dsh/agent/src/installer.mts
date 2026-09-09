@@ -113,6 +113,7 @@ export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 const requiredFiles = Object.freeze([
   "agent.cordis.yml",
   "preset.yml",
+  "odai-governance.mjs",
   "runtime/index.mjs",
   "runtime/session-evidence.mjs",
   "runtime/skill-bundle.mjs",

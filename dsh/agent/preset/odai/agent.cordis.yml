@@ -253,7 +253,7 @@
 # Odai contributes scoped prompt, guard, routing, user-owned responsibility
 # mappings, and evidence listeners. Base controller selection stays host-owned.
 - id: odai-governance
-  name: ./runtime/index.mjs
+  name: ./odai-governance.mjs
   config:
     routing:
       mode: auto

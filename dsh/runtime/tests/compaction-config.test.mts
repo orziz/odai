@@ -127,7 +127,7 @@ test("compaction target validates explicit model options and applies only to com
   );
 });
 
-test("configured compaction targets append one strict state protocol without touching inherited or ordinary calls", () => {
+test("all compaction routes receive one integrity protocol without touching ordinary calls", () => {
   const target = { provider: "openai", model: "gpt-5.6-luna" };
   const originalMessages: DshMessage[] = [{ id: "stock", role: "user", content: [{ type: "text", text: "Stock compaction instruction" }] }];
   const configured = { purpose: "compaction", messages: originalMessages };
@@ -149,8 +149,10 @@ test("configured compaction targets append one strict state protocol without tou
   assert.equal(configured.messages.length, 2);
 
   const inherited = { purpose: "compaction", messages: originalMessages };
-  assert.equal(applyCompactionStateProtocol(inherited, undefined), false);
-  assert.equal(inherited.messages, originalMessages);
+  assert.equal(applyCompactionStateProtocol(inherited), true);
+  assert.equal(inherited.messages[0], originalMessages[0]);
+  assert.deepEqual(inherited.messages[1].content, configured.messages[1].content);
+  assert.equal(applyCompactionStateProtocol(inherited, target), false);
   const ordinary = { purpose: "ordinary", messages: originalMessages };
   assert.equal(applyCompactionStateProtocol(ordinary, target), false);
   assert.equal(ordinary.messages, originalMessages);

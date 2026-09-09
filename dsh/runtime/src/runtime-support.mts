@@ -235,6 +235,7 @@ export async function runRoutedRole({
   let run: RoutedRun | undefined;
   let outcome: Readonly<RoutedRoleOutcome>;
   try {
+    signal.throwIfAborted();
     run = await subagents.start(provider, {
       label: `odai-${decision.role}`,
       prompt: [{ type: "text", text: renderDelegationPrompt(decision, taskText, roleContract) }],
@@ -319,6 +320,15 @@ export async function runRoutedRole({
     }
   }
 
+  if (signal.aborted) {
+    return Object.freeze({
+      ...outcome,
+      status: "fallback",
+      stopReason: "cancelled",
+      output: [],
+      error: "Responsibility cancelled; late output was not accepted.",
+    });
+  }
   return outcome;
 }
 
@@ -336,10 +346,10 @@ export function canonicalPrompt(selection: SkillSelection): string {
     `Canonical skill: ${bundle.manifest.skillVersion}; runtime contract: ${bundle.manifest.runtimeContract}; digest: ${bundle.digest}.`,
     ...(evolution ? [evolution] : []),
     ...(fallback ? [fallback] : []),
-    "Apply this governance to every request. Keep the controller as the final delivery owner; use another role only for a real independent gap with observable net benefit.",
-    "Odai governance is already loaded by this runtime; do not call the skill tool or read SKILL.md to load odai again.",
+    "This governance is active for every request and already loaded by this runtime; do not call the skill tool or read SKILL.md to load it again.",
+    "The controller owns final delivery; delegate only for a real independent gap with observable net benefit.",
     "",
-    bundle.skillText,
+    bundle.skillBody,
   ].join("\n");
 }
 

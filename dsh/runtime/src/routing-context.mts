@@ -209,9 +209,17 @@ export interface RoleContextDiagnostics {
   readonly hostEvidenceAvailable: boolean;
 }
 
+export interface RoleContextTaskBoundary {
+  readonly source: "bound" | "latest" | "none" | "unresolved";
+  readonly startEventIndex: number;
+  readonly priorEventCount: number;
+  readonly messageId?: string;
+}
+
 export interface RoleContextPacket {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly role: string;
+  readonly task: RoleContextTaskBoundary;
   readonly currentTask: string;
   readonly requirements: readonly RequirementDecision[];
   readonly entries: readonly RoleContextEntry[];
@@ -229,6 +237,8 @@ export interface RoleContextOptions {
   maxChars?: number;
   maxEvents?: number;
   requirements?: readonly RequirementDecision[];
+  taskMessageId?: string;
+  evidenceEvents?: readonly DshEvent[];
 }
 
 interface NativeToolCall {
@@ -266,6 +276,56 @@ function directUserMessage(event: DshEvent): UnknownRecord | undefined {
 
 function isDirectUserEvent(event: DshEvent): boolean {
   return directUserMessage(event) !== undefined;
+}
+
+function directUserMessageId(event: DshEvent): string | undefined {
+  const message = directUserMessage(event);
+  return typeof message?.id === "string" && message.id.trim() !== "" ? message.id.trim() : undefined;
+}
+
+function resolveTaskBoundary(
+  events: readonly DshEvent[],
+  requestedMessageId: unknown,
+): Readonly<RoleContextTaskBoundary> {
+  const boundMessageId = typeof requestedMessageId === "string" ? requestedMessageId.trim() : "";
+  if (boundMessageId) {
+    let startEventIndex = -1;
+    let unique = true;
+    for (let index = 0; index < events.length; index += 1) {
+      if (directUserMessageId(events[index] as DshEvent) !== boundMessageId) continue;
+      if (startEventIndex >= 0) {
+        unique = false;
+        break;
+      }
+      startEventIndex = index;
+    }
+    if (!unique || startEventIndex < 0) {
+      return Object.freeze({
+        source: "unresolved",
+        startEventIndex: events.length,
+        priorEventCount: events.length,
+        messageId: boundMessageId,
+      });
+    }
+    return Object.freeze({
+      source: "bound",
+      startEventIndex,
+      priorEventCount: startEventIndex,
+      messageId: boundMessageId,
+    });
+  }
+
+  const startEventIndex = events.findLastIndex(isDirectUserEvent);
+  if (startEventIndex < 0) {
+    return Object.freeze({ source: "none", startEventIndex: 0, priorEventCount: 0 });
+  }
+  const messageId = directUserMessageId(events[startEventIndex] as DshEvent);
+  return Object.freeze({
+    source: "latest",
+    startEventIndex,
+    priorEventCount: startEventIndex,
+    ...(messageId ? { messageId } : {}),
+  });
 }
 
 function toolResultBlocks(value: unknown, depth = 0): UnknownRecord[] {
@@ -341,10 +401,10 @@ function resultReferencesCall(event: DshEvent, call: NativeToolCall): boolean {
     && event.sourceEventSeqs[0] === call.seq;
 }
 
-function nativeToolCalls(events: readonly DshEvent[]): Map<string, NativeToolCall> {
+function nativeToolCalls(events: readonly DshEvent[], startEventIndex = 0): Map<string, NativeToolCall> {
   const calls = new Map<string, NativeToolCall>();
   const duplicates = new Set<string>();
-  for (let index = 0; index < events.length; index += 1) {
+  for (let index = startEventIndex; index < events.length; index += 1) {
     const event = events[index];
     if (event?.type !== "tool/call") continue;
     const callId = event.data?.callId;
@@ -526,7 +586,7 @@ function coverageFor(
   const latestFailedVerificationIndex = Math.max(latestFailedTestIndex, latestFailedCheckIndex);
   const currentEvidence = acceptanceCount > 0
     && latestDiffIndex >= 0 && latestVerificationIndex >= 0
-    && latestDiffIndex > latestWriteIndex && latestVerificationIndex > latestDiffIndex
+    && latestDiffIndex > latestWriteIndex && latestVerificationIndex > latestWriteIndex
     && latestVerificationIndex > latestFailedVerificationIndex
     && diffEntries.some((diff) => verificationEntries.some((verification) => diff.identity !== verification.identity));
   return Object.freeze({
@@ -561,11 +621,12 @@ export function buildRoleContextPacket(
   const requirements = requirementsFit ? suppliedRequirements : Object.freeze([] as RequirementDecision[]);
   const includedRequirementChars = requirementsFit ? requirementChars : 0;
   const taskBudget = Math.max(32, Math.floor((maxChars - includedRequirementChars) / 3));
-  const task = truncateText(String(taskText ?? "").trim(), taskBudget);
+  const taskTextBound = truncateText(String(taskText ?? "").trim(), taskBudget);
   const events = sessionEvents(agent?.session);
-  const calls = nativeToolCalls(events);
+  const taskBoundary = resolveTaskBoundary(events, options.taskMessageId);
+  const calls = nativeToolCalls(events, taskBoundary.startEventIndex);
   const mutableDiagnostics: MutableDiagnostics = {
-    rawEventCount: events.length,
+    rawEventCount: Math.max(0, events.length - taskBoundary.startEventIndex),
     evidenceEventCount: 0,
     selectedEvidenceCount: 0,
     omittedEvidenceCount: 0,
@@ -580,14 +641,32 @@ export function buildRoleContextPacket(
   };
   const allEvidence: RoleContextEntry[] = [];
   const preTruncatedIndices = new Set<number>();
-  for (let index = 0; index < events.length; index += 1) {
-    const event = events[index];
-    if (!event) continue;
-    const entry = eventEvidence(event, index, calls, mutableDiagnostics);
-    if (!entry) continue;
+  const nativeHandbacks = new Set(events.filter((event) => event.type === "odai/responsibility-returned").map((event) => event.data.scopeId));
+  const handbacksByAnchor = new Map<number, DshEvent[]>();
+  for (const event of options.evidenceEvents ?? []) {
+    const anchor = event.data.nativeEventSeq;
+    if (event.type !== "odai/responsibility-returned" || typeof anchor !== "number" || !Number.isSafeInteger(anchor)
+      || nativeHandbacks.has(event.data.scopeId)) continue;
+    const siblings = handbacksByAnchor.get(anchor) ?? [];
+    siblings.push(event);
+    handbacksByAnchor.set(anchor, siblings);
+  }
+  const addEntry = (entry: RoleContextEntry | undefined) => {
+    if (!entry) return;
     const bounded = truncateText(entry.text, DEFAULT_MAX_ENTRY_CHARS);
     if (bounded.truncated) preTruncatedIndices.add(entry.index);
     allEvidence.push(Object.freeze({ ...entry, kinds: Object.freeze([...new Set(entry.kinds)]), text: bounded.text }));
+  };
+  for (let index = taskBoundary.startEventIndex; index < events.length; index += 1) {
+    const event = events[index];
+    if (!event) continue;
+    addEntry(eventEvidence(event, index, calls, mutableDiagnostics));
+    const handbacks = typeof event.seq === "number" ? handbacksByAnchor.get(event.seq) ?? [] : [];
+    for (const [offset, handback] of handbacks.entries()) {
+      // Supplemental planning is ordered after its native anchor. It cannot
+      // supply user acceptance, tool results, or change their freshness indexes.
+      addEntry(eventEvidence(handback, index + (offset + 1) / (handbacks.length + 1), calls, mutableDiagnostics));
+    }
   }
   mutableDiagnostics.evidenceEventCount = allEvidence.length;
 
@@ -622,11 +701,11 @@ export function buildRoleContextPacket(
 
   const rendered: RoleContextEntry[] = [];
   let evidenceChars = 0;
-  let textTruncated = !requirementsFit || task.truncated || prioritized.some((entry) => preTruncatedIndices.has(entry.index));
-  const availableChars = Math.max(0, maxChars - task.text.length - includedRequirementChars);
+  let textTruncated = !requirementsFit || taskTextBound.truncated || prioritized.some((entry) => preTruncatedIndices.has(entry.index));
+  const availableChars = Math.max(0, maxChars - taskTextBound.text.length - includedRequirementChars);
   const maxEntryChars = Math.max(96, Math.min(DEFAULT_MAX_ENTRY_CHARS, Math.floor(availableChars / 6)));
   for (const entry of prioritized) {
-    const remaining = maxChars - task.text.length - includedRequirementChars - evidenceChars;
+    const remaining = maxChars - taskTextBound.text.length - includedRequirementChars - evidenceChars;
     if (remaining < 96) { textTruncated = true; break; }
     const bounded = truncateText(entry.text, Math.min(remaining, maxEntryChars));
     rendered.push(Object.freeze({ ...entry, text: bounded.text }));
@@ -636,18 +715,19 @@ export function buildRoleContextPacket(
   rendered.sort((left, right) => left.index - right.index);
 
   const entries = Object.freeze(rendered);
-  const coverage = coverageFor(task.text, entries, requirements);
+  const coverage = coverageFor(taskTextBound.text, entries, requirements);
   const diagnostics: Readonly<RoleContextDiagnostics> = Object.freeze({
     ...mutableDiagnostics,
     hostEvidenceAvailable: mutableDiagnostics.linkedToolResultCount > 0,
   });
   const truncated = textTruncated || mutableDiagnostics.omittedEvidenceCount > 0 || rendered.length < candidates.length;
-  const evidenceCoverage = coverageFor(task.text, candidates, requirements);
+  const evidenceCoverage = coverageFor(taskTextBound.text, candidates, requirements);
   const evidenceMarkers = priorityKinds.map((kind) => {
     const entry = candidates.findLast((candidate) => candidate.kinds.includes(kind));
     return entry ? { kind, index: entry.index, identity: entry.identity } : { kind, index: -1 };
   });
   const evidenceDigest = digestPacket({
+    task: taskBoundary,
     requirements,
     coverage: {
       requirements: evidenceCoverage.requirements,
@@ -682,7 +762,16 @@ export function buildRoleContextPacket(
     },
   });
   const packetBody = Object.freeze({
-    schemaVersion: 2 as const, role, currentTask: task.text, requirements, entries, coverage, diagnostics, truncated, evidenceDigest,
+    schemaVersion: 3 as const,
+    role,
+    task: taskBoundary,
+    currentTask: taskTextBound.text,
+    requirements,
+    entries,
+    coverage,
+    diagnostics,
+    truncated,
+    evidenceDigest,
   });
   const digest = digestPacket(packetBody);
   const reviewerSufficient = coverage.requirements && coverage.acceptanceCount > 0
@@ -690,7 +779,8 @@ export function buildRoleContextPacket(
     && coverage.toolEvidenceCount > 0 && coverage.currentEvidence;
   return Object.freeze({
     ...packetBody, digest, evidenceCount: entries.length, toolEvidenceCount: coverage.toolEvidenceCount,
-    sufficient: role === "reviewer" ? reviewerSufficient : Boolean(task.text),
+    sufficient: taskBoundary.source !== "unresolved"
+      && (role === "reviewer" ? reviewerSufficient : Boolean(taskTextBound.text)),
   });
 }
 
@@ -710,6 +800,7 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
     `role: ${packet.role}`,
     `digest: sha256:${packet.digest}`,
     `evidenceDigest: sha256:${packet.evidenceDigest}`,
+    `taskBoundary: ${JSON.stringify(packet.task)}`,
     `truncated: ${packet.truncated}`,
     `coverage: ${JSON.stringify(packet.coverage)}`,
     `diagnostics: ${JSON.stringify(packet.diagnostics)}`,

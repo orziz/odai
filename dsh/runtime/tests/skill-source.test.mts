@@ -159,9 +159,11 @@ function assemblyFor(ctx: CapturedContext) {
 }
 
 test("bundle manifest validates complete content and full SemVer precedence", () => {
-  assert.equal(bundled.manifest.skillVersion, "0.3.9");
-  assert.equal(bundled.manifest.runtimeContract, 6);
-  assert.equal(bundled.manifest.requiredFiles.length, 27);
+  const manifest: unknown = JSON.parse(readFileSync(resolve(canonicalRoot, "manifest.json"), "utf8"));
+  assert.ok(isUnknownRecord(manifest));
+  assert.equal(bundled.manifest.skillVersion, manifest.skillVersion);
+  assert.equal(bundled.manifest.runtimeContract, manifest.runtimeContract);
+  assert.deepEqual(bundled.manifest.requiredFiles, manifest.requiredFiles);
   assert.match(bundled.roleContracts.researcher, /来源账本只是检索索引/u);
   assert.match(bundled.roleContracts.reviewer, /来源绑定本身不证明语义冲突/u);
   assert.ok(bundled.manifest.requiredFiles.includes("references/care.md"));

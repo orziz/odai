@@ -968,6 +968,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         ? undefined
         : buildRoleContextPacket(agent, routeRole, roleTaskText, {
             ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
+            ...(responsibilityGap?.taskMessageId ? { taskMessageId: responsibilityGap.taskMessageId } : {}),
+            evidenceEvents: evidence.events(agent),
           });
       const reviewerAlreadyDeferred = responsibilityGap?.responsibility === "reviewer"
         && hasReviewerDeferral(evidence.events(agent), responsibilityGap.stateDigest);
@@ -1034,6 +1036,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           mode: "controller-local",
           digest: roleContext.digest,
           evidenceDigest: roleContext.evidenceDigest,
+          taskBoundary: roleContext.task,
           evidenceCount: roleContext.evidenceCount,
           toolEvidenceCount: roleContext.toolEvidenceCount,
           acceptanceCount: localReviewerCoverage.acceptanceCount,
@@ -1188,6 +1191,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       }
       roleContext ??= buildRoleContextPacket(agent, routeRole, roleTaskText, {
         ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
+        ...(responsibilityGap?.taskMessageId ? { taskMessageId: responsibilityGap.taskMessageId } : {}),
+        evidenceEvents: evidence.events(agent),
       });
       const roleDispatch = effectiveRoleDispatch(routeRole, roleState.dispatch, config.routing.mode);
       const inPlaceUpgrade = roleDispatch === "same-turn";
@@ -1199,6 +1204,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         mode: contextMode,
         digest: roleContext.digest,
         evidenceDigest: roleContext.evidenceDigest,
+        taskBoundary: roleContext.task,
         evidenceCount: roleContext.evidenceCount,
         toolEvidenceCount: roleContext.toolEvidenceCount,
         requirementDecisionCount: roleContext.coverage.requirementDecisionCount,

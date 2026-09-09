@@ -111,7 +111,7 @@ async function verifyPinnedComposition(): Promise<string> {
     "# Odai contributes scoped prompt, guard, routing, user-owned responsibility",
     "# mappings, and evidence listeners. Base controller selection stays host-owned.",
     "- id: odai-governance",
-    "  name: ./runtime/index.mjs",
+    "  name: ./odai-governance.mjs",
     "  config:",
     "    routing:",
     "      mode: auto",
@@ -189,7 +189,8 @@ if (!compiledPackage && existsSync(developmentRuntime) && existsSync(development
     cp(developmentRuntime, resolve(sourceRoot, "runtime"), { recursive: true }),
     cp(developmentSkill, resolve(sourceRoot, "skills/odai"), { recursive: true }),
   ]);
-} else if (!existsSync(resolve(sourceRoot, "runtime/index.mjs"))
+} else if (!existsSync(resolve(sourceRoot, "odai-governance.mjs"))
+  || !existsSync(resolve(sourceRoot, "runtime/index.mjs"))
   || !existsSync(resolve(sourceRoot, "skills/odai/SKILL.md"))) {
   throw new Error("Odai Agent verification requires either repository sources or packaged runtime and skill files");
 }

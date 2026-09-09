@@ -49,6 +49,7 @@ export interface SkillBundle {
   readonly provider: string;
   readonly manifest: SkillManifest;
   readonly skillText: string;
+  readonly skillBody: string;
   readonly roleContracts: Readonly<Record<string, string>>;
   readonly referenceContracts: Readonly<Record<string, string>>;
   readonly digest: string;
@@ -324,10 +325,13 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
   if (!skillContent) throw new Error(`Odai skill bundle ${root} is missing SKILL.md`);
   const skillText = skillContent.toString("utf8").trim();
   if (!skillText) throw new Error(`Odai canonical skill is empty: ${entryPath}`);
-  const frontmatter = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u)?.[1];
-  if (!frontmatter || !/^name:\s*odai\s*$/mu.test(frontmatter)) {
+  const frontmatterMatch = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u);
+  const frontmatter = frontmatterMatch?.[1];
+  if (!frontmatterMatch || !frontmatter || !/^name:\s*odai\s*$/mu.test(frontmatter)) {
     throw new Error(`Odai canonical skill entry does not declare name odai: ${entryPath}`);
   }
+  const skillBody = skillText.slice(frontmatterMatch[0].length).trim();
+  if (!skillBody) throw new Error(`Odai canonical skill body is empty: ${entryPath}`);
 
   const roleContracts: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
     ODAI_ROLE_NAMES.map((role) => {
@@ -358,6 +362,7 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
     provider: typeof options.provider === "string" && options.provider ? options.provider : "odai-dsh-runtime",
     manifest,
     skillText,
+    skillBody,
     roleContracts,
     referenceContracts,
     digest: digest.digest("hex"),

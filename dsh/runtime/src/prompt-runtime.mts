@@ -1,4 +1,4 @@
-import { classifyImplementationAuthorization, decideRoute, extractLatestUserText } from "./router.mjs";
+import { decideRoute, extractLatestUserText } from "./router.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import {
   DEFAULT_OUTPUT_POLICY,
@@ -348,12 +348,9 @@ export function createPromptRuntime(deps: PromptDependencies) {
       renderOutputPolicyPrompt(outputSelection.policy),
       renderSessionOutputControlPrompt(outputSelection),
     ].filter(Boolean).join("\n\n");
-    const canonicalCraft = selection.bundle.referenceContracts.craft;
-    const craftPrompt = !childSession
-      && classifyImplementationAuthorization(directText).status === "authorized"
-      && typeof canonicalCraft === "string"
-      ? `# Canonical craft reference\n\n${canonicalCraft.trim()}`
-      : "";
+    // Implementation authorization is not a craft capability gap. The full
+    // reference remains available through odai_reference when its guidance is needed.
+    const craftPrompt = "";
     const routingPrompt = !activation.routingConfig
       ? ""
       : childSession

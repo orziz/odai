@@ -238,13 +238,14 @@ export function renderOutputPolicyPrompt(policy: OutputPolicy): string {
   return [
     "## Odai controller output policy",
     ...(policy.concise ? [
-      "Keep the final user-facing response concise. Include only the result, decisive evidence, unresolved items, and necessary next action; omit routine process narration and repeated context unless the user explicitly asks for detail.",
+      "Keep the final user-facing response concise unless the user explicitly asks for detail: lead with the result; add decisive evidence, unresolved items, or next actions when needed to assess or use it. These are not mandatory sections or a reason to create extra work; omit routine narration and repeated context.",
     ] : []),
+    "This never permits omitting required results, evidence, risks, blockers, or verification.",
     ...(policy.maxTokens === undefined ? [] : [
       `Each controller model request carries a provider output ceiling request of ${policy.maxTokens} tokens, which may include reasoning. Provider enforcement is not guaranteed; prioritize completion and finish before the requested ceiling.`,
+      "A user-configured in-place planner or frontend maxTokens overrides this ceiling only in that responsibility scope; the runtime records the exception.",
     ]),
-    "This policy applies only to controller requests and the final user-facing response. It never reduces child-agent, compaction, checkpoint, or other internal context budgets. A user-configured in-place responsibility maxTokens explicitly overrides this ceiling only inside that routed planner or frontend scope; the runtime records that exception.",
-    "The policy changes presentation and the requested controller budget only; it never permits omitting required results, evidence, risks, blockers, or verification.",
+    "This policy applies only to controller requests and final responses; it never reduces child-agent, compaction, checkpoint, or other internal budgets.",
   ].join("\n");
 }
 

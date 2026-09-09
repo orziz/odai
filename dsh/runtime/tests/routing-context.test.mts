@@ -11,8 +11,8 @@ function eventCommand(event: DshEvent): string {
   return isUnknownRecord(arguments_) && typeof arguments_.command === "string" ? arguments_.command : "";
 }
 
-const userMessage = (text: string): DshMessage => ({
-  id: "user-1",
+const userMessage = (text: string, id = "user-1"): DshMessage => ({
+  id,
   role: "user",
   source: { kind: "user" },
   content: [{ type: "text", text }],
@@ -91,7 +91,13 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
   const agent = agentFor(completeReviewEvents());
   const packet = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现");
 
-  assert.equal(packet.schemaVersion, 2);
+  assert.equal(packet.schemaVersion, 3);
+  assert.deepEqual(packet.task, {
+    source: "latest",
+    startEventIndex: 0,
+    priorEventCount: 0,
+    messageId: "user-1",
+  });
   assert.equal(packet.sufficient, true);
   assert.deepEqual(packet.coverage, {
     requirements: true,
@@ -121,6 +127,135 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
   assert.match(rendered, new RegExp(`digest: sha256:${packet.digest}`, "u"));
   assert.match(rendered, /kinds: tool, diff/u);
   assert.match(rendered, /kinds: tool, test/u);
+  assert.match(rendered, /taskBoundary: \{"source":"latest"/u);
+});
+
+test("task-bound packets exclude evidence from previous direct-user tasks", () => {
+  const previousTask: DshEvent[] = [
+    { type: "user/message", data: userMessage("验收条件 OLD：旧任务必须通过。", "user-old") },
+    { type: "assistant/message", data: { content: [{ type: "text", text: "旧任务规划 OLD-PLAN" }] } },
+    ...nativeToolEvents(
+      "old-diff",
+      "pwsh",
+      { command: "git diff -- old.mts" },
+      "diff --git a/old.mts b/old.mts\n+OLD-PATCH",
+      { callSeq: 10 },
+    ),
+    ...nativeToolEvents(
+      "old-test",
+      "pwsh",
+      { command: "node --test old.test.mts" },
+      "tests 1 pass 1 fail 0 exit code: 0 OLD-TEST",
+      { callSeq: 20 },
+    ),
+  ];
+  const currentTaskIndex = previousTask.length;
+  const staleOnly = [
+    ...previousTask,
+    { type: "user/message", data: userMessage("验收条件 A1：只审查当前任务。", "user-current") },
+  ];
+  const stalePacket = buildRoleContextPacket(agentFor(staleOnly), "reviewer", "审查当前任务", {
+    taskMessageId: "user-current",
+  });
+  assert.deepEqual(stalePacket.task, {
+    source: "bound",
+    startEventIndex: currentTaskIndex,
+    priorEventCount: currentTaskIndex,
+    messageId: "user-current",
+  });
+  assert.equal(stalePacket.coverage.diffCount, 0);
+  assert.equal(stalePacket.coverage.testCount, 0);
+  assert.equal(stalePacket.sufficient, false);
+  assert.equal(stalePacket.entries.some((entry) => entry.text.includes("OLD-")), false);
+
+  const events = [
+    ...staleOnly,
+    ...nativeToolEvents(
+      "current-diff",
+      "pwsh",
+      { command: "git diff -- current.mts" },
+      "diff --git a/current.mts b/current.mts\n+CURRENT-PATCH",
+      { callSeq: 30 },
+    ),
+    ...nativeToolEvents(
+      "current-test",
+      "pwsh",
+      { command: "node --test current.test.mts" },
+      "tests 1 pass 1 fail 0 exit code: 0 CURRENT-TEST",
+      { callSeq: 40 },
+    ),
+  ];
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "审查当前任务", {
+    taskMessageId: "user-current",
+  });
+  assert.equal(packet.diagnostics.rawEventCount, events.length - currentTaskIndex);
+  assert.equal(packet.coverage.diffCount, 1);
+  assert.equal(packet.coverage.testCount, 1);
+  assert.equal(packet.sufficient, true);
+  assert.equal(packet.entries.some((entry) => entry.text.includes("OLD-")), false);
+  assert.equal(packet.entries.some((entry) => entry.text.includes("CURRENT-PATCH")), true);
+  assert.equal(packet.entries.some((entry) => entry.text.includes("CURRENT-TEST")), true);
+
+  const latest = buildRoleContextPacket(agentFor(events), "reviewer", "审查当前任务");
+  assert.equal(latest.task.source, "latest");
+  assert.equal(latest.task.messageId, "user-current");
+  assert.equal(latest.entries.some((entry) => entry.text.includes("OLD-")), false);
+});
+
+test("latest fallback uses the current direct-user event even when it has no message id", () => {
+  const previousTask = completeReviewEvents();
+  const currentTask = userMessage("验收条件 CURRENT：当前任务必须有自己的 diff 和测试。");
+  delete currentTask.id;
+  const events = [
+    ...previousTask,
+    { type: "user/message", data: currentTask },
+  ];
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "审查当前任务");
+
+  assert.deepEqual(packet.task, {
+    source: "latest",
+    startEventIndex: previousTask.length,
+    priorEventCount: previousTask.length,
+  });
+  assert.equal(packet.coverage.acceptanceCount, 1);
+  assert.equal(packet.coverage.diffCount, 0);
+  assert.equal(packet.coverage.testCount, 0);
+  assert.equal(packet.sufficient, false);
+});
+
+test("duplicate explicit task ids fail closed instead of selecting the older task", () => {
+  const events: DshEvent[] = [
+    { type: "user/message", data: userMessage("验收条件 OLD：旧任务通过。", "user-duplicate") },
+    ...nativeToolEvents("old-diff", "pwsh", { command: "git diff -- old.mts" }, "diff --git a/old.mts b/old.mts\n+OLD", { callSeq: 60 }),
+    ...nativeToolEvents("old-test", "pwsh", { command: "node --test old.test.mts" }, "tests 1 pass 1 fail 0", { callSeq: 70 }),
+    { type: "user/message", data: userMessage("验收条件 CURRENT：当前任务必须独立。", "user-duplicate") },
+  ];
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "审查当前任务", {
+    taskMessageId: "user-duplicate",
+  });
+
+  assert.equal(packet.task.source, "unresolved");
+  assert.equal(packet.task.startEventIndex, events.length);
+  assert.equal(packet.evidenceCount, 0);
+  assert.equal(packet.sufficient, false);
+});
+
+test("an unresolved bound task fails closed without borrowing session evidence", () => {
+  const events = completeReviewEvents();
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "审查当前任务", {
+    taskMessageId: "missing-user-message",
+  });
+
+  assert.deepEqual(packet.task, {
+    source: "unresolved",
+    startEventIndex: events.length,
+    priorEventCount: events.length,
+    messageId: "missing-user-message",
+  });
+  assert.equal(packet.currentTask, "审查当前任务");
+  assert.equal(packet.evidenceCount, 0);
+  assert.equal(packet.diagnostics.rawEventCount, 0);
+  assert.equal(packet.sufficient, false);
 });
 
 test("reviewer packets preserve source-verified active and superseded requirement decisions", () => {
@@ -600,17 +735,20 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
   assert.equal(truncatedPacket.sufficient, false);
 });
 
-test("the successful test must follow the reviewed diff", () => {
-  const reverseOrdered: DshEvent[] = [
+test("viewing a diff after successful checks does not require repeating checks on unchanged code", () => {
+  const events: DshEvent[] = [
     { type: "user/message", data: userMessage("验收条件：保持默认行为并通过目标测试。") },
+    ...nativeToolEvents("edit-before-test", "edit", { file_path: "dsh/runtime/src/router.mts" }, "updated", { callSeq: 120 }),
     ...nativeToolEvents("test-before-diff", "pwsh", { command: "node --test dsh/runtime/tests/router.test.mts" }, "tests 14 pass 14 fail 0 exit code: 0", { callSeq: 130 }),
-    ...nativeToolEvents("diff-after-test", "pwsh", { command: "git diff -- dsh/runtime/src/router.mts" }, "diff --git a/router.mjs b/router.mjs\n+untested final patch", { callSeq: 140 }),
+    ...nativeToolEvents("diff-after-test", "pwsh", { command: "git diff -- dsh/runtime/src/router.mts" }, "diff --git a/router.mjs b/router.mjs\n+tested patch", { callSeq: 140 }),
   ];
-  const packet = buildRoleContextPacket(agentFor(reverseOrdered), "reviewer", "review");
-  assert.equal(packet.coverage.diffCount, 1);
-  assert.equal(packet.coverage.testCount, 1);
-  assert.equal(packet.coverage.currentEvidence, false);
-  assert.equal(packet.sufficient, false);
+  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
+  assert.equal(packet.coverage.currentEvidence, true);
+  assert.equal(packet.sufficient, true);
+  events.splice(5, 0, ...nativeToolEvents("edit-after-test", "edit", { file_path: "dsh/runtime/src/router.mts" }, "changed again", { callSeq: 135 }));
+  const changed = buildRoleContextPacket(agentFor(events), "reviewer", "review");
+  assert.equal(changed.coverage.currentEvidence, false);
+  assert.equal(changed.sufficient, false);
 });
 
 test("reviewer evidence must be current after the last write and latest test attempt", () => {

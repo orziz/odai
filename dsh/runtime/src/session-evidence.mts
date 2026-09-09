@@ -14,7 +14,7 @@ import { dirname, resolve } from "node:path";
 
 import { acquireOwnedStoreLock } from "./store-lock.mjs";
 import type { DshAgent, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 const STORE_SCHEMA_VERSION = 1;
 const GLOBAL_STATE_KEY = Symbol.for("odai.dsh.session-evidence.v2");
@@ -110,7 +110,9 @@ function stableJson(value: unknown): string {
 
 function evidenceId(type: string, data: RuntimeEventData): string {
   let identity: string;
-  if (Number.isSafeInteger(data?.turn) && Number.isSafeInteger(data?.step)) {
+  if (type === "odai/responsibility-returned" && typeof data.scopeId === "string" && data.scopeId !== "") {
+    identity = `${type}:${data.scopeId}`;
+  } else if (Number.isSafeInteger(data?.turn) && Number.isSafeInteger(data?.step)) {
     identity = `${type}:${data.turn}:${data.step}`;
   } else if (typeof data?.callId === "string" && data.callId !== "") {
     identity = `${type}:${data.callId}`;
@@ -301,6 +303,12 @@ export function createSessionEvidence(options: CreateSessionEvidenceOptions): Re
     }
     const state = stateFor(agent, root, logger);
     const snapshot = snapshotData(data, type);
+    if (type === "odai/responsibility-returned") {
+      // Bind the handback to an actual native position, not wall-clock ordering.
+      const anchor = sessionEvents(agent.session).at(-1);
+      delete snapshot.nativeEventSeq;
+      if (Number.isSafeInteger(anchor?.seq)) snapshot.nativeEventSeq = anchor?.seq;
+    }
     const id = evidenceId(type, snapshot);
     const event = Object.freeze({ id, type, time: Date.now(), data: snapshot });
     if (state.ids.has(id)) return state.events.find((candidate) => candidate.id === id);

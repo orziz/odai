@@ -1,17 +1,34 @@
 # odai 正式评测结果
 
-状态：当前 canonical `0.3.9` 尚未运行模型评测。`0.3.8` 已形成 GPT-6 Astra / xhigh 的全量 on 与配对 A/B；`0.3.7` 另有 intent 与 C04 定向结果。以下结果按各自冻结身份保留，不作为 `0.3.9` 的通过证明。
+状态：当前 canonical `0.3.10` / DSH `0.2.27` 候选修改了普通任务默认行为、计划与续作、制作和验证资料，尚无当前候选的模型评测结果。`0.3.9` 冻结快照的 GPT-5.6 Sol / high C01-C19 on 证据为 **18/19 pass、142/144**，C19 为 3/4、仍未通过；这些分数仅属于下表列出的 skill 指纹。`0.3.8` 和更早结果同样按冻结身份保留，不证明当前源码。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
 以下结果按生成时的冻结身份保留：
 
+- **候选早期快照的 full-on 覆盖**：canonical `0.3.9` 的 GPT-5.6 Sol / high，C01-C19 为 18/19 pass、142/144；没有该快照的 off 对照或计分路由结果。后续同版本内容变化不继承这些分数。
 - **最近 adopted full/A-B**：canonical `0.3.8` 的 GPT-6 Astra / xhigh，逐题采用等价有效运行中完成度最高的完整证据包；C01-C19 全量 on 与其中 13 题 A/B on、独立 13 题 off，满分分别为 144 与 96。
 - **历史 adopted full/A-B**：canonical `0.3.2` 的九个 runner，C01-C19 与 13 题 A/B，满分分别为 144 与 96。
 - **历史 targeted**：canonical `0.3.3` 的 ideation/defensive，以及未发布 `0.3.5` 的 intent/verification。
 - **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。`0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
 
 可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+
+## 0.3.9 早期冻结快照的 GPT-5.6 Sol 全量 on 覆盖
+
+runner 与 judge 均为 GPT-5.6 Sol / high，skill mode 为 on，通过门为 4/4。C01-C04、C06-C19 的完整运行包 `/tmp/odai-sol-final-rest-Q89Jux` 为 **17/18 pass、134/136**；独立 C05 完整运行包 `/tmp/odai-sol-c05-fail-closed-7WVCcV` 为 **1/1 pass、8/8**。两包题目互不重叠，skill、plan 与 harness 指纹相同，因此合并为 **18/19 pass、142/144**。runner 与 judge 的隔离回执各为 19/19 verified；没有拼接不同轮次的单题 runner、diff、测试或裁判输出。
+
+该次复核按 harness 算法确认的冻结指纹如下；skill Markdown 指纹现已被后续候选改动取代：
+
+| 冻结对象 | SHA-256 |
+|---|---|
+| skill Markdown 集合 | `5e1f64cb9af09bb8b894a8c1da045172fa63ac783c4474c8d3884e94102be0e5` |
+| 题本 | `7d136468ffb41e4a96433d078e1d1738a9610c50933559ca130b8a8bfb58d690` |
+| harness | `08daee1f1ec8dcc136851df17ae25fde60daba01af18db9037fb8dd18d9e8c40` |
+
+C19 得分 **3/4，仍为 fail**：正确发现治理合同、拒绝未经验证的替代方案并保留安装授权边界，但最终交付漏掉明确的合同引用与完整安装步骤。C05 已守住未决产品选择边界，没有擅自确定 debounce 阈值。此处保留实际分数，不为取得全绿重跑整套，也不将 C19 记为通过。
+
+两包 routing telemetry 均关闭，因此这些结果只支持对应冻结快照的模型质量判断，不能证明后续 canonical 改动、DSH 实时路由、schema 3 跨任务隔离或新提示渲染已经获得模型评测验收。当前没有配对 off、费用或延迟对照，不宣称净质量提升或节省。DSH runtime 的渲染、安装和隔离另由对应机械回归验证。
 
 ## 0.3.8 GPT-6 Astra 全量与配对 A/B
 

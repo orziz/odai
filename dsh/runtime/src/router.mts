@@ -565,18 +565,6 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
   }
 
   const frontendSignals = frontend.scope || frontend.explicit ? frontendRouteSignals(frontend) : [];
-  if (frontend.substantial && !isLowRiskTransform(explicitIntentText)) {
-    signals.push(...frontendSignals);
-    return route(
-      "controller",
-      FRONTEND_SPECIALIST_REASON,
-      "Substantial user-facing interface work can benefit from a configured frontend specialist without a child handoff.",
-      signals,
-      "upgrade",
-      "frontend",
-    );
-  }
-
   signals.push(...frontendSignals, "no-independent-gap");
   const direct = route(
     "controller",
@@ -594,7 +582,7 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
         ? "FRONTEND_API_REQUEST"
         : lowRiskTransform
           ? "FRONTEND_LOW_RISK_TRANSFORM"
-          : "FRONTEND_BELOW_SPECIALIST_THRESHOLD",
+          : frontend.substantial ? "FRONTEND_GAP_NOT_PROVEN" : "FRONTEND_BELOW_SPECIALIST_THRESHOLD",
       signals: Object.freeze(frontendSignals),
       unmet: Object.freeze(frontend.nonUiRequest
         ? ["ui-production-request"]
@@ -602,6 +590,7 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
             ...(frontend.scope ? [] : ["interface-scope"]),
             ...(frontend.delivery ? [] : ["delivery-request"]),
             ...(frontend.specialistDepth ? [] : ["specialist-or-substantial-scope"]),
+            "evidence-grounded-capability-gap",
           ]),
     }));
   }

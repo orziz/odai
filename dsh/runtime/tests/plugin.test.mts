@@ -18,6 +18,8 @@ import {
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
 import { resolveRoutingConfigPath } from "../build/routing-config.mjs";
+import { buildRoleContextPacket } from "../build/routing-context.mjs";
+import { COMPACTION_STATE_PROTOCOL } from "../build/compaction-config.mjs";
 import type { Responsibility } from "../src/responsibility-gap.mjs";
 import type {
   DshAgent,
@@ -293,9 +295,9 @@ function childSession(config: ModelRoute): Pick<DshSession, "snapshotEvents"> {
   return { snapshotEvents: () => events };
 }
 
-function userMessage(text: string): DshMessage {
+function userMessage(text: string, id = "user-1"): DshMessage {
   return {
-    id: "user-1",
+    id,
     role: "user",
     content: [{ type: "text", text }],
     source: { kind: "user" },
@@ -644,6 +646,7 @@ test("compaction inherits routed reasoning and applies configured retention for 
   apply(ctx, { skillPath, routing: { mode: "off" }, output: { configPath: outputConfigPath } });
   const streamed: TestRequest = {
     purpose: "compaction",
+    messages: [userMessage("Summarize the current task.")],
     sessionId: "session-cache",
     provider: "openai",
     model: "user-selected-model",
@@ -674,6 +677,7 @@ test("compaction inherits routed reasoning and applies configured retention for 
   });
   const preRouted: TestRequest = {
     purpose: "compaction",
+    messages: [userMessage("Summarize the current task.")],
     sessionId: "session-cache",
     provider: "openai",
     model: "user-selected-model",
@@ -818,7 +822,8 @@ test("managed compaction target overrides only summaries and restores inheritanc
   assert.equal(await stream(inherited, async () => "next"), "next");
   assert.equal(inherited.model, "gpt-5.6-sol");
   assert.equal(inherited.reasoningEffort, "xhigh");
-  assert.equal(inherited.messages.length, 1);
+  assert.equal(inherited.messages.length, 2);
+  assert.equal(messageText(inherited.messages[1]), COMPACTION_STATE_PROTOCOL);
 
   writeFileSync(configPath, "{broken\n", "utf8");
   const fallback: TestRequestWithMessages = {
@@ -831,7 +836,8 @@ test("managed compaction target overrides only summaries and restores inheritanc
   assert.equal(await stream(fallback, async () => "next"), "next");
   assert.equal(fallback.model, "gpt-5.6-sol");
   assert.equal(fallback.reasoningEffort, "xhigh");
-  assert.equal(fallback.messages.length, 1);
+  assert.equal(fallback.messages.length, 2);
+  assert.equal(messageText(fallback.messages[1]), COMPACTION_STATE_PROTOCOL);
   assert.equal(ctx.captured.logs.some((message: string) => /compaction model configuration is invalid/iu.test(message)), true);
 });
 
@@ -876,6 +882,23 @@ test("configured compaction discards partial failure output and retries once on 
   assert.equal(fallbackCalls.length, 1);
   assert.equal(fallbackCalls[0].model, "controller-model");
   assert.equal(fallbackCalls[0].reasoningEffort, "max");
+  assert.ok(Array.isArray(fallbackCalls[0].messages));
+  assert.equal(fallbackCalls[0].messages.filter((message) => messageText(message) === COMPACTION_STATE_PROTOCOL).length, 1);
+  for (const reason of [
+    { kind: "error" },
+    { kind: "aborted" },
+    { kind: "aborted", failure: { code: "RATE_LIMIT", message: "interrupted" } },
+  ]) {
+    const callsBefore: number = fallbackCalls.length;
+    const terminalStream = ctx.captured.handlers.get("llm/stream")({ ...options }, () => (async function* () {
+      yield { type: "finish", reason };
+    })());
+    const output: UnknownRecord[] = [];
+    for await (const chunk of terminalStream) output.push(chunk);
+    assert.equal(fallbackCalls.length, callsBefore + (reason.kind === "error" ? 1 : 0));
+    if (reason.kind === "error") assert.deepEqual(output.map((chunk) => chunk.text).filter(Boolean), ["complete inherited summary"]);
+    else assert.deepEqual(output, [{ type: "finish", reason }]);
+  }
   assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).target, {
     provider: "openai",
     model: "summary-model",
@@ -1156,6 +1179,35 @@ test("real sessions persist routing evidence outside the DSH event log", async (
   assert.equal(sessionAppends, 0);
   const events = readStoredSessionEvidence(resolveSessionEvidenceRoot(configPath), "real-session-evidence");
   assert.deepEqual(events.map((event) => event.type), ["odai/route-decided"]);
+});
+
+test("persisted handbacks join their native task without replacing tool verification", () => {
+  const root = resolve(testDshHome, "handback-native-context");
+  const nativeEvents: DshEvent[] = [{ type: "user/message", seq: 1, data: userMessage("保留默认行为，修复目标错误。", "handback-task") }];
+  const agent: DshAgent = { session: {
+    header: { id: "handback-native-context" },
+    snapshotEvents: () => nativeEvents,
+    append() { throw new Error("DSH does not accept private Odai events"); },
+  } };
+  const evidence = createSessionEvidence({ root });
+  for (const scopeId of ["plan-a", "plan-b"]) {
+    evidence.append(agent, "odai/responsibility-returned", {
+      turn: 1, step: 2, returned: true, responsibility: "planner", scopeId,
+      summary: "Preserve the existing default and implement the localized correction.", evidenceRefs: ["handback-task"],
+    });
+  }
+  const stored = readStoredSessionEvidence(root, "handback-native-context");
+  assert.equal(stored.length, 2, "distinct scopes in one step must survive persistence");
+  assert.equal(stored[0].data.nativeEventSeq, 1);
+  assert.equal(nativeEvents.length, 1);
+  const packet = buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored });
+  assert.equal(packet.entries.filter((entry) => entry.kinds.includes("planning")).length, 2);
+  assert.equal(packet.coverage.testCount, 0);
+  assert.equal(packet.coverage.currentEvidence, false);
+  assert.equal(packet.sufficient, false);
+  nativeEvents.push({ type: "user/message", seq: 2, data: userMessage("另一个任务", "other-task") });
+  assert.equal(buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored }).entries.filter((entry) => entry.kinds.includes("planning")).length, 0);
+  assert.equal(buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored, taskMessageId: "handback-task" }).entries.filter((entry) => entry.kinds.includes("planning")).length, 2);
 });
 
 test("only explicit Odai responsibility labels route manual children", async () => {
@@ -1740,7 +1792,7 @@ test("skill evolution activation preserves the current turn and changes the next
   assert.doesNotMatch(initialPrompt, /EVOLUTION_NEXT_TURN/u);
   const shown = await tool.execute({ action: "show" }, { agent });
   const inspected = await tool.execute({ action: "inspect", path: "SKILL.md" }, { agent });
-  const oldString = "`odai` 是面向用户的统一入口和最终交付者，按真实缺口补判断、工艺、验证与外力。";
+  const oldString = "`odai` 是用户统一入口与最终交付者，按真实缺口补判断、工艺、验证和外力。";
   const proposalArgs = {
     action: "propose",
     objective: "Prove next-turn evolution selection",
@@ -1845,6 +1897,46 @@ test("adaptive tool exposure reconciles prebuilt prompt schemas with the scoped 
   assert.ok(restrictions[1].deny.includes("odai_human_safety"));
   const selected = events.filter((event) => event.type === "odai/tool-exposure-selected");
   assert.deepEqual(last(selected).data.activeTools, ["odai_context_capability", "odai_responsibility_gap", "odai_reference", "odai_human_care"]);
+});
+
+test("host orchestration schemas and prompts survive requests, continuations, and negation", async () => {
+  const ctx = fakeContext();
+  apply(ctx, { skillPath, routing: { mode: "off" } });
+  const restrictions: TestRestriction[] = [];
+  const events: DshEvent[] = [];
+  const agent = {
+    ctx: { tools: { restrict(filter: TestRestriction) { restrictions.push(filter); return () => {}; } } },
+    session: {
+      header: {},
+      snapshotEvents: () => events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, seq: events.length + 1, data }); },
+    },
+  };
+  const hostNames = ["workflow", "ralph", "batch_workflow", "subagent_fork", "create_goal", "update_goal"];
+  const hostSections = [
+    { name: "tool:workflow", text: "Use only on an explicit orchestration request." },
+    { name: "tool:ralph", text: "Use only on an explicit fresh-agent loop request." },
+  ];
+  const requests = ["请用 workflow 审查模块", "继续", "不要用 Ralph，只说明区别"];
+  for (const [index, text] of requests.entries()) {
+    agent.session.append("turn/start", { turn: index + 1 });
+    agent.session.append("user/message", userMessage(text, `user-host-${index}`));
+    const assembly = {
+      tools: hostNames.map((name) => ({ name })),
+      sections: [...ctx.captured.sections, ...hostSections],
+    };
+    const result = await ctx.captured.handlers.get("system-prompt/assemble")(
+      assembly, { agent, signal: new AbortController().signal }, async () => assembly,
+    );
+    assert.deepEqual(result.tools.filter((tool: TestToolSchema) => hostNames.includes(tool.name)).map((tool: TestToolSchema) => tool.name), hostNames);
+    for (const section of hostSections) {
+      assert.deepEqual(result.sections.find((item: TestPromptSection) => item.name === section.name), section);
+    }
+  }
+  for (const restriction of restrictions) {
+    assert.equal(restriction.deny.some((name) => hostNames.includes(name)), false);
+  }
+  assert.equal(ctx.captured.handlers.has("tools/pre-execute"), false);
 });
 
 test("cold first steps expose only executable core tools before gateway activation", async () => {
@@ -2019,7 +2111,7 @@ test("capability gateway recovers a missed expression on the next step", async (
   assert.equal(last(restrictions).deny.includes("odai_compaction_config"), false);
 });
 
-test("implementation turns activate craft within the contextual prompt budget", async () => {
+test("ordinary edits keep craft available on demand without injecting its full workflow", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "off" } });
   const text = "把按钮文案改清楚并运行现有测试";
@@ -2040,9 +2132,11 @@ test("implementation turns activate craft within the contextual prompt budget", 
     async () => ({ sections: ctx.captured.sections }),
   );
   const section = (name: string) => assembled.sections.find((candidate: TestPromptSection) => candidate.name === name).text;
-  assert.match(section("odai:canonical-craft"), /通用制作工艺/u);
-  assert.match(section("odai:canonical-craft"), /复用当前项目的实现、依赖和约定/u);
-  assert.match(section("odai:canonical-craft"), /只改解决目标所需的最小完整部分/u);
+  assert.equal(section("odai:canonical-craft"), "");
+  const reference = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_reference");
+  const craft = await reference.execute({ reference: "craft" }, { agent });
+  assert.match(JSON.stringify(craft), /通用制作工艺/u);
+  assert.match(JSON.stringify(craft), /只改解决目标所需的最小完整部分/u);
   assert.equal(section("odai:routing-configuration"), "");
   assert.equal(section("odai:human-safety-continuity"), "");
   assert.equal(section("odai:skill-source-configuration"), "");
@@ -2155,8 +2249,10 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   };
   const planning = await tools.get("odai_reference").execute({ reference: "planning" }, { agent });
   assert.equal(planning.reference, "planning");
-  assert.equal(planning.skillVersion, "0.3.9");
-  assert.equal(planning.runtimeContract, 6);
+  const manifest: unknown = JSON.parse(readFileSync(resolve(skillPath, "../manifest.json"), "utf8"));
+  assert.ok(isUnknownRecord(manifest));
+  assert.equal(planning.skillVersion, manifest.skillVersion);
+  assert.equal(planning.runtimeContract, manifest.runtimeContract);
   assert.match(planning.digest, /^[a-f0-9]{64}$/u);
   assert.match(planning.contract, /工程实施计划/u);
   const care = await tools.get("odai_human_care").execute({}, { agent });
@@ -2406,6 +2502,31 @@ test("execute routing disposes a successful provider run", async () => {
   const delegationPrompt = request.prompt[0]?.text;
   assert.ok(delegationPrompt);
   assert.match(delegationPrompt, /do not edit files/iu);
+});
+
+test("cancelled responsibilities never start anew or accept a late successful handback", async () => {
+  for (const timing of ["before-start", "during-dispose"]) {
+    const abort = new AbortController();
+    let starts = 0;
+    let disposals = 0;
+    if (timing === "before-start") abort.abort();
+    const result = await runRoutedRole({
+      subagents: { async start() {
+        starts += 1;
+        return {
+          result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "late result" }] }),
+          async dispose() { disposals += 1; abort.abort(); },
+        };
+      } },
+      provider: "spawn", decision: { role: "planner" }, taskText: "plan", roleContract: "Read-only plan.",
+      agent: {}, signal: abort.signal,
+    });
+    assert.equal(starts, timing === "before-start" ? 0 : 1);
+    assert.equal(disposals, starts);
+    assert.equal(result.status, "fallback");
+    assert.equal(result.stopReason, "cancelled");
+    assert.deepEqual(result.output, []);
+  }
 });
 
 test("default auto reports an unconfigured planner only when the gap is needed", async () => {
@@ -3285,8 +3406,18 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     skillPath,
     routing: { roles: { reviewer: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } } },
   });
+  const previousTask: DshEvent[] = [
+    { type: "user/message", data: userMessage("旧任务：修复 Vue 页面。", "user-old") },
+    { type: "assistant/message", data: { content: [{ type: "text", text: "验收条件 OLD：旧页面测试通过。" }] } },
+    ...nativeToolEvents("old-diff", "git diff -- src/old.vue", "diff --git a/src/old.vue b/src/old.vue\n+OLD-PATCH", { callSeq: 81 }),
+    ...nativeToolEvents("old-test", "npm test", "tests 1 pass 1 fail 0 exit code: 0 OLD-TEST", { callSeq: 91 }),
+  ];
+  const currentTaskIndex = previousTask.length;
   const events: DshEvent[] = [
+    ...previousTask,
+    { type: "user/message", data: userMessage("实现请求：保持默认行为并修复路由。", "user-current") },
     responsibilityGapEvent("reviewer", {
+      taskMessageId: "user-current",
       gap: "Review planner acceptance A1 and A2 against the final patch.",
       expectedChange: "Accept A1 and A2 or return precise blocking findings.",
       requirements: [{
@@ -3294,11 +3425,10 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
         statement: "Preserve default behavior while fixing routing.",
         status: "active",
         sourceExcerpt: "保持默认行为并修复路由",
-        sourceMessageId: "user-1",
+        sourceMessageId: "user-current",
         sourceOrder: 1,
       }],
     }),
-    { type: "user/message", data: userMessage("实现请求：保持默认行为并修复路由。") },
     {
       type: "odai/responsibility-returned",
       data: {
@@ -3332,8 +3462,15 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.match(blockText(startRequest.prompt[0]), /kinds: planner-handback, planning/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: tool, diff/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: tool, test/u);
+  assert.doesNotMatch(blockText(startRequest.prompt[0]), /OLD-PATCH|OLD-TEST/u);
   const contextEvent = findEvent(events, (event) => event.type === "odai/route-context");
   assert.equal(contextEvent.data.mode, "bounded-packet");
+  assert.deepEqual(contextEvent.data.taskBoundary, {
+    source: "bound",
+    startEventIndex: currentTaskIndex,
+    priorEventCount: currentTaskIndex,
+    messageId: "user-current",
+  });
   assert.equal(contextEvent.data.requirementDecisionCount, 1);
   assert.equal(contextEvent.data.activeRequirementCount, 1);
   assert.equal(contextEvent.data.supersededRequirementCount, 0);
@@ -3463,6 +3600,13 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.equal(fallbackDecision.action, "direct");
   assert.equal(fallbackDecision.targetRole, "reviewer");
   assert.ok((fallbackDecision.signals ?? []).includes("controller-local-review"));
+  const fallbackContext = findEvent(fallbackEvents, (event) => event.type === "odai/route-context").data;
+  assert.deepEqual(fallbackContext.taskBoundary, {
+    source: "latest",
+    startEventIndex: 0,
+    priorEventCount: 0,
+    messageId: "user-1",
+  });
   const fallbackResult = findEvent(fallbackEvents, (event) => event.type === "odai/route-result").data;
   assert.equal(fallbackResult.stopReason, "evidence-packet-missing");
   assert.equal(fallbackResult.independent, false);
@@ -3533,7 +3677,7 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
       roles: { reviewer: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } },
     },
   });
-  const executeEvents: DshEvent[] = [responsibilityGapEvent("reviewer")];
+  const executeEvents: DshEvent[] = [responsibilityGapEvent("reviewer", { taskMessageId: "missing-user-message" })];
   const executeAgent = {
     session: {
       header: {},
@@ -3550,6 +3694,12 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.match(executeFallback.messages[1].content[0].text, /bounded packet is incomplete/u);
   assert.match(executeFallback.messages[1].content[0].text, /remains pending/u);
   assert.equal(findEvent(executeEvents, (event) => event.type === "odai/route-result").data.stopReason, "evidence-packet-missing");
+  assert.deepEqual(findEvent(executeEvents, (event) => event.type === "odai/route-context").data.taskBoundary, {
+    source: "unresolved",
+    startEventIndex: 1,
+    priorEventCount: 1,
+    messageId: "missing-user-message",
+  });
   assert.equal(executeEvents.some((event) => event.type === "odai/responsibility-gap-consumed"), false);
   assert.equal(executeEvents.some((event) => event.type === "odai/responsibility-gap-deferred"), true);
   executeEvents.push(
@@ -3719,7 +3869,7 @@ test("an unavailable frontend mapping falls back locally with an explicit non-re
     },
   });
   apply(ctx, { skillPath, routing: { configPath } });
-  const events: DshEvent[] = [];
+  const events: DshEvent[] = [responsibilityGapEvent("frontend")];
   const agent = { session: { header: {}, events, snapshotEvents: () => events, append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
   seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
@@ -3770,8 +3920,8 @@ test("frontend incident upgrades in place, verifies its actual route, and overri
       },
     },
   });
-  const events: DshEvent[] = [];
-  let actualHeader: UnknownRecord | undefined;
+  const events: DshEvent[] = [responsibilityGapEvent("frontend")];
+  let actualHeader: { config?: ModelRoute } = {};
   const agent = {
     session: {
       header: {},
@@ -3780,6 +3930,7 @@ test("frontend incident upgrades in place, verifies its actual route, and overri
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   const assembled = await ctx.captured.handlers.get("system-prompt/assemble")(
     {},
@@ -4019,7 +4170,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
       },
     },
   });
-  const events: DshEvent[] = [];
+  const events: DshEvent[] = [responsibilityGapEvent("frontend")];
   const actualHeader = { config: { provider: "base", model: "controller", reasoningEffort: "high" } };
   const agent = {
     session: {
@@ -4029,6 +4180,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, events);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -4062,7 +4214,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
   assert.equal(shown.latestRoute.status, "mismatch");
   assert.equal(shown.latestRoute.fallbackUsed, true);
 
-  const unverifiedEvents: DshEvent[] = [];
+  const unverifiedEvents: DshEvent[] = [responsibilityGapEvent("frontend")];
   const unverifiedAgent = {
     session: {
       header: {},
@@ -4070,6 +4222,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
       append(type: string, data: RuntimeEventData) { unverifiedEvents.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, unverifiedAgent, unverifiedEvents);
   await ctx.captured.handlers.get("agent/pre-step")({ agent: unverifiedAgent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
     messages: [userMessage("重新设计登录页和首页的信息架构与响应式交互。")],
@@ -4095,8 +4248,9 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
 
   const missingCtx = fakeContext();
   apply(missingCtx, { skillPath, output: { configPath: outputConfigPath } });
-  const missingEvents: DshEvent[] = [];
+  const missingEvents: DshEvent[] = [responsibilityGapEvent("frontend")];
   const missingAgent = { session: { header: {}, events: missingEvents, snapshotEvents: () => missingEvents, append(type: string, data: RuntimeEventData) { missingEvents.push({ type, data }); } } };
+  seedCurrentEvidence(missingCtx, missingAgent, missingEvents);
   const missing = await missingCtx.captured.handlers.get("agent/pre-step")(
     { agent: missingAgent, turn: 1, step: 1, signal },
     async () => ({ kind: "enter", messages: [task] }),
@@ -4116,8 +4270,9 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
       },
     },
   });
-  const boundedEvents: DshEvent[] = [];
+  const boundedEvents: DshEvent[] = [responsibilityGapEvent("frontend")];
   const boundedAgent = { session: { header: {}, events: boundedEvents, snapshotEvents: () => boundedEvents, append(type: string, data: RuntimeEventData) { boundedEvents.push({ type, data }); } } };
+  seedCurrentEvidence(boundedCtx, boundedAgent, boundedEvents);
   await boundedCtx.captured.handlers.get("agent/pre-step")(
     { agent: boundedAgent, turn: 1, step: 1, signal },
     async () => ({ kind: "enter", messages: [task] }),

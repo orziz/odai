@@ -84,6 +84,7 @@ test("managed preset installs, updates, reports status, and uninstalls", async (
     const firstCompositionSize = Buffer.byteLength(await readFile(resolve(installed.target, "agent.cordis.yml")));
     if (process.platform !== "win32") {
       assert.equal((await stat(installed.target)).mode & 0o777, 0o700);
+      assert.equal((await stat(resolve(installed.target, "odai-governance.mjs"))).mode & 0o777, 0o600);
       assert.equal((await stat(resolve(installed.target, "runtime/index.mjs"))).mode & 0o777, 0o600);
       assert.equal((await stat(resolve(installed.target, ".odai-agent.json"))).mode & 0o777, 0o600);
     }
@@ -366,8 +367,9 @@ async function writeFixture(root: string, runtimeText: string): Promise<void> {
     mkdir(resolve(root, "skills/odai"), { recursive: true }),
   ]);
   await Promise.all([
-    writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./runtime/index.mjs\n", "utf8"),
+    writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./odai-governance.mjs\n", "utf8"),
     writeFile(resolve(root, "preset.yml"), "name: Odai\n", "utf8"),
+    writeFile(resolve(root, "odai-governance.mjs"), "export * from \"./runtime/index.mjs\";\n", "utf8"),
     writeFile(resolve(root, "runtime/index.mjs"), `export default ${JSON.stringify(runtimeText)};\n`, "utf8"),
     writeFile(resolve(root, "runtime/session-evidence.mjs"), "export const fixture = true;\n", "utf8"),
     writeFile(resolve(root, "runtime/skill-bundle.mjs"), "export const fixture = true;\n", "utf8"),

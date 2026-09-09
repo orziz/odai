@@ -50,6 +50,7 @@ const agentExpected = new Map([
   ["package/control-center.cordis.patch.yml", await readFile(resolve(repoRoot, "dsh/agent/control-center.cordis.patch.yml"))],
   ["package/preset/odai/agent.cordis.yml", await readFile(resolve(repoRoot, "dsh/agent/preset/odai/agent.cordis.yml"))],
   ["package/preset/odai/preset.yml", await readFile(resolve(repoRoot, "dsh/agent/preset/odai/preset.yml"))],
+  ["package/preset/odai/odai-governance.mjs", await readFile(resolve(repoRoot, "dsh/agent/preset/odai/odai-governance.mjs"))],
   ["package/package.json", await readFile(resolve(repoRoot, "dsh/agent/package.json"))],
   ["package/README.md", await readFile(resolve(repoRoot, "dsh/agent/README.md"))],
   ["package/LICENSE", await readFile(resolve(repoRoot, "dsh/agent/LICENSE"))],

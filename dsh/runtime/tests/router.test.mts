@@ -397,22 +397,26 @@ test("implementation continuation stays with the controller", () => {
   assert.equal(planned.targetRole, "planner");
 });
 
-test("substantial frontend work upgrades in place while narrow fixes stay direct", () => {
-  const redesign = decideRoute({ text: "整体改版这个运维仪表盘，覆盖移动端和多状态，并用 Playwright 做浏览器验收。" });
+test("frontend scope alone stays direct; an actual capability gap still obtains the specialist", () => {
+  const text = "整体改版这个运维仪表盘，覆盖移动端和多状态，并用 Playwright 做浏览器验收。";
+  const redesign = decideRoute({ text });
   assert.equal(redesign.role, "controller");
-  assert.equal(redesign.action, "upgrade");
-  assert.equal(redesign.targetRole, "frontend");
-  assert.equal(redesign.reasonCode, "FRONTEND_SUBSTANTIAL_INTERFACE_WORK");
+  assert.equal(redesign.action, "direct");
+  assert.equal(redesign.targetRole, undefined);
+  assert.equal(redesign.considerations?.[0]?.reasonCode, "FRONTEND_GAP_NOT_PROVEN");
+  const withGap = decideRoute({ text, proposal: gap("frontend", { gap: "Current controller cannot resolve the conflicting interaction and information hierarchy requirements." }) });
+  assert.equal(withGap.action, "upgrade");
+  assert.equal(withGap.targetRole, "frontend");
 
   const handoff = decideRoute({ text: "值班同学说这个运维台找事故太慢，给设计和前端一份能直接交接的改版说明，先别改代码。" });
-  assert.equal(handoff.action, "upgrade");
-  assert.equal(handoff.targetRole, "frontend");
+  assert.equal(handoff.action, "direct");
+  assert.equal(handoff.targetRole, undefined);
 
   const incident = decideRoute({
     text: "评估一下这个：把小松同学登录页面、登录后的首页以及个人空间截图发上去，帮我们优化界面介绍，看怎么让大家一眼就能明白小松同学是做什么的。",
   });
-  assert.equal(incident.action, "upgrade");
-  assert.equal(incident.targetRole, "frontend");
+  assert.equal(incident.action, "direct");
+  assert.equal(incident.targetRole, undefined);
   assert.ok(incident.signals.includes("frontend-multi-surface"));
   assert.ok(incident.signals.includes("frontend-comprehension"));
   assert.ok(incident.signals.includes("frontend-acceptance"));
@@ -434,7 +438,7 @@ test("substantial frontend work upgrades in place while narrow fixes stay direct
     action: "skip",
     reasonCode: "FRONTEND_BELOW_SPECIALIST_THRESHOLD",
     signals: ["frontend-interface-scope", "frontend-delivery-request"],
-    unmet: ["specialist-or-substantial-scope"],
+    unmet: ["specialist-or-substantial-scope", "evidence-grounded-capability-gap"],
   }]);
   const apiOnly = decideRoute({ text: "优化登录页面、首页和个人空间的 API 接口调用。" });
   assert.deepEqual(apiOnly.considerations, [{
@@ -492,14 +496,14 @@ test("frontend continuation inherits only the immediately referenced substantive
     [{ type: "user/message", data: user(incident) }],
   );
   assert.match(continued, /Referenced earlier frontend user context/u);
-  assert.equal(decideRoute({ text: continued }).targetRole, "frontend");
+  assert.equal(decideRoute({ text: continued }).action, "direct");
 
   const explicitContinuation = extractRoutingText(
     [user("继续")],
     [{ type: "user/message", data: user(incident) }],
   );
   assert.match(explicitContinuation, /Referenced earlier frontend user context/u);
-  assert.equal(decideRoute({ text: explicitContinuation }).targetRole, "frontend");
+  assert.equal(decideRoute({ text: explicitContinuation }).action, "direct");
 
   const unrelated = extractRoutingText(
     [user("你能做不？")],
