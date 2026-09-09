@@ -294,9 +294,9 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前 `0.3.10` 候选尚无模型评测结果。`0.3.9` 冻结快照的 Sol/high 为 18/19、142/144，范围与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)；这些分数及下表的 `0.3.8`、更早结果都不证明当前源码。
+当前 `0.3.10` 候选的 GPT-5.6 Sol/high C19 完整能力交付已达到 4/4，尚无当前全量或配对 A/B 结果。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
 
-当前结果覆盖 19 条全量现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
+下表的历史全量与配对结果覆盖 19 条现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
 
 结果先按真实完成度评为 0-4，再乘预设权重；全量满分 144，A/B 满分 96。direct、judgment、complex、boundary 四层分别报告，严重越权、生产风险和虚报验证另设硬封顶。on 臂满分本身不算价值证明，必须与同模型 off 的结果和成本一起看。
 

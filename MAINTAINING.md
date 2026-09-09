@@ -4,8 +4,8 @@
 
 ## 当前状态
 
-- 当前 canonical `0.3.10` / DSH `0.2.27` 候选尚无模型评测。`0.3.9` 的 Sol/high 冻结快照为 18/19、142/144；它与下列历史成绩均不作为当前候选的通过证明。
-- 当前普通模型结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
+- 当前 canonical `0.3.10` / DSH `0.2.27` 候选的 Sol/high C19 定向结果为 4/4，完整交付及相邻修订的 C12/C32 保持项按指纹记录于 [`docs/evaluation-results.md`](docs/evaluation-results.md)；尚无当前全量或配对 A/B。`0.3.9` 的历史 18/19、142/144 及 C19 的 3/4 保留，不迁移为当前候选成绩。
+- 既有全量与配对结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
 - 可选宿主能力路由单列在 [`docs/routing-results.md`](docs/routing-results.md)，不迁移为普通模型成绩。试跑、复跑、失败管线和临时模型故障仍只由 Git 历史与本地证据承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
 

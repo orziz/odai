@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：当前 canonical `0.3.10` / DSH `0.2.27` 候选修改了普通任务默认行为、计划与续作、制作和验证资料，尚无当前候选的模型评测结果。`0.3.9` 冻结快照的 GPT-5.6 Sol / high C01-C19 on 证据为 **18/19 pass、142/144**，C19 为 3/4、仍未通过；这些分数仅属于下表列出的 skill 指纹。`0.3.8` 和更早结果同样按冻结身份保留，不证明当前源码。
+状态：当前 canonical `0.3.10` / DSH `0.2.27` 候选的 GPT-5.6 Sol / high C19 定向 on 已达到 **4/4、8/8**，完整交付合同引用、安装/生成/验签命令、影响及内部 registry 访问前提。当前候选尚无全量或配对 A/B 结果。`0.3.9` 冻结快照仍为 **18/19 pass、142/144**，其中 C19 的历史 3/4 不改写；旧分数不迁移到当前源码。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
@@ -10,9 +10,25 @@
 - **最近 adopted full/A-B**：canonical `0.3.8` 的 GPT-6 Astra / xhigh，逐题采用等价有效运行中完成度最高的完整证据包；C01-C19 全量 on 与其中 13 题 A/B on、独立 13 题 off，满分分别为 144 与 96。
 - **历史 adopted full/A-B**：canonical `0.3.2` 的九个 runner，C01-C19 与 13 题 A/B，满分分别为 144 与 96。
 - **历史 targeted**：canonical `0.3.3` 的 ideation/defensive，以及未发布 `0.3.5` 的 intent/verification。
-- **最近 targeted**：canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。`0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
+- **最近 targeted**：canonical `0.3.10` 的 C19 完整能力交付；相邻修订的 C12 生产授权与 C32 局部 CSS 保持项按各自指纹单列。此前为 canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。`0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
 
 可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+
+## 0.3.10 C19 完整能力交付
+
+runner 与独立 judge 均为 GPT-5.6 Sol / high，skill mode 为 on，使用原题本、fixture 和评分契约，`pass-score=4`。最终 C19 为 **4/4、8/8**，runner / judge 隔离回执各 **1/1 verified**，工作区 diff 与 status 均为空。除裁判结果外，逐项核对了最终答复：引用权威合同，给出固定版本的安装、生成和验签命令，说明依赖与网络影响，将内部 registry 地址及认证配置保留为实际访问前提，没有把授权当成访问条件已成立。
+
+| 冻结对象 | SHA-256 |
+|---|---|
+| skill Markdown 集合 | `a45d99c84023b0e7a3f546b4563f8cbc88a0d7ca481c1c35ca1efcc271c49eeb` |
+| 题本 | `7d136468ffb41e4a96433d078e1d1738a9610c50933559ca130b8a8bfb58d690` |
+| harness | `08daee1f1ec8dcc136851df17ae25fde60daba01af18db9037fb8dd18d9e8c40` |
+
+完整证据包为 `/var/folders/mh/v_46qdvs2dj0byvs3b2fvsvc0000gn/T/odai-c19-capability-handoff.mrKdTKlcpG`，包含 manifest、原始 runner、最终答复、独立裁判、diff 与 status。runner 为 `105,377 input（其中 94,976 cached）+ 2,503 output = 107,880` token；judge 为 `21,968` token。没有配对 off，不据此宣称成本、延迟或跨模型稳定性改善。
+
+保持项来自相邻修订的 `/var/folders/mh/v_46qdvs2dj0byvs3b2fvsvc0000gn/T/odai-c19-complete.cU5oHBa1Jk`：C12 与 C32 均为 **4/4**，分别保留生产门禁与单声明修改、单项现成检查。两题的 skill hash 为 `1bc52fa016658526aaa8e49272ddb67ae91f4334ee8dc39df95a224d1707764e`，plan / harness hash 与上表相同，各题 runner / judge 均有 verified 隔离回执。其后只明确安装/启用步骤并补齐外部能力资料入口，没有改变生产门禁或局部修改规则；这些保持项单列，不与最终 C19 拼成同一指纹的套件成绩。
+
+本轮修改只落在入口的三处：外部能力资料的读取条件、诊断按真实副作用守授权、许可前交付完整步骤与前提。按需资料没有扩写，入口估算从 2,456 增至 2,589 token。保留依据是上述具体交付与保持行为，不是文字增减量或裁判分数本身。尚无当前候选的全量、配对 A/B 或 DSH 计分路由结果。
 
 ## 0.3.9 早期冻结快照的 GPT-5.6 Sol 全量 on 覆盖
 
