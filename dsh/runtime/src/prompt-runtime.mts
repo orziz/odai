@@ -1,4 +1,5 @@
 import { decideRoute, extractLatestUserText } from "./router.mjs";
+import { DEFAULT_CHILD_ALLOWED_TOOLS } from "./governance.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import {
   DEFAULT_OUTPUT_POLICY,
@@ -9,7 +10,7 @@ import {
 import type { OutputPolicy } from "./output-config.mjs";
 import { selectSharedOutputPolicyForTurn } from "./output-policy-state.mjs";
 import {
-  applySessionOutputControl,
+  previewSessionOutputControl,
   prepareSessionOutputControl,
   renderSessionOutputControlPrompt,
 } from "./output-session.mjs";
@@ -30,7 +31,7 @@ import { ODAI_RUNTIME_CONTRACT, loadSkillBundle } from "./skill-bundle.mjs";
 import { resolveSkillSelection } from "./skill-selector.mjs";
 import { currentAgentTurn, selectSharedSkillForTurn } from "./skill-selection-state.mjs";
 import { applySkillEvolutionSelection, skillEvolutionDisabled } from "./skill-evolution.mjs";
-import { MEMORY_PROMPT, latestDirectUserMessage } from "./semantic-memory.mjs";
+import { MEMORY_PROMPT, currentDirectInput } from "./semantic-memory.mjs";
 import { effectiveMemorySettings } from "./semantic-memory-store.mjs";
 import { resolveSkillPath } from "./runtime-config.mjs";
 import {
@@ -214,7 +215,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     const upstream = await selectUpstreamForAgent(agent, context);
     return applySkillEvolutionSelection(upstream, config.governance.evolutionRoot, { disabled: evolutionDisabled });
   };
-  const selectOutputForAgent = (agent?: DshAgent, turn = agent ? currentAgentTurn(agent) : undefined): OutputSelection => {
+  const selectOutputForAgent = (_agent?: DshAgent, _turn?: number): OutputSelection => {
     let selection: OutputSelection;
     try {
       selection = effectiveOutputPolicy(config.output.configPath);
@@ -227,7 +228,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
         reasonCode: "output-config-invalid",
       });
     }
-    return agent ? applySessionOutputControl(selection, evidence.events(agent), turn) : selection;
+    return selection;
   };
   const memorySettingsSnapshots = new WeakMap<DshAgent, { turn?: number; settings: MemorySettings }>();
   const memorySettingsFor = (agent: DshAgent, turn = currentAgentTurn(agent)): MemorySettings => {
@@ -275,7 +276,8 @@ export function createPromptRuntime(deps: PromptDependencies) {
     if (!agent) return next();
     const turn = currentAgentTurn(agent);
     const childSession = isSubagentSession(agent);
-    const directMessage = latestDirectUserMessage(agent);
+    const directInput = currentDirectInput(agent, { turn, signal: context.signal, minimum: "claimed" });
+    const directMessage = directInput?.message;
     const directText = directMessage ? extractLatestUserText([directMessage]) : "";
     const classifiedActivation = contextActivationFor(agent, directText, turn);
     const sessionOutputDirective = classifySessionOutputCeilingDirective(directText);
@@ -283,7 +285,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       ? Object.freeze({ ...classifiedActivation, outputConfig: false })
       : classifiedActivation;
     const proposedStep = (currentAgentStep(agent) ?? 0) + 1;
-    prepareSessionOutputControl({
+    if (directInput?.phase === "committed") prepareSessionOutputControl({
       events: evidence.events(agent),
       text: directText,
       turn,
@@ -307,17 +309,27 @@ export function createPromptRuntime(deps: PromptDependencies) {
       step: proposedStep,
       responsibilityReturn: responsibilityReturnNeeded,
     });
+    const childRestriction = childSession
+      ? { allow: DEFAULT_CHILD_ALLOWED_TOOLS, deny: config.governance.additionalDeniedTools }
+      : {};
     const executableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
-    const visibleAssembly = reconcileAdaptiveToolSchemas(assembly, activeToolNames, executableSchemas);
-    if (visibleAssembly !== assembly) assembly.tools = visibleAssembly.tools;
+    const visibleAssembly = reconcileAdaptiveToolSchemas(assembly, activeToolNames, executableSchemas, childRestriction);
+    if (visibleAssembly !== assembly) {
+      assembly.tools = visibleAssembly.tools;
+      assembly.sections = visibleAssembly.sections;
+    }
 
     const downstream = await next();
     const finalExecutableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
-    const reconciledDownstream = reconcileAdaptiveToolSchemas(downstream, activeToolNames, finalExecutableSchemas);
+    const reconciledDownstream = reconcileAdaptiveToolSchemas(downstream, activeToolNames, finalExecutableSchemas, childRestriction);
     const selection: SkillSelection = await selectSharedSkillForTurn(agent, () => selectForAgent(agent, context));
     const outputSelection: OutputSelection = childSession
       ? Object.freeze({ policy: DEFAULT_OUTPUT_POLICY, source: "default" })
-      : await selectSharedOutputPolicyForTurn(agent, turn, () => selectOutputForAgent(agent, turn));
+      : previewSessionOutputControl(
+        await selectSharedOutputPolicyForTurn(agent, turn, () => selectOutputForAgent(agent, turn)),
+        { events: evidence.events(agent), text: directText, turn, step: proposedStep,
+          userMessageId: typeof directMessage?.id === "string" ? directMessage.id : undefined },
+      );
     const selectionEvidence = {
       ...(turn === undefined ? {} : { turn }),
       requestedMode: selection.mode,

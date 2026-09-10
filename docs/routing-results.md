@@ -4,7 +4,7 @@
 
 本报告只记录 DeepSeek Harness（DSH）能力路由的产品契约、机械验证和冻结对照。普通单模型全量与 A/B 结果见 [`evaluation-results.md`](evaluation-results.md)。单次路由样本用于证明真实换模、边界、质量和资源足迹，不用于宣称路由稳定优于单一充分能力总控。
 
-> 当前候选为 DSH `0.2.27` / canonical `0.3.10` / runtime contract `6`，尚未运行新的计分路由评测。当前配置和兼容边界见 [`dsh/README.md`](../dsh/README.md)。下列产品契约与机械验证按 `0.2.22` 历史口径保留：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。该版补充带认证用户原文来源的 active/superseded requirement provenance，使用 manifest schema 2 与 controller-only reference bridge。独立 Executor、route card 与 Codex stage runner 已退役，相关数值只用于解释删除决定，不是当前能力或配置说明。
+> 当前候选为 DSH `0.2.28` / canonical `0.3.10` / runtime contract `6`，尚未运行新的计分路由评测。当前配置和兼容边界见 [`dsh/README.md`](../dsh/README.md)。下列产品契约与机械验证按 `0.2.22` 历史口径保留：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。该版补充带认证用户原文来源的 active/superseded requirement provenance，使用 manifest schema 2 与 controller-only reference bridge。独立 Executor、route card 与 Codex stage runner 已退役，相关数值只用于解释删除决定，不是当前能力或配置说明。
 >
 > 当前候选把 bounded role context packet 升级为 schema 3。packet 优先绑定 responsibility gap 的认证 direct-user task message，只从该边界起选择 tool、assistant、diff、test 与 acceptance 证据；没有显式绑定时使用最新 direct-user task，显式 ID 无法唯一解析时不借用 session 旧证据并判为不充分。边界来源、消息 ID、起点和排除事件数进入 packet/evidence digest、责任正文与 `odai/route-context`，便于复核跨任务隔离。该行为目前只有机械回归证据，不计入下列历史模型分数。
 

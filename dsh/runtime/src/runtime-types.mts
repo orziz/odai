@@ -110,6 +110,7 @@ export interface DshSessionHeader extends UnknownRecord {
 }
 
 export interface DshSession {
+  readonly id?: string;
   header: DshSessionHeader;
   snapshotEvents(): readonly DshEvent[];
   eventAt?(seq: number): DshEvent | undefined;
@@ -137,6 +138,7 @@ export interface DshAgent {
   phase?: { turn?: number; step?: number };
   options?: UnknownRecord;
   ctx?: {
+    on?(event: string, handler: CallableFunction): unknown;
     tools?: {
       restrict(restriction: ToolRestriction): (() => void) | void;
     };
@@ -212,6 +214,7 @@ export interface DshSessionsService {
 export interface DshRuntimeContext {
   on(event: string, handler: CallableFunction, options?: UnknownRecord): void;
   effect?(effect: () => (() => void | Promise<void>) | void, label?: string): void;
+  inject?(services: readonly string[], apply: (ctx: DshRuntimeContext) => void): { dispose(): void | Promise<void> };
   logger?(name: string): RuntimeLogger;
   tools: DshToolsService;
   systemPrompt: {

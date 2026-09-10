@@ -35,7 +35,7 @@ test("bundle patch resolves the packaged runtime through the package export", as
   assert.equal(metadata.files.some((entry: string) => entry.includes("tests") || entry.includes("scripts")), false);
 });
 
-test("CLI exposes only the explicit legacy session repair command", () => {
+test("CLI clearly retires the incompatible legacy repair command", () => {
   const bin = resolve(pluginRoot, "build/bin/odai-dsh-plugin.mjs");
   const help = spawnSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
   assert.equal(help.status, 0);
@@ -47,7 +47,7 @@ test("CLI exposes only the explicit legacy session repair command", () => {
 
   const runtimeLocated = spawnSync(process.execPath, [bin, "legacy-session-repair", "--dsh-home", pluginRoot], { encoding: "utf8" });
   assert.notEqual(runtimeLocated.status, 0);
-  assert.match(runtimeLocated.stderr, /rerun legacy-session-repair with --yes/u);
+  assert.match(runtimeLocated.stderr, /retired for DSH 0\.1\.5-rc\.1/u);
   assert.doesNotMatch(runtimeLocated.stderr, /runtime is unavailable/u);
 
   const missingHome = spawnSync(process.execPath, [bin, "legacy-session-repair", "--dsh-home", "--yes"], { encoding: "utf8" });

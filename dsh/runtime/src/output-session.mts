@@ -138,6 +138,18 @@ export function prepareSessionOutputControl(options: PrepareSessionOutputOptions
   });
 }
 
+/** Calculate this request's override without creating durable authorization. */
+export function previewSessionOutputControl(
+  selection: SessionOutputSelection,
+  options: Omit<PrepareSessionOutputOptions, "append">,
+): Readonly<SessionOutputSelection> {
+  const events = [...options.events];
+  prepareSessionOutputControl({ ...options, events, append(type, data) {
+    events.push({ type, data: data as RuntimeEventData });
+  } });
+  return applySessionOutputControl(selection, events, options.turn);
+}
+
 export function applySessionOutputControl(
   selection: SessionOutputSelection,
   events: readonly DshEvent[],

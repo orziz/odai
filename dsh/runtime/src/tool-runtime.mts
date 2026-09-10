@@ -1,5 +1,5 @@
 import { extractLatestUserText } from "./router.mjs";
-import { activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
+import { DEFAULT_CHILD_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
 import { createRoutingConfigTool, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import { createOutputConfigTool } from "./output-config.mjs";
 import type { OutputPolicy } from "./output-config.mjs";
@@ -250,8 +250,9 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     const deniedNames = [
       ...inactiveOdaiToolNames(activeNames),
       ...ODAI_CORE_TOOL_NAMES.filter((name) => !activeNames.includes(name)),
+      ...(child ? config.governance.additionalDeniedTools : []),
     ];
-    const key = deniedNames.join("\u0000");
+    const key = `${child ? "child" : "controller"}\u0000${deniedNames.join("\u0000")}`;
     const previous = toolExposureStates.get(agent);
     if (previous?.key === key || previous?.key === "unsupported" || previous?.key === "fallback") return activeNames;
     previous?.dispose?.();
@@ -262,8 +263,8 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       return activeNames;
     }
     try {
-      const restriction = deniedNames.length > 0
-        ? restrict.call(agentTools, { deny: deniedNames })
+      const restriction = deniedNames.length > 0 || child
+        ? restrict.call(agentTools, { deny: deniedNames, ...(child ? { allow: DEFAULT_CHILD_ALLOWED_TOOLS } : {}) })
         : undefined;
       const dispose = typeof restriction === "function" ? restriction : undefined;
       toolExposureStates.set(agent, Object.freeze({ key, dispose }));
@@ -279,6 +280,16 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     }
     return activeNames;
   };
+
+  // Native pre-step producers (including the skill catalog) inspect the scoped
+  // registry before prompt assembly. Restrict inherited child tools at creation.
+  ctx.on("agent/created", ({ agent }: { agent: DshAgent }) => {
+    if (!isSubagentSession(agent)) return;
+    agent.ctx?.tools?.restrict?.({
+      allow: DEFAULT_CHILD_ALLOWED_TOOLS,
+      deny: config.governance.additionalDeniedTools,
+    });
+  });
 
   promptRuntime.install({ pendingResponsibilityGap, syncToolExposure });
 

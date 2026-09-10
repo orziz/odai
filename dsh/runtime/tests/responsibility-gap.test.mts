@@ -31,15 +31,7 @@ test("responsibility gaps are structured, grounded, and content addressed", () =
     evidenceRefs: ["user-request"],
     expectedChange: "Choose compatibility or speed.",
   }), /question is required/u);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /never request internal roles/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /Never ask repository facts/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /independently deployed contracts/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /auth\/state-machine changes/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /exact user excerpts/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /rollout compatibility/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /rollback boundaries/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /never replace native acceptance, write, diff, or test evidence/iu);
-  assert.match(RESPONSIBILITY_GAP_PROMPT, /binds the proposal to the latest authenticated direct-user task/iu);
+  assert.equal(RESPONSIBILITY_GAP_PROMPT, "", "internal dispatch protocol is not a standing system prompt");
 });
 
 test("responsibility gap identity is bound to the direct user task", () => {

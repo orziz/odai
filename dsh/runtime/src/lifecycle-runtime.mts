@@ -14,7 +14,8 @@ import type { RouteDecision } from "./router.mjs";
 import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { classifyModelRouteFailure, probeModelRoute } from "./model-route.mjs";
 import { selectSharedOutputPolicyForTurn } from "./output-policy-state.mjs";
-import { prepareSessionOutputControl } from "./output-session.mjs";
+import { prepareSessionOutputControl, previewSessionOutputControl } from "./output-session.mjs";
+import type { SessionOutputSelection } from "./output-session.mjs";
 import {
   isSubagentSession, outputText, pluginMessage,
   renderOutputLimitInterruptionNotice, renderResearchTaskContract, routeFromConfig,
@@ -47,6 +48,9 @@ import type { SkillSelection } from "./runtime-support.mjs";
 import {
   captureAutomaticMemories,
   claimSemanticMemoryTurn,
+  currentDirectInput,
+  invalidateNativeDirectInput,
+  observeNativeDirectInput,
   latestDirectUserMessage,
   memoryPacketMessage,
   renderSemanticMemoryPacket,
@@ -124,17 +128,44 @@ interface LifecycleDependencies {
   responsibilityScopeOwners: WeakMap<DshSession, DshAgent>;
   responsibilityScopes: WeakMap<DshAgent, ResponsibilityScope>;
   routeProtections: WeakMap<DshAgent, RouteProtection>;
-  selectOutputForAgent(agent?: DshAgent, turn?: number): { policy: { maxTokens?: number } };
+  selectOutputForAgent(agent?: DshAgent, turn?: number): SessionOutputSelection;
   stopDanglingResponsibilityScope(agent: DshAgent, reason: string): RuntimeEventData | undefined;
   stopResponsibilityScope(agent: DshAgent, reason: string, position?: RuntimeEventData): ResponsibilityScope | undefined;
 }
 
 export function installLifecycleRuntime(deps: LifecycleDependencies): void {
   const { appendEvent, bundled, config, configuredRole, ctx, evidence, hasSessionEvent, invalidateFailedRoleRoute, logger, memorySettingsFor, outputUsageBySession, pendingResponsibilityGap, pendingRouteReceipts, pendingScopeRestorations, responsibilityScopeOwners, responsibilityScopes, routeProtections, selectOutputForAgent, stopDanglingResponsibilityScope, stopResponsibilityScope } = deps;
+  const inputRequests = new WeakMap<DshAgent, { token: object; turn: number; signal: AbortSignal }>();
+  const inputGuards = new WeakSet<DshAgent>();
+  ctx.on("agent/inbox/claimed", ({ agent, turn, message }: { agent: DshAgent; turn: number; message: DshMessage }) => {
+    if (isSubagentSession(agent) || typeof agent.ctx?.on !== "function" || !agent.session.id) return;
+    if (!inputGuards.has(agent)) {
+      agent.ctx.on("llm/stream", (options: UnknownRecord, next: () => unknown) => {
+        const expected = inputRequests.get(agent);
+        if (!expected || options.sessionId !== agent.session.id || options.purpose === "compaction") return next();
+        const committed = currentDirectInput(agent, { turn: expected.turn, signal: expected.signal });
+        if (!committed || committed.token !== expected.token) {
+          invalidateNativeDirectInput(agent);
+          throw new DOMException("ODAI_INPUT_NOT_COMMITTED: claimed input changed or was canceled before model dispatch", "AbortError");
+        }
+        return next();
+      });
+      inputGuards.add(agent);
+    }
+    responsibilityScopeOwners.set(agent.session, agent);
+    observeNativeDirectInput(agent, turn, message);
+  });
+  ctx.on("agent/disposed", ({ agent }: { agent: DshAgent }) => {
+    invalidateNativeDirectInput(agent, true);
+    inputRequests.delete(agent);
+  });
   ctx.on("agent/request", async (
     { agent, turn, step, signal }: AgentRequestEvent,
     next: () => Promise<RequestOptions>,
   ) => {
+    const input = currentDirectInput(agent, { turn, signal, minimum: "claimed" });
+    if (input?.phase === "claimed" && input.token) inputRequests.set(agent, { token: input.token, turn, signal });
+    else inputRequests.delete(agent);
     let proposed = await next();
     const childRole = routedRoleOf(agent);
     if (!childRole && !isSubagentSession(agent)) {
@@ -307,7 +338,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     }
     if (childRole || isSubagentSession(agent)) return finalize(request);
 
-    const outputSelection = await selectSharedOutputPolicyForTurn(agent, turn, () => selectOutputForAgent(agent, turn));
+    const requestInput = currentDirectInput(agent, { turn, signal, minimum: "claimed" });
+    const outputSelection = previewSessionOutputControl(
+      await selectSharedOutputPolicyForTurn(agent, turn, () => selectOutputForAgent(agent, turn)),
+      { events: evidence.events(agent), text: requestInput ? extractLatestUserText([requestInput.message]) : "", turn, step,
+        userMessageId: typeof requestInput?.message.id === "string" ? requestInput.message.id : undefined },
+    );
     const configuredMaxTokens = outputSelection.policy.maxTokens;
     if (scopedResponsibilityMaxTokens !== undefined) {
       if (!hasSessionEvent(agent, "odai/output-budget-overridden", (data) => data?.turn === turn && data?.step === step)) {
@@ -434,6 +470,33 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
   ctx.on("session/event", (session: DshSession, event: DshEvent) => {
     const owner = responsibilityScopeOwners.get(session);
+    if (owner && event.type === "turn/end") invalidateNativeDirectInput(owner);
+    if (owner && event.type === "user/message" && !isSubagentSession(owner)) {
+      const message = latestDirectUserMessage(owner);
+      const position = sessionEvents(session).findLast((entry) => entry.type === "step/start")?.data;
+      const turn = position?.turn;
+      const step = position?.step;
+      if (message && message.id === event.data.id && typeof turn === "number" && typeof step === "number") {
+        prepareSessionOutputControl({
+          events: evidence.events(owner), text: extractLatestUserText([message]), turn, step,
+          userMessageId: typeof message.id === "string" ? message.id : undefined,
+          append(type, data) { appendEvent(owner, type, data); },
+        });
+        const settings = memorySettingsFor(owner, turn);
+        if (step === 1 && settings.mode === "auto" && claimSemanticMemoryTurn(owner, turn, step, `capture:${message.id}`)) {
+          try {
+            const captured = captureAutomaticMemories({ storePath: config.memory.storePath, mode: settings.mode,
+              agent: owner, message, turn, cwd: session.header.cwd }).filter((entry) => entry.changed);
+            if (captured.length) appendEvent(owner, "odai/memory-processed", {
+              turn, step, mode: settings.mode, source: settings.source, retrievedIds: [],
+              captures: captured, status: "completed",
+            });
+          } catch (error) {
+            logger.warn(`Odai committed memory capture failed closed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+    }
     const activeScope = owner ? responsibilityScopes.get(owner) : undefined;
     const eventMatchesRequestPosition = (position: RuntimeEventData) => Number.isSafeInteger(event.data.turn)
       && Number.isSafeInteger(event?.data?.step)
@@ -703,13 +766,24 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         stopDanglingResponsibilityScope(agent, "runtime-resume");
       }
       let downstream = await next();
-      if (downstream.kind === "reject" || signal.aborted) return downstream;
-      const responsibilityGap = subagentSession ? undefined : pendingResponsibilityGap(agent, turn, step);
+      if (downstream.kind === "reject" || signal.aborted) {
+        invalidateNativeDirectInput(agent);
+        return downstream;
+      }
       const authenticatedDirectMessage = latestDirectUserMessage(agent, undefined, { turn });
       const suppliedDirectMessages = Array.isArray(downstream.messages)
-        ? downstream.messages.filter((message) => message?.role === "user" && message?.source?.kind === "user")
+        ? downstream.messages.filter((message) => message?.source?.kind === "user")
         : [];
+      const previewInput = currentDirectInput(agent, { turn, signal, minimum: "claimed", messages: suppliedDirectMessages });
+      if (!previewInput && currentDirectInput(agent, { turn, signal, minimum: "claimed" })?.phase === "claimed") {
+        invalidateNativeDirectInput(agent);
+        return { ...downstream, kind: "reject", reason: "ODAI_INPUT_CHANGED_BEFORE_ADMISSION" };
+      }
       const directMessage = latestDirectUserMessage(agent, suppliedDirectMessages, { turn });
+      const responsibilityGap = subagentSession ? undefined : pendingResponsibilityGap(agent, turn, step);
+      // Inbox messages are committed after pre-step. Do not dispatch a task-bound
+      // proposal while a new or changed human batch still lacks native admission.
+      if (responsibilityGap?.taskMessageId && suppliedDirectMessages.length > 0 && !directMessage) return downstream;
       const authenticatedDirectText = authenticatedDirectMessage
         ? extractLatestUserText([authenticatedDirectMessage])
         : "";
@@ -761,7 +835,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
       if (step === 1 && claimSemanticMemoryTurn(agent, turn, step)) {
         const settings = memorySettingsFor(agent, turn);
-        const message = directMessage;
+        const message = previewInput?.message;
         const query = extractRoutingText(downstream.messages, sessionEvents(agent?.session)).slice(0, config.routing.maxInputChars);
         let retrieved: readonly SemanticMemorySummary[] = [];
         let captured: readonly UnknownRecord[] = [];
@@ -774,14 +848,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               cwd: agent?.session?.header?.cwd,
               limit: config.memory.maxRetrieved,
             });
-            captured = captureAutomaticMemories({
-              storePath: config.memory.storePath,
-              mode: settings.mode,
-              agent,
-              message,
-              turn,
-              cwd: agent?.session?.header?.cwd,
-            });
+            if (directMessage && claimSemanticMemoryTurn(agent, turn, step, `capture:${message.id}`)) {
+              captured = captureAutomaticMemories({
+                storePath: config.memory.storePath, mode: settings.mode, agent, message, turn,
+                cwd: agent?.session?.header?.cwd,
+              });
+            }
           } catch (memoryError) {
             error = memoryError instanceof Error ? memoryError.message : String(memoryError);
             logger.warn(`Odai semantic memory processing failed closed for this turn: ${error}`);

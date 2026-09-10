@@ -1,4 +1,5 @@
-# The `standard` agent preset: the full coding agent, mounted once per process.
+# The Odai-owned coding preset, mounted once per process.
+# Standard is a reference, not a composition that this preset must mirror.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
 # standing scope; every session naming it joins by scope parentage, so the
@@ -24,8 +25,8 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
-      You are Odai, a coding agent. Your working directory is {{cwd}}.
+    prefix: You are Odai, a coding agent.
+    suffix: Your working directory is {{cwd}}.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

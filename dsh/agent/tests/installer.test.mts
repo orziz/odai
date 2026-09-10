@@ -30,16 +30,16 @@ function jsonRecord(text: string): Record<string, unknown> {
 }
 
 test("Agent composition follows the exact rc.1 support contract", async () => {
-  assert.equal(SUPPORTED_DSH_RANGE, "0.1.2-rc.1");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.2-rc.1"]);
-  assert.equal(supportsDshVersion("0.1.2-rc.1"), true);
+  assert.equal(SUPPORTED_DSH_RANGE, "0.1.5-rc.1");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.5-rc.1"]);
+  assert.equal(supportsDshVersion("0.1.5-rc.1"), true);
   for (const unsupported of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2-rc.2", "0.1.2", "0.1.3-alpha.1", "0.1.3"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
 
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.2-rc.1"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.5-rc.1"), normalizedSource);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.2"), /unsupported DSH version/u);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.3-alpha.1"), /unsupported DSH version/u);
 });
@@ -254,14 +254,12 @@ test("uninstall refuses to leave an invalid default preset", async () => {
   }
 });
 
-test("published metadata describes complete DSH capabilities in Chinese", async () => {
+test("published metadata exposes the intended runtime and client entry points", async () => {
   const packageMetadata = jsonRecord(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
-  const presetMetadata = await readFile(resolve(import.meta.dirname, "../preset/odai/preset.yml"), "utf8");
   const controlCenterPatch = await readFile(resolve(import.meta.dirname, "../control-center.cordis.patch.yml"), "utf8");
 
   assert.ok(typeof packageMetadata.description === "string");
   assert.ok(isRecord(packageMetadata.engines));
-  assert.match(packageMetadata.description, /完整继承 DSH 标准模式 全部能力/u);
   assert.equal(packageMetadata.engines.node, ">=22.15.0");
   assert.ok(isRecord(packageMetadata.exports));
   assert.equal(packageMetadata.exports["./client"], "./client/client.js");
@@ -270,8 +268,6 @@ test("published metadata describes complete DSH capabilities in Chinese", async 
   assert.equal(packageMetadata.dsh.client.platform, "web");
   assert.match(controlCenterPatch, /^\s+name: odai-dsh-agent$/mu);
   assert.doesNotMatch(controlCenterPatch, /control-center-host/u);
-  assert.match(presetMetadata, /^name: odai 治理模式$/mu);
-  assert.match(presetMetadata, /^description: 完整继承 DSH 标准模式 全部能力，并叠加 odai 治理、证据与自动路由，以 odai 为总控。$/mu);
 });
 
 test("failed update cleanup is guarded by confirmed backup disposition", async () => {

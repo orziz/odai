@@ -70,7 +70,7 @@ export const MANIFEST_FILE = ".odai-agent.json";
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(moduleDirectory, moduleDirectory.endsWith(`${sep}build${sep}src`) ? "../.." : "..");
 
-export const inject = ["connection", "llm"];
+export const inject = ["connection", "llm", "webServer"];
 
 export async function apply(ctx: unknown, rawConfig: unknown = {}): Promise<void> {
   const moduleUrl = pathToFileURL(resolve(packageRoot, "preset/odai/runtime/control-center-host.mjs")).href;
@@ -95,8 +95,8 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const EXPECTED_DSH_RANGE = "0.1.2-rc.1";
-const SOURCE_DSH_VERSION = "0.1.2-rc.1";
+const EXPECTED_DSH_RANGE = "0.1.5-rc.1";
+const SOURCE_DSH_VERSION = "0.1.5-rc.1";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
 if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
   throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);

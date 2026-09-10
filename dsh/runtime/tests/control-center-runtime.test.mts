@@ -20,6 +20,34 @@ interface OuterResult {
   value: ControlCenterResponse;
 }
 
+test("Control Center registers exact authenticated transport routes and validates RPC envelopes", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-control-center-fetch-"));
+  const routes = new Map<string, { fetch(request: Request): Promise<Response> }>();
+  const connection = { rpc: { handle() { throw new Error("custom RPC carrier must not be used"); } },
+    fetch: { register(route: { path: string; fetch(request: Request): Promise<Response> }) {
+      routes.set(route.path, route); return () => { routes.delete(route.path); };
+    } } };
+  const ctx = { get() { return connection; }, llm: { resolveCallConfig(route: UnknownRecord) { return { config: route }; } } } as unknown as DshRuntimeContext;
+  const dispose = installControlCenterRuntime(ctx, { configPath: resolve(scratch, "routing.json") });
+  try {
+    const path = "/api/odai-control-center/routing";
+    const route = routes.get(path);
+    assert.ok(route);
+    assert.equal(routes.size, 2);
+    const call = (body: unknown) => route.fetch(new Request(`http://localhost${path}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }));
+    assert.equal((await call({ type: "client-request", rpcId: "probe", method: "wrong" })).status, 400);
+    const response = await call({ type: "client-request", rpcId: "probe", method: "odai-control-center/routing", payload: { action: "show" } });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { rpcId: string; result: OuterResult };
+    assert.equal(body.rpcId, "probe");
+    assert.equal(body.result.value.ok, true);
+    assert.ok(body.result.value.config);
+  } finally { await dispose?.(); await rm(scratch, { recursive: true, force: true }); }
+  assert.equal(routes.size, 0);
+});
+
 test("Control Center uses one process-wide loopback RPC registration across Cordis scopes", async () => {
   const scratch = await mkdtemp(resolve(tmpdir(), "odai-control-center-runtime-"));
   const configPath = resolve(scratch, "routing.json");

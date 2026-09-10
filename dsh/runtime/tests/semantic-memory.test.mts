@@ -19,6 +19,9 @@ import {
   captureAutomaticMemories,
   containsSensitiveMemory,
   createSemanticMemoryTool,
+  currentDirectInput,
+  invalidateNativeDirectInput,
+  observeNativeDirectInput,
   discoverAutomaticMemoryCandidates,
   latestDirectUserMessage,
   renderSemanticMemoryPacket,
@@ -92,6 +95,59 @@ function directMessage(id: string, text: string): DshMessage {
     source: { kind: "user" },
   };
 }
+
+test("native claimed input previews the newest batch but requires matching commitment for permission", () => {
+  const old = directMessage("old", "旧任务");
+  const latest = directMessage("latest", "我偏好中文回答");
+  const events: DshEvent[] = [
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: old },
+    { type: "agent/inbox/spliced", seq: 3, data: { target: "next-step", start: 0, removedCount: 2, inserted: [] } },
+  ];
+  const agent = agentWithEvents(events);
+  observeNativeDirectInput(agent, 1, old);
+  observeNativeDirectInput(agent, 1, latest);
+  const preview = currentDirectInput(agent, { minimum: "claimed" });
+  assert.equal(preview?.message.id, latest.id);
+  assert.equal(preview?.phase, "claimed");
+  assert.equal(latestDirectUserMessage(agent), undefined);
+  assert.equal(currentDirectInput(agent, { minimum: "claimed", messages: [directMessage("latest", "改写内容")] }), undefined);
+  events.push({ type: "user/message", seq: 4, data: old });
+  assert.equal(latestDirectUserMessage(agent), undefined, "earlier batch commits cannot recover old permission");
+  events.push({ type: "user/message", seq: 5, data: latest });
+  assert.equal(currentDirectInput(agent)?.phase, "committed");
+  assert.equal(currentDirectInput(agent)?.token, preview?.token);
+  events.push({ type: "user/message", seq: 6, data: { ...latest, source: { kind: "plugin" } } });
+  assert.equal(latestDirectUserMessage(agent)?.id, latest.id);
+  events.push({ type: "agent/inbox/spliced", seq: 7, data: { removedCount: 1, inserted: [] } });
+  observeNativeDirectInput(agent, 1, { ...latest, id: "malformed", content: "invalid" });
+  assert.equal(currentDirectInput(agent, { minimum: "claimed" }), undefined);
+  assert.equal(latestDirectUserMessage(agent), undefined);
+});
+
+test("native claim authority does not survive cancellation, rejection, replacement, or restart", () => {
+  for (const invalidate of ["abort", "reject", "closed", "new-turn", "disposed", "session", "restart", "conflict"] as const) {
+    const message = directMessage("claim", "我偏好中文回答");
+    const events: DshEvent[] = [
+      { type: "turn/start", seq: 1, data: { turn: 1 } },
+      { type: "agent/inbox/spliced", seq: 2, data: { removedCount: 1, inserted: [] } },
+    ];
+    let agent = agentWithEvents(events);
+    const abort = new AbortController();
+    observeNativeDirectInput(agent, 1, message);
+    assert.equal(currentDirectInput(agent, { minimum: "claimed", signal: abort.signal })?.phase, "claimed");
+    if (invalidate === "abort") abort.abort();
+    if (invalidate === "reject") invalidateNativeDirectInput(agent);
+    if (invalidate === "disposed") invalidateNativeDirectInput(agent, true);
+    if (invalidate === "closed") events.push({ type: "turn/end", seq: 3, data: { turn: 1 } });
+    if (invalidate === "new-turn") events.push({ type: "turn/start", seq: 3, data: { turn: 2 } });
+    if (invalidate === "session") agent.session = agentWithEvents([...events]).session;
+    if (invalidate === "restart") agent = agentWithEvents(events);
+    if (invalidate === "conflict") events.push({ type: "user/message", seq: 3, data: directMessage("claim", "改写内容") });
+    assert.equal(currentDirectInput(agent, { minimum: "claimed" }), undefined, invalidate);
+    assert.equal(latestDirectUserMessage(agent), undefined, invalidate);
+  }
+});
 
 function agentFor({ id, cwd, turn = 1, text, messageId = `${id}-message` }: AgentFixtureOptions): AgentFixture {
   const message = directMessage(messageId, text);
@@ -200,11 +256,55 @@ test("only the authenticated direct-human message in the current open turn is el
     ...valid.session.snapshotEvents(),
     { type: "user/message", seq: 12, data: malformed },
   ])), undefined);
-  const plugin = { ...stale, source: { kind: "plugin" } };
-  assert.equal(latestDirectUserMessage(agentWithEvents([
+  for (const source of [
+    { kind: "plugin", plugin: "tool-jobs", form: "notice" },
+    { kind: "plugin", plugin: "system-prompt", form: "instructions" },
+    { kind: "agent-instructions" },
+    { kind: "skill-catalog" },
+    { kind: "subagent-settled" },
+    { kind: "unknown" },
+    undefined,
+  ]) {
+    const context = { ...stale, source };
+    const withContext = agentWithEvents([
+      ...valid.session.snapshotEvents(),
+      { type: "user/message", seq: 12, data: context },
+    ]);
+    assert.equal(latestDirectUserMessage(withContext), human);
+    assert.equal(latestDirectUserMessage(withContext, [human, context]), human);
+    assert.equal(latestDirectUserMessage(agentWithEvents([
+      { type: "turn/start", seq: 10, data: { turn: 3 } },
+      { type: "user/message", seq: 12, data: context },
+    ])), undefined);
+    assert.equal(latestDirectUserMessage(agentWithEvents([
+      ...valid.session.snapshotEvents(),
+      { type: "turn/start", seq: 12, data: { turn: 4 } },
+      { type: "user/message", seq: 13, data: context },
+    ]), [human]), undefined);
+  }
+
+  for (const malformedHuman of [
+    { ...human, id: "" },
+    { ...human, role: "assistant" },
+    { ...human, content: [] },
+    { ...human, content: undefined },
+  ]) {
+    assert.equal(latestDirectUserMessage(agentWithEvents([
+      ...valid.session.snapshotEvents(),
+      { type: "user/message", seq: 12, data: malformedHuman },
+    ])), undefined, "a malformed newer human must not revive the older one");
+  }
+  const newer = directMessage("newer", "改为使用 npm。");
+  const updated = agentWithEvents([
     ...valid.session.snapshotEvents(),
-    { type: "user/message", seq: 12, data: plugin },
-  ])), undefined);
+    { type: "user/message", seq: 12, data: newer },
+  ]);
+  assert.equal(latestDirectUserMessage(updated), newer);
+  assert.equal(latestDirectUserMessage(updated, [human]), undefined);
+  assert.equal(latestDirectUserMessage(valid, [human, newer]), undefined);
+  assert.equal(latestDirectUserMessage(valid, [{
+    ...human, content: [{ type: "text", text: "同 ID 的伪造内容。" }],
+  }]), undefined);
 });
 
 test("memory store is strict, local, atomic, and rejects symlink substitution", (t) => {

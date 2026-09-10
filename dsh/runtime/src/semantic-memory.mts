@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   DEFAULT_MEMORY_SETTINGS,
@@ -188,7 +189,7 @@ function sharedTurnState(): WeakMap<object, Set<string>> {
   return created;
 }
 
-export function claimSemanticMemoryTurn(agent: DshAgent, turn: unknown, step: unknown): boolean {
+export function claimSemanticMemoryTurn(agent: DshAgent, turn: unknown, step: unknown, phase = "retrieve"): boolean {
   if (!agent || typeof agent !== "object" || !Number.isSafeInteger(turn) || !Number.isSafeInteger(step)) return false;
   const state = sharedTurnState();
   let keys = state.get(agent);
@@ -196,7 +197,7 @@ export function claimSemanticMemoryTurn(agent: DshAgent, turn: unknown, step: un
     keys = new Set();
     state.set(agent, keys);
   }
-  const key = `${turn}:${step}`;
+  const key = `${turn}:${step}:${phase}`;
   if (keys.has(key)) return false;
   keys.add(key);
   return true;
@@ -273,9 +274,12 @@ function messageText(message: DshMessage | undefined): string {
     .join("\n");
 }
 
+function hasHumanSource(message: unknown): boolean {
+  return isUnknownRecord(message) && isUnknownRecord(message.source) && message.source.kind === "user";
+}
+
 function isDirectUserMessage(message: unknown): message is DshMessage {
-  if (!isUnknownRecord(message) || message.role !== "user" || !Array.isArray(message.content)) return false;
-  return isUnknownRecord(message.source) && message.source.kind === "user";
+  return isUnknownRecord(message) && message.role === "user" && Array.isArray(message.content) && hasHumanSource(message);
 }
 
 interface OpenTurnBoundary { readonly index: number; readonly seq: number; readonly turn: number }
@@ -303,7 +307,133 @@ function currentTurnFor(agent: DshAgent): number | undefined {
   return currentOpenTurnBoundary(agent)?.turn;
 }
 
+interface NativeInputRecord {
+  session: DshAgent["session"];
+  turn: number;
+  boundarySeq: number;
+  claimSeq: number;
+  raw: unknown;
+  message?: DshMessage;
+  blocked: boolean;
+  committedSeq?: number;
+  disposed?: boolean;
+  signalLink: { signal?: AbortSignal };
+}
+const nativeInputGlobal = globalThis as typeof globalThis & {
+  __odaiNativeDirectInputs?: WeakMap<DshAgent, NativeInputRecord>;
+};
+const nativeInputs = nativeInputGlobal.__odaiNativeDirectInputs ??= new WeakMap<DshAgent, NativeInputRecord>();
+
+function validDirectMessage(message: unknown): message is DshMessage {
+  return isDirectUserMessage(message) && typeof message.id === "string"
+    && message.id.length > 0 && message.id.length <= 200 && messageText(message) !== "";
+}
+function freezeInput<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value && typeof value === "object" && !seen.has(value)) {
+    seen.add(value);
+    for (const child of Object.values(value)) freezeInput(child, seen);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/** Observe only the synchronous native inbox/claimed event, never proposed messages. */
+export function observeNativeDirectInput(agent: DshAgent, turn: number, message: unknown): void {
+  if (!hasHumanSource(message)) return;
+  const boundary = currentOpenTurnBoundary(agent);
+  if (!boundary || boundary.turn !== turn || !agent.session) return;
+  const previous = nativeInputs.get(agent);
+  if (previous?.disposed) return;
+  if (previous?.session === agent.session && previous.boundarySeq === boundary.seq
+    && isDeepStrictEqual(previous.raw, message)) return;
+  const claim = sessionEvents(agent.session).findLast((event) => event.type === "agent/inbox/spliced"
+    && typeof event.seq === "number" && event.seq > boundary.seq
+    && event.data?.outcome !== "canceled" && typeof event.data?.removedCount === "number"
+    && event.data.removedCount > 0);
+  let snapshot: unknown;
+  try { snapshot = freezeInput(structuredClone(message)); } catch { snapshot = undefined; }
+  nativeInputs.set(agent, {
+    session: agent.session, turn, boundarySeq: boundary.seq,
+    claimSeq: claim?.seq ?? boundary.seq,
+    raw: snapshot,
+    message: validDirectMessage(snapshot) ? snapshot : undefined,
+    blocked: !claim || !validDirectMessage(snapshot),
+    signalLink: previous?.session === agent.session && previous.boundarySeq === boundary.seq ? previous.signalLink : {},
+  });
+}
+
+/** Keep a tombstone: cancellation or conflict must not revive older permission. */
+export function invalidateNativeDirectInput(agent: DshAgent, disposed = false): void {
+  const record = nativeInputs.get(agent);
+  if (record) { record.blocked = true; record.disposed ||= disposed; }
+}
+
+export function currentDirectInput(
+  agent: DshAgent,
+  options: { turn?: number; messages?: readonly DshMessage[]; minimum?: "claimed" | "committed"; signal?: AbortSignal } = {},
+): { message: DshMessage; phase: "claimed" | "committed"; token?: object } | undefined {
+  const boundary = currentOpenTurnBoundary(agent);
+  if (!boundary || (options.turn !== undefined && options.turn !== boundary.turn)) return undefined;
+  const record = nativeInputs.get(agent);
+  if (record?.disposed) return undefined;
+  if (options.signal?.aborted || (record?.session === agent.session && record.boundarySeq === boundary.seq && record.signalLink.signal?.aborted)) {
+    invalidateNativeDirectInput(agent);
+    return undefined;
+  }
+  if (record && options.signal && record.signalLink.signal !== options.signal) {
+    const link = record.signalLink;
+    const signal = options.signal;
+    link.signal = signal;
+    signal.addEventListener("abort", () => {
+      if (nativeInputs.get(agent)?.signalLink === link && link.signal === signal) invalidateNativeDirectInput(agent);
+    }, { once: true });
+  }
+  let result: { message: DshMessage; phase: "claimed" | "committed"; token?: object } | undefined;
+  if (record?.session === agent.session && record.boundarySeq === boundary.seq && record.turn === boundary.turn) {
+    if (record.blocked || !record.message) return undefined;
+    const latest = sessionEvents(agent.session).findLast((event) => event.type === "user/message"
+      && typeof event.seq === "number" && event.seq > record.claimSeq && hasHumanSource(event.data));
+    if (latest && latest.data?.id === record.message.id) {
+      if (!validDirectMessage(latest.data) || !isDeepStrictEqual(latest.data.content, record.message.content)) {
+        record.blocked = true;
+        return undefined;
+      }
+      record.committedSeq = latest.seq;
+      result = { message: latest.data, phase: "committed", token: record };
+    } else if (record.committedSeq !== undefined) {
+      record.blocked = true;
+      return undefined;
+    } else if (options.minimum === "claimed") {
+      result = { message: record.message, phase: "claimed", token: record };
+    }
+  } else {
+    const message = committedDirectUserMessage(agent, undefined, options);
+    if (message) result = { message, phase: "committed" };
+  }
+  if (result && options.messages !== undefined) {
+    const supplied = Array.isArray(options.messages) ? options.messages.findLast(hasHumanSource) : undefined;
+    if (!validDirectMessage(supplied) || supplied.id !== result.message.id
+      || !isDeepStrictEqual(supplied.content, result.message.content)) return undefined;
+  }
+  return result;
+}
+
+export function hasUncommittedDirectInput(agent: DshAgent): boolean {
+  const record = nativeInputs.get(agent);
+  const boundary = currentOpenTurnBoundary(agent);
+  return Boolean(boundary && record?.session === agent.session && record.boundarySeq === boundary.seq
+    && !currentDirectInput(agent));
+}
+
 export function latestDirectUserMessage(
+  agent: DshAgent,
+  messages?: readonly DshMessage[],
+  options: { turn?: number } = {},
+): DshMessage | undefined {
+  return currentDirectInput(agent, { ...options, messages })?.message;
+}
+
+function committedDirectUserMessage(
   agent: DshAgent,
   messages?: readonly DshMessage[],
   options: { turn?: number } = {},
@@ -315,7 +445,9 @@ export function latestDirectUserMessage(
 
   let userEvent: DshEvent | undefined;
   for (let index = events.length - 1; index > boundary.index; index -= 1) {
-    if (events[index]?.type === "user/message") {
+    // Framework context shares user/message; it cannot replace the human task.
+    // A malformed newer human must fail validation rather than revive an older one.
+    if (events[index]?.type === "user/message" && hasHumanSource(events[index]?.data)) {
       userEvent = events[index];
       break;
     }
@@ -336,12 +468,14 @@ export function latestDirectUserMessage(
     if (!Array.isArray(messages)) return undefined;
     let supplied: DshMessage | undefined;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index]?.role === "user") {
+      if (hasHumanSource(messages[index])) {
         supplied = messages[index];
         break;
       }
     }
-    if (!isDirectUserMessage(supplied) || supplied.id !== authenticated.id) return undefined;
+    if (!isDirectUserMessage(supplied)
+      || supplied.id !== authenticated.id
+      || !isDeepStrictEqual(supplied.content, authenticated.content)) return undefined;
   }
   return authenticated;
 }

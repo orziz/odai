@@ -47,6 +47,30 @@ interface HostConnectionRpc {
 
 interface HostConnection {
   rpc: HostConnectionRpc;
+  fetch?: {
+    register(route: { path: string; methods: string[]; requestBody: "buffered"; fetch(request: Request): Promise<Response> }): () => void | Promise<void>;
+  };
+}
+
+function registerControlCenter(connection: HostConnection,
+  handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<ConnectionRpcResult>,
+): () => Promise<void> {
+  if (!connection.fetch) return connection.rpc.handle(CONTROL_CENTER_CHANNEL, handler, { authority: "loopback" });
+  const disposers = [CONTROL_CENTER_ENDPOINT, CONTROL_CENTER_EVIDENCE_ENDPOINT].map((endpoint) => {
+    const method = `${CONTROL_CENTER_CHANNEL.slice(1)}/${endpoint}`;
+    return connection.fetch!.register({
+      path: `/api/${method}`, methods: ["POST"], requestBody: "buffered",
+      async fetch(request) {
+        let body: unknown;
+        try { body = await request.json(); } catch { return new Response("body is not JSON", { status: 400 }); }
+        if (!isUnknownRecord(body) || body.type !== "client-request" || typeof body.rpcId !== "string"
+          || body.rpcId.length === 0 || body.method !== method) return new Response("invalid RPC envelope", { status: 400 });
+        return Response.json({ type: "server-response", rpcId: body.rpcId,
+          result: await handler(endpoint, body.payload, request.signal) });
+      },
+    });
+  });
+  return async () => { for (const dispose of disposers) await dispose(); };
 }
 
 interface SharedRegistration {
@@ -86,7 +110,10 @@ function effectiveOptions(owners: ReadonlyMap<symbol, ControlCenterRuntimeOption
 }
 
 function connectionFrom(ctx: DshRuntimeContext): HostConnection | undefined {
-  const candidate = ctx.get?.("connection");
+  // Property access retains Cordis's injected caller; reflect.get may bind the service's owner instead.
+  const candidate = ctx.inject
+    ? (ctx as DshRuntimeContext & { connection?: unknown }).connection
+    : ctx.get?.("connection");
   if (!isUnknownRecord(candidate) || !isUnknownRecord(candidate.rpc)
     || typeof candidate.rpc.handle !== "function") return undefined;
   return candidate as unknown as HostConnection;
@@ -129,6 +156,24 @@ export function installControlCenterRuntimeWhenAvailable(
 ): () => Promise<void> {
   let release: (() => Promise<void>) | undefined;
   let stopped = false;
+  if (ctx.inject) {
+    const binding = ctx.inject(["connection", "webServer"], (available) => {
+      if (stopped) return;
+      const mounted = installControlCenterRuntime(available, options);
+      release = mounted;
+      available.effect?.(() => async () => {
+        if (release === mounted) release = undefined;
+        await mounted?.();
+      }, "odai: Control Center transport ownership");
+    });
+    return async () => {
+      stopped = true;
+      await binding.dispose();
+      const current = release;
+      release = undefined;
+      await current?.();
+    };
+  }
   const mount = (): void => {
     if (stopped || release) return;
     release = installControlCenterRuntime(ctx, options);
@@ -176,7 +221,7 @@ export function installControlCenterRuntime(
   }
 
   const owners = new Map<symbol, ControlCenterRuntimeOptions>([[owner, options]]);
-  const dispose = connection.rpc.handle(CONTROL_CENTER_CHANNEL, async (endpoint, payload, signal) => {
+  const dispose = registerControlCenter(connection, async (endpoint, payload, signal) => {
     if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT) {
       return { ok: true, value: { ok: false, error: { code: "unavailable", message: "unknown Odai Control Center endpoint" } } };
     }
@@ -207,7 +252,7 @@ export function installControlCenterRuntime(
       active.logger?.warn(`Control Center routing request failed: ${error instanceof Error ? error.message : String(error)}`);
       return { ok: true, value: { ok: false, error: failureFor(error) } };
     }
-  }, { authority: "loopback" });
+  });
   const registration: SharedRegistration = { owners, dispose };
   shared.registration = registration;
 

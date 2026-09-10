@@ -104,36 +104,12 @@ async function verifyPinnedComposition(): Promise<string> {
     throw new Error(`agent preset expects ${SUPPORTED_DSH_RANGE}, found ${dshMetadata.version}`);
   }
 
-  const standardPath = process.env.DSH_STANDARD_COMPOSITION
-    ?? resolve(dirname(dirname(dshRoot)), "@deepseek-ai/dsh-agent-presets/presets/standard/agent.cordis.yml");
-  const standard = (await readFile(standardPath, "utf8")).replace(/\r\n/gu, "\n");
-  const odaiSuffix = [
-    "# Odai contributes scoped prompt, guard, routing, user-owned responsibility",
-    "# mappings, and evidence listeners. Base controller selection stays host-owned.",
-    "- id: odai-governance",
-    "  name: ./odai-governance.mjs",
-    "  config:",
-    "    routing:",
-    "      mode: auto",
-    "      provider: spawn",
-  ].join("\n");
-  const expected = `${standard
-    .replace(
-      "# The preset's own persona, shadowing the deployment default for this agent.\n# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.",
-      "# The preset's own model-neutral persona shadows the deployment default. Auto\n# routing can upgrade after prompt assembly; `{{cwd}}` remains workspace-local.",
-    )
-    .replace(
-      "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
-      "You are Odai, a coding agent. Your working directory is {{cwd}}.",
-    )
-    .trimEnd()}\n\n${odaiSuffix}`;
-  const actual = renderAgentCompositionForDsh(
+  // Odai owns its composition. Actual SDK loading and the scope probe below
+  // verify its capabilities; matching Standard text is not a compatibility rule.
+  renderAgentCompositionForDsh(
     await readFile(resolve(agentRoot, "preset/odai/agent.cordis.yml"), "utf8"),
     dshMetadata.version,
-  ).trimEnd();
-  if (actual !== expected) {
-    throw new Error(`Odai Agent composition drifted from the DSH ${dshMetadata.version} standard preset`);
-  }
+  );
   return dshMetadata.version;
 }
 
@@ -196,7 +172,177 @@ if (!compiledPackage && existsSync(developmentRuntime) && existsSync(development
 }
 await installAgentPreset({ dshHome: home, sourceRoot, dshVersion: targetDshVersion });
 
-const probePlugin = `import { existsSync, writeFileSync } from "node:fs";\nimport { bindScopeParent } from ${JSON.stringify(pathToFileURL(scopeModule).href)};\n\nexport const name = "odai-agent-scope-probe";\nexport const inject = ["systemPrompt", "tools"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {\n      const preset = agent.session?.header?.agentPreset;\n      if (preset !== "standard" && preset !== "odai") return;\n\n      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent });\n      const canonicalSections = assembly.sections.filter((section) => section.name === "odai:canonical-governance");\n      const sendMessage = assembly.tools.find((tool) => tool.name === "send_message");\n      const sendProperties = sendMessage?.parameters?.properties;\n      if (preset === "odai") {\n        if (!sendProperties?.agent_id || sendProperties.subagent_id) {\n          throw new Error(\`modern Odai preset did not expose bidirectional send_message: \${JSON.stringify(sendMessage)}\`);\n        }\n        const invalidTarget = await ctx.tools.execute({\n          callId: "scope-probe-invalid-continuable-child",\n          name: "send_message",\n          arguments: { agent_id: "00000000-0000-0000-0000-000000000000", message: "must fail" },\n          agent,\n          signal: new AbortController().signal,\n        });\n        if (!invalidTarget.isError) throw new Error(\`modern send_message accepted an invalid child id: \${JSON.stringify(invalidTarget)}\`);\n      }\n      if (preset === "odai") {\n        const coldNames = assembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n        const expectedColdNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap"];\n        if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {\n          throw new Error(\`cold Odai tool schema mismatch: \${JSON.stringify(coldNames)}\`);\n        }\n        const hiddenResult = await ctx.tools.execute({\n          callId: "scope-probe-odai-hidden-routing",\n          name: "odai_routing_config",\n          arguments: { action: "show" },\n          agent,\n          signal: new AbortController().signal,\n        });\n        if (!hiddenResult.isError || !/unknown tool/u.test(hiddenResult.error?.message ?? "")) {\n          throw new Error(\`hidden Odai routing tool remained executable: \${JSON.stringify(hiddenResult)}\`);\n        }\n        agent.session.append("turn/start", { turn: 1 });\n        agent.session.append("step/start", { turn: 1, step: 1 });\n        if (typeof agent.session.snapshotEvents !== "function" || typeof agent.session.eventAt !== "function" || !Number.isSafeInteger(agent.session.seq)) {\n          throw new Error("Session public read API is incomplete");\n        }\n        const snapshot = agent.session.snapshotEvents();\n        const last = snapshot.at(-1);\n        if (!last || agent.session.eventAt(last.seq) !== last || agent.session.seq !== snapshot.length) {\n          throw new Error("Session snapshot/eventAt/seq ordering contract failed");\n        }\n        agent.session.append("step/end", { turn: 1, step: 1 });\n        if (snapshot.length + 1 !== agent.session.snapshotEvents().length || snapshot.length !== agent.session.seq - 1) {\n          throw new Error("Session snapshot was not stable across append");\n        }\n        const gatewayResult = await ctx.tools.execute({\n          callId: "scope-probe-odai-routing-gateway",\n          name: "odai_context_capability",\n          arguments: { capability: "routing-config" },\n          agent,\n          signal: new AbortController().signal,\n        });\n        if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed: \${JSON.stringify(gatewayResult)}\`);\n        const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent });\n        const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();\n        const expectedActivatedNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap", "odai_routing_config"].sort();\n        if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {\n          throw new Error(\`activated Odai tool schema mismatch: \${JSON.stringify(activatedNames)}\`);\n        }\n      }\n      const writePath = preset === "odai" ? config.odaiWritePath : config.standardWritePath;\n      const childSession = new Proxy(agent.session, {\n        get(target, property) {\n          if (property === "header") {\n            return { ...target.header, origin: "subagent", delegationDepth: 1 };\n          }\n          return Reflect.get(target, property, target);\n        },\n      });\n      const child = { id: agent.id, session: childSession };\n      bindScopeParent(child, agent);\n      const toolResult = await ctx.tools.execute({\n        callId: \`scope-probe-\${preset}\`,\n        name: "write",\n        arguments: { file_path: writePath, content: \`\${preset} child write reached body\\n\` },\n        agent: child,\n        signal: new AbortController().signal,\n      });\n\n      let routingProtected;\n      if (preset === "odai") {\n        const routingResult = await ctx.tools.execute({\n          callId: "scope-probe-odai-routing-config",\n          name: "odai_routing_config",\n          arguments: { action: "set", responsibility: "planner", provider: "probe-provider", model: "probe-planner", reasoningEffort: "high" },\n          agent,\n          signal: new AbortController().signal,\n        });\n        routingProtected = routingResult.isError === true\n          && /NO_ADAPTER/u.test(routingResult.error?.message ?? "")\n          && !existsSync(config.routingConfigPath);\n      }\n\n      results[preset] = {\n        canonicalSectionCount: canonicalSections.length,\n        toolIsError: toolResult.isError === true,\n        toolError: toolResult.isError === true ? toolResult.error?.message : undefined,\n        writeReachedBody: existsSync(writePath),\n        ...(routingProtected === undefined ? {} : { routingProtected }),\n        ...(preset === "odai" ? { toolExposureSynchronized: true } : {}),\n      };\n      if (results.standard && results.odai) {\n        writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");\n      }\n    }).catch((error) => {\n      writeFileSync(config.markerPath, JSON.stringify({ probeError: error?.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  }, { global: true });\n}\n`;
+const probePlugin = `import { existsSync, writeFileSync } from "node:fs";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createScope, scopeOf } from ${JSON.stringify(pathToFileURL(scopeModule).href)};
+import { renderPrompt } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-system-prompt")).href)};
+import { DEFAULT_CHILD_ALLOWED_TOOLS } from ${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/governance.mjs")).href)};
+
+export const name = "odai-agent-scope-probe";
+export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {
+      const preset = agent.session?.header?.agentPreset;
+      if (preset !== "standard" && preset !== "odai") return;\n
+      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent });
+      const canonicalSections = assembly.sections.filter((section) => section.name === "odai:canonical-governance");
+      const sendMessage = assembly.tools.find((tool) => tool.name === "send_message");
+      const sendProperties = sendMessage?.parameters?.properties;
+      if (preset === "odai") {
+        if (!sendProperties?.agent_id || sendProperties.subagent_id) {
+          throw new Error(\`modern Odai preset did not expose bidirectional send_message: \${JSON.stringify(sendMessage)}\`);
+        }
+        const invalidTarget = await ctx.tools.execute({
+          callId: "scope-probe-invalid-continuable-child",
+          name: "send_message",
+          arguments: { agent_id: "00000000-0000-0000-0000-000000000000", message: "must fail" },
+          agent,
+          signal: new AbortController().signal,
+        });
+        if (!invalidTarget.isError) throw new Error(\`modern send_message accepted an invalid child id: \${JSON.stringify(invalidTarget)}\`);
+      }
+      if (preset === "odai") {
+        const coldNames = assembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();
+        const expectedColdNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap"];
+        if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {
+          throw new Error(\`cold Odai tool schema mismatch: \${JSON.stringify(coldNames)}\`);
+        }
+        const hiddenResult = await ctx.tools.execute({
+          callId: "scope-probe-odai-hidden-routing",
+          name: "odai_routing_config",
+          arguments: { action: "show" },
+          agent,
+          signal: new AbortController().signal,
+        });
+        if (!hiddenResult.isError || !/unknown tool/u.test(hiddenResult.error?.message ?? "")) {
+          throw new Error(\`hidden Odai routing tool remained executable: \${JSON.stringify(hiddenResult)}\`);
+        }
+        agent.session.append("turn/start", { turn: 1 });
+        agent.session.append("step/start", { turn: 1, step: 1 });
+        if (typeof agent.session.snapshotEvents !== "function" || typeof agent.session.eventAt !== "function" || !Number.isSafeInteger(agent.session.seq)) {
+          throw new Error("Session public read API is incomplete");
+        }
+        const snapshot = agent.session.snapshotEvents();
+        const last = snapshot.at(-1);
+        if (!last || agent.session.eventAt(last.seq) !== last || agent.session.seq !== snapshot.length) {
+          throw new Error("Session snapshot/eventAt/seq ordering contract failed");
+        }
+        agent.session.append("step/end", { turn: 1, step: 1 });
+        if (snapshot.length + 1 !== agent.session.snapshotEvents().length || snapshot.length !== agent.session.seq - 1) {
+          throw new Error("Session snapshot was not stable across append");
+        }
+        const gatewayResult = await ctx.tools.execute({
+          callId: "scope-probe-odai-routing-gateway",
+          name: "odai_context_capability",
+          arguments: { capability: "routing-config" },
+          agent,
+          signal: new AbortController().signal,
+        });
+        if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed: \${JSON.stringify(gatewayResult)}\`);
+        const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();
+        const expectedActivatedNames = ["odai_context_capability", "odai_reference", "odai_responsibility_gap", "odai_routing_config"].sort();
+        if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {
+          throw new Error(\`activated Odai tool schema mismatch: \${JSON.stringify(activatedNames)}\`);
+        }
+      }
+      const writePath = preset === "odai" ? config.odaiWritePath : config.standardWritePath;
+      const childId = randomUUID();
+      const childSession = new Proxy(agent.session, {
+        get(target, property) {
+          if (property === "id") return childId;
+          if (property === "header") {
+            return { ...target.header, id: childId, origin: "subagent", parentSession: agent.id, delegationDepth: 1 };
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const child = { id: childId, session: childSession, options: { ...agent.options } };
+      const childScope = createScope(ctx, child);
+      child.ctx = childScope.ctx.extend({ agent: child });
+      ctx.agentPresets.composeFrom(child.ctx, agent.ctx);
+      assert.equal(scopeOf(child.ctx), child);
+      let toolResult;
+      try {
+        const parentBefore = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        const parentSchemas = ctx.tools.schemas(agent);
+        const beforeChildNames = ctx.tools.schemas(child).map((tool) => tool.name).sort();
+        for (const name of ["read", "write", "create_goal"]) assert.ok(beforeChildNames.includes(name), name);
+        assert.ok(parentSchemas.some((tool) => tool.name === "subagent"));
+        const first = await ctx.systemPrompt.assemble({ agent: child, scope: child });
+        const childNames = first.tools.map((tool) => tool.name).sort();
+        assert.deepEqual(childNames, ctx.tools.schemas(child).map((tool) => tool.name).sort());
+        assert.equal(new Set(childNames).size, childNames.length);
+        const childRaw = renderPrompt(first);
+        const restrictedOwners = new Set(["tool:bash", "tool:pwsh", "tool:write", "tool:edit", "tool:goal", "tool:jobs", "tool:workflow", "tool:ralph", "tool:subagent", "tool:subagent_fork"]);
+        if (preset === "odai") {
+          assert.ok(childNames.every((name) => DEFAULT_CHILD_ALLOWED_TOOLS.includes(name)));
+          for (const name of beforeChildNames.filter((name) => !DEFAULT_CHILD_ALLOWED_TOOLS.includes(name))) {
+            assert.equal(ctx.tools.get(name, child), undefined, name);
+          }
+          for (const name of ["read", "read_image", "glob", "grep", "web_search", "web_fetch"].filter((name) => beforeChildNames.includes(name))) {
+            assert.ok(childNames.includes(name), name);
+          }
+          for (const owner of ["tool:write", "tool:goal", "tool:subagent"]) {
+            assert.ok(parentBefore.sections.some((section) => section.name === owner && section.text), owner);
+          }
+          for (const section of parentBefore.sections.filter((section) => restrictedOwners.has(section.name) && section.text)) {
+            assert.ok(!first.sections.find((item) => item.name === section.name)?.text, section.name);
+            const nativeText = renderPrompt({ ...parentBefore, sections: [section] });
+            assert.equal(childRaw.includes(nativeText), false, section.name);
+          }
+          for (const owner of ["tool:read", "tool:glob", "tool:grep"]) {
+            assert.ok(first.sections.some((section) => section.name === owner && section.text), owner);
+          }
+        } else {
+          assert.deepEqual(childNames, beforeChildNames);
+          assert.equal(first.sections.some((section) => section.name === "odai:canonical-governance"), false);
+          // Model-selectable subagent tools are registered per live agent, not
+          // on the standing preset used by this inherited-scope probe.
+          for (const section of parentBefore.sections.filter((section) => restrictedOwners.has(section.name)
+            && (beforeChildNames.includes(section.name.slice(5)) || ["tool:goal", "tool:jobs"].includes(section.name)))) {
+            assert.deepEqual(first.sections.find((item) => item.name === section.name), section);
+          }
+        }
+        const parentAfter = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        assert.deepEqual(ctx.tools.schemas(agent), parentSchemas);
+        assert.equal(renderPrompt(parentAfter), renderPrompt(parentBefore));
+        toolResult = await ctx.tools.execute({
+          callId: \`scope-probe-\${preset}\`,
+          name: "write",
+          arguments: { file_path: writePath, content: \`\${preset} child write reached body\\n\` },
+          agent: child,
+          signal: new AbortController().signal,
+        });
+      } finally {
+        await childScope.dispose();
+      }
+
+      let routingProtected;
+      if (preset === "odai") {
+        const routingResult = await ctx.tools.execute({
+          callId: "scope-probe-odai-routing-config",
+          name: "odai_routing_config",
+          arguments: { action: "set", responsibility: "planner", provider: "probe-provider", model: "probe-planner", reasoningEffort: "high" },
+          agent,
+          signal: new AbortController().signal,
+        });
+        routingProtected = routingResult.isError === true
+          && /NO_ADAPTER/u.test(routingResult.error?.message ?? "")
+          && !existsSync(config.routingConfigPath);
+      }\n
+      results[preset] = {
+        canonicalSectionCount: canonicalSections.length,
+        toolIsError: toolResult.isError === true,
+        toolError: toolResult.isError === true ? toolResult.error?.message : undefined,
+        writeReachedBody: existsSync(writePath),
+        ...(routingProtected === undefined ? {} : { routingProtected }),
+        ...(preset === "odai" ? { toolExposureSynchronized: true } : {}),
+      };
+      if (results.standard && results.odai) {
+        writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");
+      }\n    }).catch((error) => {
+      writeFileSync(config.markerPath, JSON.stringify({ probeError: error?.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  }, { global: true });\n}\n`;
 await writeFile(probePluginPath, probePlugin, "utf8");
 await writeFile(patchPath, [
   "- insert:",

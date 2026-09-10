@@ -190,16 +190,22 @@ async function readControlCenterBoot(baseUrl, browserCookie) {
 
 async function probeControlCenterRpc(baseUrl, browserCookie) {
   const rpcId = randomUUID();
-  const response = await fetch(`${baseUrl}/odai-control-center/routing`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(browserCookie ? { cookie: browserCookie } : {}),
-    },
-    body: JSON.stringify({ type: "client-request", rpcId, method: "routing", payload: { action: "show" } }),
-  });
-  const body = await response.json();
-  if (!response.ok || body.rpcId !== rpcId || body.result?.ok !== true) {
+  const deadline = Date.now() + 5_000;
+  let response;
+  let text;
+  do {
+    response = await fetch(`${baseUrl}/api/odai-control-center/routing`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(browserCookie ? { cookie: browserCookie } : {}) },
+      body: JSON.stringify({ type: "client-request", rpcId, method: "odai-control-center/routing", payload: { action: "show" } }),
+    });
+    text = await response.text();
+    if (![404, 405].includes(response.status) || Date.now() >= deadline) break;
+    await new Promise((accept) => setTimeout(accept, 50));
+  } while (true);
+  if (!response.ok || !text) throw new Error(`coexistence Control Center RPC failed: HTTP ${response.status} ${text}`);
+  const body = JSON.parse(text);
+  if (body.rpcId !== rpcId || body.result?.ok !== true || body.result.value?.ok !== true || !body.result.value.config) {
     throw new Error(`coexistence Control Center RPC failed: HTTP ${response.status} ${JSON.stringify(body)}`);
   }
 }
@@ -304,6 +310,7 @@ try {
   };
   process.stdout.write(`${JSON.stringify(finalReport, null, 2)}\n`);
 } finally {
+  if (!finalReport) process.stderr.write(output.split("\n").filter((line) => /Control Center|Error:|cannot get|unavailable/iu.test(line)).join("\n"));
   await terminateChild();
   if (process.env.KEEP_ODAI_COEXISTENCE_PROBE !== "1") {
     await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

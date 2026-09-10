@@ -17,6 +17,7 @@ import type {
   PromptAssembly,
   RuntimeLogger,
   ToolSchema,
+  ToolRestriction,
   UnknownRecord,
 } from "./runtime-types.mjs";
 import { sessionEvents } from "./runtime-types.mjs";
@@ -464,20 +465,35 @@ export function routedRoleOf(agent: DshAgent): string | undefined {
 
 const ODAI_ADAPTIVE_TOOL_NAMES = new Set<string>([...ODAI_CONTEXTUAL_TOOL_NAMES, ...ODAI_CORE_TOOL_NAMES]);
 
+// Native rc.1 tool instructions have stable section owners. Restrict only those
+// owners; never search arbitrary host or workspace prose for words to delete.
+const DSH_TOOL_SECTIONS = new Map<string, readonly string[]>([
+  ...["bash", "pwsh", "read", "write", "edit", "glob", "grep", "web_search", "web_fetch", "workflow", "ralph", "subagent", "subagent_fork"]
+    .map((name): [string, readonly string[]] => [`tool:${name}`, [name]]),
+  ["tool:goal", ["create_goal", "get_goal", "update_goal"]],
+  ["tool:jobs", ["job_output", "job_list", "job_kill"]],
+]);
+
 export function reconcileAdaptiveToolSchemas(
   assembly: PromptAssembly,
   activeNames: readonly string[],
   executableSchemas: readonly ToolSchema[] = [],
+  restriction: ToolRestriction = {},
 ): PromptAssembly {
   if (!assembly || !Array.isArray(assembly.tools)) return assembly;
+  const allowed = restriction.allow ? new Set(restriction.allow) : undefined;
+  const denied = new Set(restriction.deny ?? []);
+  const permitted = (name: string): boolean => (!allowed || allowed.has(name)) && !denied.has(name);
   const active = new Set(activeNames);
   const executableByName = new Map(
     (Array.isArray(executableSchemas) ? executableSchemas : [])
-      .filter((tool) => active.has(tool?.name))
+      .filter((tool) => active.has(tool?.name) && permitted(tool.name))
       .map((tool) => [tool.name, tool]),
   );
-  const tools = assembly.tools.filter((tool) => !ODAI_ADAPTIVE_TOOL_NAMES.has(tool?.name)
-    || (active.has(tool.name) && executableByName.has(tool.name)));
+  const tools = assembly.tools.filter((tool) => permitted(tool.name) && (
+    !ODAI_ADAPTIVE_TOOL_NAMES.has(tool?.name)
+    || (active.has(tool.name) && executableByName.has(tool.name))
+  ));
   const present = new Set(tools.map((tool) => tool?.name));
   const missing = activeNames
     .filter((name) => !present.has(name) && executableByName.has(name))
@@ -489,5 +505,14 @@ export function reconcileAdaptiveToolSchemas(
     );
     tools.splice(lastAdaptiveIndex < 0 ? tools.length : lastAdaptiveIndex + 1, 0, ...missing);
   }
-  return tools.length === assembly.tools.length && missing.length === 0 ? assembly : { ...assembly, tools };
+  let sectionsChanged = false;
+  const sections = (Array.isArray(assembly.sections) ? assembly.sections : []).map((section) => {
+    if (section.text && DSH_TOOL_SECTIONS.get(section.name)?.some((name) => !permitted(name))) {
+      sectionsChanged = true;
+      return { ...section, text: "" };
+    }
+    return section;
+  });
+  return tools.length === assembly.tools.length && missing.length === 0 && !sectionsChanged
+    ? assembly : { ...assembly, tools, ...(sectionsChanged ? { sections } : {}) };
 }

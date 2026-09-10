@@ -285,7 +285,7 @@ window.__ModuleLoader__.load({
     }
 
     async function callRouting(connection: any, payload: unknown, signal?: AbortSignal): Promise<RoutingConfig> {
-      const response = await connection.rpc.call("/odai-control-center", "routing", payload, signal);
+      const response = await connection.rpc.call("/api", "odai-control-center/routing", payload, signal);
       if (!response?.ok) throw new Error(response?.error?.message || "Control Center RPC failed");
       if (!response.value?.ok) throw new Error(response.value?.error?.message || "Routing configuration failed");
       return response.value.config;
@@ -293,7 +293,7 @@ window.__ModuleLoader__.load({
 
     async function callEvidence(connection: any, sessionId: string, revision?: string, signal?: AbortSignal): Promise<EvidenceSnapshot> {
       const request = async (payload: UnknownRecord): Promise<UnknownRecord> => {
-        const response = await connection.rpc.call("/odai-control-center", "evidence", payload, signal);
+        const response = await connection.rpc.call("/api", "odai-control-center/evidence", payload, signal);
         if (!response?.ok) throw new Error(response?.error?.message || "Control Center evidence RPC failed");
         if (!response.value?.ok) throw new Error(response.value?.error?.message || "Session evidence could not be read");
         return response.value;

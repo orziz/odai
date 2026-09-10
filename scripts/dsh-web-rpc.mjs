@@ -97,6 +97,7 @@ export async function waitForDshWeb(baseUrl, child, output, timeoutMs = 20_000) 
         cookie = await exchangeLaunchToken(tokenUrl);
         exchangedUrl = tokenUrl.href;
       }
+      if (!cookie) throw new Error("waiting for the authenticated DSH Web transport");
       await dshWebRpc(baseUrl, "agentPreset.list", {}, cookie);
       return cookie;
     } catch (error) {

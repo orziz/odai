@@ -4,16 +4,9 @@ import { CONFIGURABLE_ROLES } from "./routing-config.mjs";
 import type { DshAgent, RuntimeTool, ToolExecution } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
-export const RESPONSIBILITY_GAP_PROMPT = [
-  "## Odai responsibility gaps",
-  "Users own goals, constraints, materials, and acceptance; they never request internal roles.",
-  "Keep direct when the controller can close. Call odai_responsibility_gap only for an evidence-grounded independent capability or user-decision gap that can change the result; keywords, complexity, risk, model config, or price do not qualify. Runtime chooses dispatch.",
-  "Independently deployed contracts, auth/state-machine changes, rollout compatibility, and rollback boundaries are planner gaps when separate planning can change implementation or acceptance.",
-  "evidenceRefs deduplicate and audit the proposal; they never replace native acceptance, write, diff, or test evidence for review.",
-  "For coverage-sensitive planner/reviewer gaps, include exact user excerpts; replace only explicit conflicts and keep other requirements active. Runtime verifies source/order, never prose conflicts.",
-  "Runtime binds the proposal to the latest authenticated direct-user task; later text must be a pure continuation, while an explicit revision supersedes it.",
-  "Use responsibility=user only for a missing user-owned choice, priority, or unacceptable outcome, then ask the accepted concise question. Never ask repository facts or resubmit unchanged state.",
-].join("\n");
+// Retain the section export for composition compatibility. Governance belongs to
+// the canonical owner; tool usage belongs to the tool, not an always-on protocol.
+export const RESPONSIBILITY_GAP_PROMPT = "";
 
 const RESPONSIBILITIES = Object.freeze([...CONFIGURABLE_ROLES, "user"]);
 const REQUIREMENT_STATUSES = Object.freeze(["active", "superseded"] as const);
@@ -253,7 +246,7 @@ export function createResponsibilityGapTool(
   const onProposed = typeof options.onProposed === "function" ? options.onProposed : () => {};
   return {
     name: "odai_responsibility_gap",
-    description: "Record a controller-owned responsibility or user-decision gap that can change the result.",
+    description: "Request configured independent support that can change the result. Ordinary work and clarification need no proposal; recording a gap does not dispatch a role.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -261,10 +254,15 @@ export function createResponsibilityGapTool(
       properties: {
         responsibility: { type: "string", enum: [...RESPONSIBILITIES] },
         gap: { type: "string" },
-        evidenceRefs: { type: "array", items: { type: "string" } },
+        evidenceRefs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Existing evidence pointers; do not create artifacts for this field.",
+        },
         expectedChange: { type: "string" },
         requirements: {
           type: "array",
+          description: "Planner/reviewer handoffs dependent on user decisions: exact user excerpts, preserving unresolved choices. Runtime verifies provenance.",
           items: {
             type: "object",
             additionalProperties: false,

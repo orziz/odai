@@ -1,14 +1,14 @@
 {
   "schemaVersion": 2,
-  "dshRange": "0.1.2-rc.1",
-  "sourceDshVersion": "0.1.2-rc.1",
+  "dshRange": "0.1.5-rc.1",
+  "sourceDshVersion": "0.1.5-rc.1",
   "releases": [
     {
-      "version": "0.1.2-rc.1",
-      "publishedBefore": "2026-09-03T06:30:00.000Z",
-      "expectedDshPackages": 214,
+      "version": "0.1.5-rc.1",
+      "publishedBefore": "2026-09-10T03:58:28.210Z",
+      "expectedDshPackages": 231,
       "standardCompositionPath": "@deepseek-ai/dsh-agent-presets/presets/standard/agent.cordis.yml",
-      "standardCompositionSha256": "f18dd942686aa71f43ffc4fd328a712f79af113fb67a35b54cb6de4fc3b84bda"
+      "standardCompositionSha256": "08a029c64fdeaabe415a5627ef73ce6f6c6bc61dadaf9989d11f9e15608907f6"
     }
   ]
 }

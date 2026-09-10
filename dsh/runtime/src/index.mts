@@ -36,7 +36,7 @@ import {
 } from "./runtime-support.mjs";
 import { createSessionEvidence, resolveSessionEvidenceRoot } from "./session-evidence.mjs";
 import { currentAgentTurn } from "./skill-selection-state.mjs";
-import { latestDirectUserMessage } from "./semantic-memory.mjs";
+import { hasUncommittedDirectInput, latestDirectUserMessage } from "./semantic-memory.mjs";
 import { isBoundRequirementLedger, type ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { installToolRuntime } from "./tool-runtime.mjs";
 import { resolveHumanSafetyContinuityStorePath } from "./human-safety-continuity-store.mjs";
@@ -193,6 +193,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     turn: number | undefined,
     step: number,
   ): ResponsibilityGapProposal | undefined => {
+    if (hasUncommittedDirectInput(agent)) return undefined;
     const events = evidence.events(agent);
     const consumed = new Set(events.flatMap((event) => (
       event.type === "odai/responsibility-gap-consumed" ? [event.data?.stateDigest] : []
@@ -206,6 +207,24 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
         || event.data.step >= step
         || consumed.has(event.data.stateDigest)
         || !isResponsibilityGapProposal(event.data)) continue;
+      const message = latestDirectUserMessage(agent);
+      if (event.data.taskMessageId && !message) return undefined;
+      if (message && event.data.taskMessageId && event.data.taskMessageId !== message.id) {
+        const text = extractLatestUserText([message]);
+        const continuation = event.data.responsibility === "reviewer"
+          && Boolean(event.data.taskMessageId)
+          && classifyPendingReviewerText(text) === "continue"
+          && !(event.data.requirements && hasExplicitRequestRevision(text));
+        if (continuation) return event.data;
+        appendEvent(agent, "odai/responsibility-gap-consumed", {
+          turn,
+          step,
+          responsibility: event.data.responsibility,
+          stateDigest: event.data.stateDigest,
+          reason: "SUPERSEDED_BY_DIRECT_USER_TASK",
+        });
+        return undefined;
+      }
       return event.data;
     }
     if (turn === undefined) return undefined;
