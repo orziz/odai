@@ -16,7 +16,7 @@ A planner route identical to the current controller remains inline and does not 
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the current `0.2.28` candidate targets exactly `dsh@0.1.5-rc.1`. Previous SDK versions are retired from current support.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the current `0.2.29` candidate targets exactly `dsh@0.1.5-rc.1`. Previous SDK versions are retired from current support.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -131,6 +131,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The current `0.2.28` candidate targets exactly `@deepseek-ai/dsh@0.1.5-rc.1`. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
+The current `0.2.29` candidate targets exactly `@deepseek-ai/dsh@0.1.5-rc.1`. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.

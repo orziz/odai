@@ -1,4 +1,5 @@
 import { extractLatestUserText } from "./router.mjs";
+import { createRepeatedFailureGuard } from "./repeated-failure.mjs";
 import { DEFAULT_CHILD_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
 import { createRoutingConfigTool, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import { createOutputConfigTool } from "./output-config.mjs";
@@ -234,7 +235,14 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       appendEvent(agent, "odai/human-safety-continuity-changed", data);
     },
   }));
-  ctx.tools.guard?.((execution: ToolExecution) => childGuard(execution) ?? routeProtectionGuard(execution));
+  const repeatedFailure = createRepeatedFailureGuard({
+    taskFor(agent) {
+      const id = latestDirectUserMessage(agent)?.id;
+      return typeof id === "string" ? id : undefined;
+    },
+    onDenied,
+  });
+  ctx.tools.guard?.((execution: ToolExecution) => childGuard(execution) ?? routeProtectionGuard(execution) ?? repeatedFailure.check(execution));
 
   const toolExposureStates = new WeakMap<DshAgent, { readonly key: string; readonly dispose?: () => void }>();
   const syncToolExposure = (
@@ -297,6 +305,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     if (!execution.agent) return;
     const summary = summarizeToolResult(execution, result);
     if (hasSessionEvent(execution.agent, "odai/tool-observed", (data) => data?.callId === summary.callId)) return;
+    repeatedFailure.observe(execution, result);
     appendEvent(execution.agent, "odai/tool-observed", summary);
   });
 

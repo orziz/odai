@@ -974,6 +974,27 @@ test("routing off ignores stale protection evidence while memory remains availab
   assert.equal(ctx.captured.guards[0]({ callId: "write-off", agent, name: "write" }), undefined);
 });
 
+test("tool execution uses repeated-failure feedback without blocking repairs", () => {
+  const ctx = fakeContext();
+  apply(ctx, { skillPath, routing: { mode: "off" } });
+  const events: DshEvent[] = [];
+  const agent = { session: { header: {}, snapshotEvents: () => events,
+    append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const guard = ctx.captured.guards[0];
+  const result = ctx.captured.handlers.get("tools/result");
+  for (const callId of ["first-failure", "second-failure"]) {
+    const execution = { agent, callId, name: "bash", arguments: { command: "npm test" } };
+    assert.equal(guard(execution), undefined);
+    result(execution, { isError: false, value: { exitCode: 1 } });
+  }
+  const retry = { agent, callId: "retry", name: "bash", arguments: { command: "npm test" } };
+  assert.match(guard(retry), /ODAI_REPEATED_FAILURE/u);
+  const repair = { agent, callId: "repair", name: "edit", arguments: { file_path: "/work/config.json" } };
+  assert.equal(guard(repair), undefined);
+  result(repair, { isError: false, value: {} });
+  assert.equal(guard({ ...retry, callId: "after-repair" }), undefined);
+});
+
 test("native first-step previews never persist before matching commitment or survive rejection", async () => {
   for (const kind of ["memory", "output"] as const) for (const outcome of ["commit", "reject", "rewrite", "abort"] as const) {
     const root = resolve(testDshHome, `native-input-${kind}-${outcome}`);

@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：canonical `0.3.10` / 已发布 DSH `0.2.27` 对应冻结快照的 GPT-5.6 Sol / high C19 定向 on 为 **4/4、8/8**，完整交付合同引用、安装/生成/验签命令、影响及内部 registry 访问前提。当前 DSH `0.2.28` 候选仍使用 canonical `0.3.10`，尚无该候选的独立模型计分、全量或配对 A/B 结果。`0.3.9` 冻结快照仍为 **18/19 pass、142/144**，其中 C19 的历史 3/4 不改写；旧分数不迁移到当前源码。
+状态：canonical `0.3.10` / 已发布 DSH `0.2.27` 对应冻结快照的 GPT-5.6 Sol / high C19 定向 on 为 **4/4、8/8**，完整交付合同引用、安装/生成/验签命令、影响及内部 registry 访问前提。当前 DSH `0.2.29` 候选使用 canonical `0.3.11`，尚无该候选的独立模型计分、全量或配对 A/B 结果。`0.3.9` 冻结快照仍为 **18/19 pass、142/144**，其中 C19 的历史 3/4 不改写；旧分数不迁移到当前源码。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 

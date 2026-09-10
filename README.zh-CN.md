@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前 `0.2.28` Plugin 与 Agent 候选仅面向精确 `dsh@0.1.5-rc.1`，旧 SDK 不再进入当前支持范围；已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
+当前 `0.2.29` Plugin 与 Agent 候选仅面向精确 `dsh@0.1.5-rc.1`，旧 SDK 不再进入当前支持范围；已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
@@ -298,7 +298,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前 `0.3.10` 候选的 GPT-5.6 Sol/high C19 完整能力交付已达到 4/4，尚无当前全量或配对 A/B 结果。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
+当前 `0.3.11` 候选尚无新模型计分或 token 节省实测。`0.3.10` 冻结快照的 GPT-5.6 Sol/high C19 完整能力交付为 4/4，不作为当前候选成绩。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
 
 下表的历史全量与配对结果覆盖 19 条现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
 
