@@ -36,7 +36,7 @@ With DSH already installed, run the single Agent package command below. The pack
 npx odai-dsh-agent install
 ```
 
-The installer checks `dsh -V`; the current `0.2.29` candidate targets exactly `0.1.5-rc.1` and rejects other releases. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
+The installer checks `dsh -V`; the current `0.2.29` release targets exactly `0.1.5-rc.1` and rejects other releases. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
 
 `DSH_HOME` is honored. An explicit location can be supplied without changing the environment:
 
