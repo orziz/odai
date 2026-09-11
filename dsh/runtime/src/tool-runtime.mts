@@ -1,5 +1,5 @@
 import { extractLatestUserText } from "./router.mjs";
-import { createRepeatedFailureGuard } from "./repeated-failure.mjs";
+import { createRepeatedFailureMonitor } from "./repeated-failure.mjs";
 import { DEFAULT_CHILD_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
 import { createRoutingConfigTool, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import { createOutputConfigTool } from "./output-config.mjs";
@@ -23,7 +23,7 @@ import { createSemanticMemoryTool, latestDirectUserMessage } from "./semantic-me
 import { readSkillBundleFile } from "./skill-bundle.mjs";
 import type { SkillBundle } from "./skill-bundle.mjs";
 import { currentAgentTurn, sharedSkillSelection } from "./skill-selection-state.mjs";
-import { currentAgentStep, isSubagentSession, latestRouteReceipt } from "./runtime-support.mjs";
+import { currentAgentStep, isSubagentSession, latestRouteReceipt, pluginMessage } from "./runtime-support.mjs";
 import type { SkillSelection } from "./runtime-support.mjs";
 import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
@@ -235,14 +235,16 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       appendEvent(agent, "odai/human-safety-continuity-changed", data);
     },
   }));
-  const repeatedFailure = createRepeatedFailureGuard({
+  const repeatedFailure = createRepeatedFailureMonitor({
     taskFor(agent) {
       const id = latestDirectUserMessage(agent)?.id;
       return typeof id === "string" ? id : undefined;
     },
-    onDenied,
+    onRepeated({ agent }, notice) {
+      agent.inject?.(pluginMessage(notice, "Repeated command outcomes: review whether another retry is useful"));
+    },
   });
-  ctx.tools.guard?.((execution: ToolExecution) => childGuard(execution) ?? routeProtectionGuard(execution) ?? repeatedFailure.check(execution));
+  ctx.tools.guard?.((execution: ToolExecution) => childGuard(execution) ?? routeProtectionGuard(execution) ?? repeatedFailure.start(execution));
 
   const toolExposureStates = new WeakMap<DshAgent, { readonly key: string; readonly dispose?: () => void }>();
   const syncToolExposure = (

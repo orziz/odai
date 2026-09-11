@@ -974,25 +974,25 @@ test("routing off ignores stale protection evidence while memory remains availab
   assert.equal(ctx.captured.guards[0]({ callId: "write-off", agent, name: "write" }), undefined);
 });
 
-test("tool execution uses repeated-failure feedback without blocking repairs", () => {
+test("repeated command outcomes inject one plugin notice without denying retries or claiming human authority", () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "off" } });
   const events: DshEvent[] = [];
-  const agent = { session: { header: {}, snapshotEvents: () => events,
-    append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
+  const notices: DshMessage[] = [];
+  const agent = { inject(message: DshMessage) { notices.push(message); },
+    session: { header: {}, snapshotEvents: () => events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); } } };
   const guard = ctx.captured.guards[0];
   const result = ctx.captured.handlers.get("tools/result");
-  for (const callId of ["first-failure", "second-failure"]) {
+  for (const callId of ["first-failure", "second-failure", "expected-red-test-again"]) {
     const execution = { agent, callId, name: "bash", arguments: { command: "npm test" } };
     assert.equal(guard(execution), undefined);
     result(execution, { isError: false, value: { exitCode: 1 } });
   }
-  const retry = { agent, callId: "retry", name: "bash", arguments: { command: "npm test" } };
-  assert.match(guard(retry), /ODAI_REPEATED_FAILURE/u);
-  const repair = { agent, callId: "repair", name: "edit", arguments: { file_path: "/work/config.json" } };
-  assert.equal(guard(repair), undefined);
-  result(repair, { isError: false, value: {} });
-  assert.equal(guard({ ...retry, callId: "after-repair" }), undefined);
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.source?.kind, "plugin");
+  assert.equal(notices[0]?.source?.form, "notice");
+  assert.match(JSON.stringify(notices[0]?.content), /does not block execution/u);
 });
 
 test("native first-step previews never persist before matching commitment or survive rejection", async () => {
