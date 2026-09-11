@@ -108,6 +108,14 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       "整体整理须在授权范围内覆盖本体与配套",
       "在授权范围内",
       "不以局部修复代替完整交付",
+      "须交给用户决定",
+      "共同澄清目标、比较可能性和确认理解",
+      "不以少提问或多确认为优劣",
+      "形成可检验的解释或方案",
+      "最能区分它们的证据",
+      "保持完整目标与依赖",
+      "推翻关键结论的反例",
+      "不机械展开多方案或额外分析",
     ];
     for (const [index, boundary] of intentBoundaries.entries()) {
       await rejects(`missing intent boundary ${index + 1}`, skillText.replace(boundary, ""), /SKILL\.md: missing/u);
@@ -129,6 +137,8 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       ["installation still requires authorization", "安装或启用须有用户授权"],
       ["one gap must not produce two dispatch paths", "同一缺口只选一条足够的路径"],
       ["adapters supplement rather than duplicate native capabilities", "适配器只补缺失能力、用户映射或可核对的证据"],
+      ["uncertainty is not proof of missing capability", "做法尚未想清楚不等于能力不足"],
+      ["autonomy does not require repeated failed attempts", "不为证明自主而反复硬试"],
     ];
     for (const [name, boundary] of capabilityBoundaries) {
       await rejects(name, leverage.replace(boundary, ""), /missing external leverage/u, leveragePath);
