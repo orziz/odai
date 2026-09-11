@@ -40,6 +40,7 @@ async function writeResolvedPackage(profileRoot: string, version: string, comple
   await writeFile(resolve(root, "package.json"), `${JSON.stringify({ name: "odai-dsh-agent", version })}\n`);
   await writeFile(resolve(root, "build/src/installer.mjs"), "export function apply() {}\n");
   if (complete) {
+    await writeFile(resolve(root, "control-center.cordis.patch.yml"), "plugins:\n  - name: odai-dsh-agent\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-host.mjs"), "export function apply() {}\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-runtime.mjs"), "export const ok = true;\n");
     await writeFile(resolve(root, "client/client.js"), "export {};\n");
@@ -81,6 +82,7 @@ async function writeProfile(dshHome: string, fixture: ProfileFixture): Promise<s
 
 function registryExecutor(profileRoot: string, calls: Invocation[]) {
   return (command: string, args: string[], options: ExecFileSyncOptionsWithStringEncoding): string => {
+    if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
     calls.push({ command, args, options });
     const packagePath = resolve(profileRoot, "package.json");
     const metadata = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -156,6 +158,10 @@ test("Control Center inspection distinguishes provenance, versions, and partial 
     ["lock mismatch", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, lockDependency: previousVersion }, "partial-drift"],
     ["lock prefix collision", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, lockResolvedVersion: `${targetVersion}0` }, "partial-drift"],
     ["range source", { dependency: `^${targetVersion}`, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion }, "unknown-source"],
+    ["prerelease", { dependency: `${targetVersion}-rc.10`, bundles: ["odai-dsh-agent"], resolvedVersion: `${targetVersion}-rc.10` }, "registry-upgrade"],
+    ["different build", { dependency: `${targetVersion}+build.1`, bundles: ["odai-dsh-agent"], resolvedVersion: `${targetVersion}+build.1` }, "partial-drift"],
+    ["version prefix", { dependency: `v${targetVersion}`, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion }, "unknown-source"],
+    ["invalid prerelease", { dependency: `${targetVersion}-rc.01`, bundles: ["odai-dsh-agent"], resolvedVersion: `${targetVersion}-rc.01` }, "unknown-source"],
     ["missing runtime", { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion, complete: false }, "partial-drift"],
   ];
   try {
@@ -163,6 +169,52 @@ test("Control Center inspection distinguishes provenance, versions, and partial 
       await writeProfile(dshHome, fixture);
       assert.equal((await inspectAgentControlCenter({ dshHome })).status, expected, label);
     }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("missing Control Center bundle patch is drift and explicit install repairs it", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-patch-"));
+  const dshHome = resolve(scratch, "home");
+  try {
+    const profileRoot = await writeProfile(dshHome, {
+      dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion,
+    });
+    const patch = resolve(profileRoot, "node_modules/odai-dsh-agent/control-center.cordis.patch.yml");
+    await rm(patch);
+    const inspection = await inspectAgentControlCenter({ dshHome });
+    assert.equal(inspection.status, "partial-drift");
+    assert.ok(inspection.issues.some((issue) => issue.includes("control-center.cordis.patch.yml")));
+    const calls: Invocation[] = [];
+    const registry = registryExecutor(profileRoot, calls);
+    const result = await installAgentControlCenter({ dshHome, execute(command, args, options) {
+      const output = registry(command, args, options);
+      if (args.includes("add")) writeFileSync(patch, "plugins:\n  - name: odai-dsh-agent\n");
+      return output;
+    } });
+    assert.equal(result.operation, "repaired");
+    assert.equal(calls.length, 1);
+    assert.equal((await inspectAgentControlCenter({ dshHome })).status, "current");
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("Control Center rejects unsupported hosts before calling the package manager", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-version-"));
+  const dshHome = resolve(scratch, "home");
+  try {
+    const profileRoot = await writeProfile(dshHome, {});
+    const before = await readFile(resolve(profileRoot, "package.json"));
+    const calls: string[][] = [];
+    await assert.rejects(installAgentControlCenter({ dshHome, execute(_command, args) {
+      calls.push(args);
+      return "0.1.2-rc.1\n";
+    } }), /unsupported DSH version/u);
+    assert.deepEqual(calls, [["-V"]]);
+    assert.deepEqual(await readFile(resolve(profileRoot, "package.json")), before);
+    assert.deepEqual(await readdir(resolve(dshHome, "odai/locks")), []);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -208,7 +260,8 @@ test("failed local-source repair preserves changed profile state and captures re
     await writeFile(presetSentinel, "preset remains\n");
     const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
     let attempts = 0;
-    const execute = (): string => {
+    const execute = (_command: string, args: string[]): string => {
+      if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
       attempts += 1;
       const packagePath = resolve(profileRoot, "package.json");
       const profile = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -247,7 +300,11 @@ test("failed Control Center command with unchanged profile performs no inverse c
     const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
     let attempts = 0;
     await assert.rejects(
-      installAgentControlCenter({ dshHome, execute: () => { attempts += 1; throw new Error("no mutation"); } }),
+      installAgentControlCenter({ dshHome, execute: (_command, args) => {
+        if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+        attempts += 1;
+        throw new Error("no mutation");
+      } }),
       /profile state remained unchanged/u,
     );
     assert.equal(attempts, 1);

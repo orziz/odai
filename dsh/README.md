@@ -1,6 +1,6 @@
 # odai on DeepSeek Harness
 
-The DSH integration has two independently published user surfaces and one internal source owner:
+The DSH integration has two independently installable user surfaces, released together at the same version, and one shared runtime source:
 
 | Directory | Package | Scope | Installs |
 |---|---|---|---|
@@ -81,6 +81,12 @@ Users may choose a separate compaction-summary target naturally, for example, `å
 
 An explicitly configured compaction `reasoningEffort` overrides reasoning only for those summary requests. When it is omitted, same-provider/model compaction inherits the controller's reasoning effort without lowering its independent summary budget; a separately configured cross-model target removes an effort only when it matches the durable conversation route's effort, while a distinct effort already present on the summary request remains authoritative because the request envelope exposes no stronger provenance. Odai leaves prompt-cache retention unset by default; runtime `compaction.cacheRetention` or `ODAI_COMPACTION_CACHE_RETENTION` can explicitly select `short`, `long`, or `none`. `provider-default` means Odai adds no retention, while any explicit incoming retention remains authoritative. Configured retention still applies when another host layer has already supplied reasoning. The first controller request after a landed summary must build the changed summary prefix.
 
+## Native delegation and responsibility routing
+
+Odai uses DSH's native `subagents.start` service for child execution; it does not maintain a second child engine. The routing adapter adds explicit user-selected model mappings, read-only responsibility boundaries, bounded evidence packets, actual request-header verification, and same-turn restoration. Native delegation and Odai responsibility routing are alternatives for the same gap: use one sufficient path and reuse its verified contribution instead of launching another agent for a role label. A native child is not automatically evidence that a configured role model ran.
+
+The controller keeps the complete task and final delivery. Canonical planner/reviewer contracts describe responsibility and evidence; they no longer require unused mode headers or route cards. DSH-specific tool calls, researcher packet schemas, scope events, and route receipts remain in `dsh/runtime/`. Same-turn and child dispatch remain distinct because they provide different context and independence properties.
+
 ## Ownership
 
 - `skills/odai/` is the only editable governance and role-contract source.
@@ -117,6 +123,7 @@ The package version verifier requires the current Plugin and Agent peer ranges t
 ## Verification
 
 ```sh
+npm run check:dsh
 npx tsx --test dsh/runtime/tests/*.test.mts
 npm --prefix dsh/plugin run verify:dsh
 npm --prefix dsh/agent test
@@ -131,6 +138,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The current `0.2.29` release targets exactly `@deepseek-ai/dsh@0.1.5-rc.1`. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
+The `0.2.30` candidate targets exactly `@deepseek-ai/dsh@0.1.5-rc.1`. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.

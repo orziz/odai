@@ -127,7 +127,7 @@ The Plugin and Agent packages are independently installable, self-contained, and
 
 ## Development
 
-`dsh/runtime/` is the only editable DSH runtime source. `npm pack` temporarily copies that runtime and the canonical skill into this package, then removes both generated directories:
+Shared runtime, canonical governance, and Control Center client sources live in `dsh/runtime/src/`, `skills/odai/`, and `dsh/client/src/`. `npm pack` generates this package's `runtime/`, `skills/`, and `client/` copies and removes them afterward:
 
 ```sh
 npm --prefix dsh/plugin test
@@ -135,7 +135,7 @@ npm --prefix dsh/plugin run verify:dsh
 npm --prefix dsh/plugin run pack:dry-run
 ```
 
-The verification first reproduces rc.6's exact `SessionFormatUnsupportedError` for legacy Agent and Plugin logs, repairs them, and proves DSH's real JSONL/Zstandard backend plus `PersistenceCoordinator` accepts both while verified original backups remain available. The load probe then uses a temporary `DSH_HOME`, does not call a model, validates source-tool registration and persistence in DSH, checks persisted responsibility configuration, and verifies both the child boundary and protected-controller write denial through DSH's real tool runtime. An explicitly authorized live routing smoke can use isolated copies of the current DSH settings and credential references:
+The verification first proves that the supported DSH SDK rejects historical v0 Odai events with or without `ignorable` markers, and that the retired repair command refuses the operation while preserving the original JSONL/Zstandard bytes. It does not claim those sessions have been migrated. The load probe then uses a temporary `DSH_HOME`, does not call a model, validates source-tool registration and persistence in DSH, checks persisted responsibility configuration, and verifies both the child boundary and protected-controller write denial through DSH's real tool runtime. An explicitly authorized live routing smoke can use isolated copies of the current DSH settings and credential references:
 
 ```sh
 npm --prefix dsh/plugin run smoke:live -- --yes

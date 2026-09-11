@@ -94,8 +94,16 @@ export function evaluateStop(payload, policy, projectRoot) {
   );
 
   for (const check of selected) {
-    const cwd = path.resolve(projectRoot, check.cwd ?? ".");
-    if (!isInside(projectRoot, cwd)) {
+    const requestedCwd = path.resolve(projectRoot, check.cwd ?? ".");
+    let cwd;
+    let canonicalRoot;
+    try {
+      cwd = realpathSync(requestedCwd);
+      canonicalRoot = realpathSync(projectRoot);
+    } catch (error) {
+      return { blocked: true, reason: `odai hook：验收 ${check.name} 的 cwd 无法解析，拒绝执行：${error.message}` };
+    }
+    if (!isInside(projectRoot, requestedCwd) || !isInside(canonicalRoot, cwd)) {
       return {
         blocked: true,
         reason: `odai hook：验收 ${check.name} 的 cwd 越出项目根，拒绝执行。`,

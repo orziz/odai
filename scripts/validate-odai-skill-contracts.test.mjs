@@ -105,6 +105,9 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       "验证随影响面扩展：局部只跑命中检查，共享改动覆盖受影响消费者，不跑无关全量",
       "完成只看当前要求、产物和相称验证",
       "已安装技能明确匹配且能改变结果时完整读取",
+      "整体整理须在授权范围内覆盖本体与配套",
+      "在授权范围内",
+      "不以局部修复代替完整交付",
     ];
     for (const [index, boundary] of intentBoundaries.entries()) {
       await rejects(`missing intent boundary ${index + 1}`, skillText.replace(boundary, ""), /SKILL\.md: missing/u);
@@ -124,9 +127,23 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       ["missing usage constrains cost claims", "用量缺失限制成本结论"],
       ["retry requires new evidence", "只有新的可核查修正依据才支持重试"],
       ["installation still requires authorization", "安装或启用须有用户授权"],
+      ["one gap must not produce two dispatch paths", "同一缺口只选一条足够的路径"],
+      ["adapters supplement rather than duplicate native capabilities", "适配器只补缺失能力、用户映射或可核对的证据"],
     ];
     for (const [name, boundary] of capabilityBoundaries) {
       await rejects(name, leverage.replace(boundary, ""), /missing external leverage/u, leveragePath);
+    }
+
+    for (const [role, boundaries] of [
+      ["planner", ["不预做实施", "不是面向用户的最终交付", "用户原文来源", "验收与停止条件"]],
+      ["reviewer", ["不调用工具", "完整验收", "通过、失败和仍未判定", "不自行调度"]],
+    ]) {
+      const rolePath = `skills/odai/assets/routing-roles/${role}.md`;
+      const roleText = readFileSync(resolve(repoRoot, rolePath), "utf8");
+      for (const boundary of boundaries) {
+        await rejects(`${role} retains ${boundary} without a wire-format card`,
+          roleText.replace(boundary, ""), /missing routing contract/u, rolePath);
+      }
     }
 
     const restored = validate(skillText);

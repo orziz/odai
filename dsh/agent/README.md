@@ -36,7 +36,7 @@ With DSH already installed, run the single Agent package command below. The pack
 npx odai-dsh-agent install
 ```
 
-The installer checks `dsh -V`; the current `0.2.29` release targets exactly `0.1.5-rc.1` and rejects other releases. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
+The installer checks `dsh -V`; the `0.2.30` candidate targets exactly `0.1.5-rc.1` and rejects other releases. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
 
 `DSH_HOME` is honored. An explicit location can be supplied without changing the environment:
 
@@ -62,7 +62,7 @@ npx odai-dsh-agent control-center status [--profile web]
 npx odai-dsh-agent control-center uninstall [--profile web]
 ```
 
-A Control Center profile change requires one normal DSH Web process restart. Removing it does not remove the Agent preset, routing configuration, or session evidence. Status is current only when the dependency is the installer package's exact registry version, the resolved package reports that same version, the bundle entry occurs exactly once, and the shipped host/runtime/client artifacts exist. A stale `file:` or `link:` dependency is reported with its concrete source and can be replaced only after explicit consent. Profile operations serialize through an owner-token lock. If a DSH package-manager command fails without changing profile bytes, the installer reports the unchanged state; if bytes changed, it does not run a destructive inverse command or overwrite a possible concurrent successor. It preserves the current state and retains before/after recovery evidence under `$DSH_HOME/odai/control-center-backups/` for explicit repair.
+A Control Center profile change requires one normal DSH Web process restart. Removing it does not remove the Agent preset, routing configuration, or session evidence. Status is current only when the dependency is the installer package's exact registry version, the resolved package reports that same version, the bundle entry occurs exactly once, and the shipped bundle patch plus host/runtime/client artifacts exist. Standalone Control Center install checks the supported DSH version before running the package manager; status and removal remain available for recovery. A stale `file:` or `link:` dependency is reported with its concrete source and can be replaced only after explicit consent. Profile operations serialize through an owner-token lock. If a DSH package-manager command fails without changing profile bytes, the installer reports the unchanged state; if bytes changed, it does not run a destructive inverse command or overwrite a possible concurrent successor. It preserves the current state and retains before/after recovery evidence under `$DSH_HOME/odai/control-center-backups/` for explicit repair.
 
 ## Responsibility models
 
@@ -133,7 +133,7 @@ npx odai-dsh-agent status --json
 npx odai-dsh-agent uninstall
 ```
 
-`status` reports `absent`, `installed`, or `drifted`. Update and uninstall fail closed when managed files were changed or unmanaged files were added. Normal preset removal does not inspect or rewrite historical sessions and does not accept `--yes`; legacy session repair is a separate Plugin command. Uninstall also refuses while `agent-presets.default` still names `odai`; select another default first so the next session cannot fail on a missing preset. Stop DSH before install, update, or uninstall so preset files are not being loaded concurrently.
+`status` reports `absent`, `installed`, or `drifted`. Update and uninstall fail closed when managed files were changed or unmanaged files were added. Normal preset removal does not inspect or rewrite historical sessions and does not accept `--yes`; the legacy Plugin repair command is retired and cannot migrate those logs. Uninstall also refuses while `agent-presets.default` still names `odai`; select another default first so the next session cannot fail on a missing preset. Stop DSH before install, update, or uninstall so preset files are not being loaded concurrently.
 
 ## Plugin versus Agent
 
@@ -147,7 +147,7 @@ When both are present, a process-shared per-agent/per-turn skill snapshot keeps 
 
 ## Development
 
-`dsh/runtime/` and `skills/odai/` remain the only editable sources. `npm pack` generates the preset's `runtime/` and `skills/` directories and removes them immediately afterward:
+Shared runtime, canonical governance, and Control Center client sources live in `dsh/runtime/src/`, `skills/odai/`, and `dsh/client/src/`; Agent installer sources live in `dsh/agent/src/`. `npm pack` generates the preset's `runtime/` and `skills/` directories plus the package's `client/` directory, then removes those generated copies:
 
 ```sh
 npm --prefix dsh/agent test

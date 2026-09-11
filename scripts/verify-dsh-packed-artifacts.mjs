@@ -7,6 +7,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runPackagePack } from "./run-package-pack.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let [pluginTarballArg, agentTarballArg] = process.argv.slice(2);
@@ -14,8 +15,8 @@ let scratch;
 if (!pluginTarballArg && !agentTarballArg) {
   scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-packed-verification-"));
   process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
-  pluginTarballArg = pack(resolve(repoRoot, "dsh/plugin"), scratch, "Plugin");
-  agentTarballArg = pack(resolve(repoRoot, "dsh/agent"), scratch, "Agent");
+  pluginTarballArg = await pack(resolve(repoRoot, "dsh/plugin"), scratch, "Plugin");
+  agentTarballArg = await pack(resolve(repoRoot, "dsh/agent"), scratch, "Agent");
 } else if (!pluginTarballArg || !agentTarballArg) {
   throw new Error("provide both Plugin and Agent tarballs, or neither to pack them automatically");
 }
@@ -72,17 +73,26 @@ process.stdout.write(`${JSON.stringify({
   packageTargetsVerified: true,
 }, null, 2)}\n`);
 
-function pack(directory, destination, label) {
-  const result = spawnSync("npm", ["pack", directory, "--pack-destination", destination], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    shell: process.platform === "win32",
-    windowsHide: true,
+async function pack(directory, destination, label) {
+  let output;
+  await runPackagePack({
+    packageRoot: directory,
+    cleanRoots: label === "Plugin" ? ["runtime", "skills", "client"] : ["preset/odai/runtime", "preset/odai/skills", "client"],
+    runCommand() {
+      const result = spawnSync("npm", ["pack", directory, "--pack-destination", destination], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        shell: process.platform === "win32",
+        windowsHide: true,
+      });
+      if (result.error || result.status !== 0) {
+        throw new Error(`${label} pack failed: ${result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}`}`);
+      }
+      output = result.stdout;
+      return result.status;
+    },
   });
-  if (result.error || result.status !== 0) {
-    throw new Error(`${label} pack failed: ${result.error?.message ?? result.stderr?.trim() ?? `exit ${result.status}`}`);
-  }
-  const filename = result.stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1);
+  const filename = output.trim().split(/\r?\n/u).filter(Boolean).at(-1);
   if (!filename) throw new Error(`${label} pack did not report a tarball`);
   const tarball = resolve(destination, filename);
   if (dirname(tarball) !== resolve(destination)) throw new Error(`${label} pack reported an unexpected tarball path`);

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前已发布 DSH `0.2.29` / canonical `0.3.11`，仅面向 DSH `0.1.5-rc.1`。`0.2.27` 的 Sol/high C19 冻结定向结果为 4/4，完整交付及相邻修订的 C12/C32 保持项见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。该发布版尚无独立模型计分、全量或配对 A/B；`0.3.9` 的历史 18/19、142/144 及 C19 的 3/4 均按原指纹保留，不迁移为当前源码成绩。
+- 当前未发布候选为 DSH `0.2.30` / canonical `0.3.12`，仅面向 DSH `0.1.5-rc.1`；双包 `0.2.29` 已发布，新修复不复用该版本。`0.2.27` 的 Sol/high C19 冻结定向结果为 4/4，完整交付及相邻修订的 C12/C32 保持项见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。当前候选尚无独立模型计分、全量或配对 A/B；`0.3.9` 的历史 18/19、142/144 及 C19 的 3/4 均按原指纹保留，不迁移为当前源码成绩。
 - 既有全量与配对结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
 - 可选宿主能力路由单列在 [`docs/routing-results.md`](docs/routing-results.md)，不迁移为普通模型成绩。试跑、复跑、失败管线和临时模型故障仍只由 Git 历史与本地证据承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -33,13 +33,14 @@ plans/odai-canary.md              C01-C34 唯一活动题本与 suite 目录
 plans/odai-blind*                 可复用匿名横评定义
 scripts/                          校验、runner、judge、harness 与统一 artifact bundler
 dsh/runtime/                      唯一可编辑的 DSH runtime source
-dsh/plugin/                       独立发布的 profile-wide bundle
-dsh/agent/                        独立发布的 session-scoped Agent preset
+dsh/plugin/                       profile-wide bundle，与 Agent 同版同步发布
+dsh/agent/                        session-scoped Agent preset，与 Plugin 同版同步发布
+dsh/client/src/                   双包共用的 Control Center 客户端源
 cli/                              当前冻结的 provider-neutral runtime（不改、不测、不打包、不发布）
 CHANGELOG.md                      当前唯一 Unreleased 候选与冻结版变更日志
 ```
 
-`skills/odai/` 是 odai 唯一可编辑治理源，`dsh/runtime/src/` 是唯一可编辑 DSH runtime source。`cli/skills/odai/`、`dsh/plugin/{runtime,skills}` 与 `dsh/agent/preset/odai/{runtime,skills}` 只能由 npm lifecycle 临时生成，`postpack` 后必须清理；它们不提交、不手改、不是第二份 source。统一生成 owner 是 `scripts/package-odai-artifact.mjs`。仓库也不维护 `.claude/`、`.github/`、`.grok/` 等平台镜像产物；可选 Hooks 由 canonical runtime 按需生成到仓库外，skill 分发统一走 [skills.sh](https://skills.sh)。
+`skills/odai/` 是 odai 唯一可编辑治理源，`dsh/runtime/src/` 是唯一可编辑 DSH runtime source。`cli/skills/odai/`、`dsh/plugin/{runtime,skills,client}`、`dsh/agent/preset/odai/{runtime,skills}` 与 `dsh/agent/client` 只能由 npm lifecycle 临时生成，`postpack` 后必须清理；它们不提交、不手改、不是第二份 source。统一生成 owner 是 `scripts/package-odai-artifact.mjs`。仓库也不维护 `.claude/`、`.github/`、`.grok/` 等平台镜像产物；可选 Hooks 由 canonical runtime 按需生成到仓库外，skill 分发统一走 [skills.sh](https://skills.sh)。
 
 ## 当前架构口径
 
@@ -59,11 +60,13 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 | 跨会话可恢复状态与 Hooks 策略示例 | `assets/` |
 | 可选项目护栏 Hooks | `scripts/odai-hook.mjs` 是写入边界与显式验收的共享运行时；`scripts/build-hooks.mjs` 只生成薄适配，不承载第二套判断规则 |
 | 可选宿主能力角色 | `assets/routing-roles/` 是 controller、planner、reviewer 及可选 researcher/frontend 合同的唯一 owner；controller 始终持有实施与最终交付。`assets/{codex,claude,copilot}-agents/` 只保留宿主外壳；`scripts/build-routing.mjs` 生成显式注册；`scripts/install-routing.mjs` 安全安装、更新、卸载并清理旧 Executor/stage 文件；`scripts/run-role.mjs` 执行并记录实际 thread、模型与 usage；`scripts/verify-routing.mjs` 只读核验 Codex 原生角色 |
-| DSH 机械治理与自动路由 | `dsh/runtime/src/` 是唯一实现 owner，角色正文只读取 `assets/routing-roles/`；`dsh/plugin/` 只提供 profile-wide bundle 外壳，`dsh/agent/` 只提供 self-contained preset 与安全安装器，两者独立发包 |
+| DSH 机械治理与自动路由 | `dsh/runtime/src/` 是唯一实现 owner，角色正文只读取 `assets/routing-roles/`；`dsh/plugin/` 只提供 profile-wide bundle 外壳，`dsh/agent/` 只提供 self-contained preset 与安全安装器，两者可独立安装，但作为同版发布单元同步发包 |
 
-`skills/odai/manifest.json` 的 `roleFiles` 与 `referenceFiles` 是上述 canonical owner 路径的机器拓扑，`requiredFiles` 是完整性清单；validator、DSH bundle loader 与宿主生成器不得各自维护平行路径表。DSH 只把 kernel 常驻 prompt，已授权实施自动加载 craft；其他 reference 由 controller 通过只读 `odai_reference` 从当前 turn 已选 bundle 按需取得，责任 scope 和 child 不暴露该入口。
+`skills/odai/manifest.json` 的 `roleFiles` 与 `referenceFiles` 是上述 canonical owner 路径的机器拓扑，`requiredFiles` 是完整性清单；validator、DSH bundle loader 与宿主生成器不得各自维护平行路径表。DSH 只把 kernel 常驻 prompt；craft 与其他 reference 均由 controller 通过只读 `odai_reference` 从当前 turn 已选 bundle 按需取得，责任 scope 和 child 不暴露该入口。
 
 新能力先判断能否由现有 owner 承接；只有存在独立加载价值且合并会显著增加无关上下文时才新增 reference。领域名称、历史文件名和一次失败本身都不构成新增模块的理由。
+
+通用 planner/reviewer 合同不规定无人消费的模式首行或路由卡片；完整目标、用户原文、验收、停止与回交责任仍须保持。DSH 的实际工具协议、packet schema、scope 与模型回执属于 runtime。原生子代理与职责路由不前后叠加；同一缺口选一条满足上下文、权限和用户模型要求的路径，已有有效贡献按覆盖复用。
 
 ## 修改纪律
 
@@ -89,6 +92,8 @@ git diff --check
 ```
 
 合同测试在临时副本中实际删除或置空精神内核、五项定义与意图边界，调用主校验器确认拒绝，并以原文通过排除环境假失败；它保护文本合同，不替代模型行为评测。
+
+DSH source 使用根目录 `npm run check:dsh`：一次构建后完成 runtime、Agent、Plugin 的严格类型检查，再用 Node 校验经过渲染的浏览器脚本。两个包的 `check` 均委托该入口，不重复构建，也不依赖 Unix `find/xargs`。
 
 改可选 Hooks runtime、策略示例或适配生成器时补充：
 
@@ -165,11 +170,13 @@ npm --prefix dsh/plugin run pack:dry-run
 npm --prefix dsh/agent run pack:dry-run
 test ! -e dsh/plugin/runtime
 test ! -e dsh/plugin/skills
+test ! -e dsh/plugin/client
 test ! -e dsh/agent/preset/odai/runtime
 test ! -e dsh/agent/preset/odai/skills
+test ! -e dsh/agent/client
 ```
 
-odai-cli 冻结期间不修改、测试或打包 `cli/`。这一步只确认两个 DSH npm 产物包含所需临时 bundled source，且没有留下第二 source。Plugin 与 Agent 的 dry-run 由 `scripts/run-package-pack.mjs` 在 `finally` 中兜底清理，因此 pack 子进程失败时也不能残留生成目录；`postpack` 继续承担成功 lifecycle 的正常清理。DSH 发版还必须运行 Plugin 与 Agent 的隔离 load probe；Agent preset 固定来自对应 peer 版本的 standard composition，升级 DSH 时必须刷新并重验。
+odai-cli 冻结期间不修改、测试或打包 `cli/`。这一步只确认两个 DSH npm 产物包含所需临时 bundled source，且没有留下第二 source。Plugin 与 Agent 的 dry-run 由 `scripts/run-package-pack.mjs` 在 `finally` 中兜底清理，因此 pack 子进程失败时也不能残留生成目录；`postpack` 继续承担成功 lifecycle 的正常清理。DSH 发版还必须运行 Plugin 与 Agent 的隔离 load probe；Agent 自行维护 preset；Standard 摘要只标识上游制品，升级 DSH 时核对该身份并验证 Odai 自有 preset 的加载、能力保持与 scoped tool/prompt 行为，不要求逐字复制 Standard。
 
 ## 日志与提交
 

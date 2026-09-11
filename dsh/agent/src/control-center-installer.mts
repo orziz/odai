@@ -5,9 +5,11 @@ import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { compare as compareVersions, SemVer } from "semver";
 import { parse as parseYaml } from "yaml";
 
-import { assertNoSymlinkDescendants, resolveDshHome, resolveManagedDshHome } from "./installer.mjs";
+import { assertNoSymlinkDescendants, resolveDshHome, resolveManagedDshHome, supportsDshVersion, SUPPORTED_DSH_RANGE } from "./installer.mjs";
+import { readDshVersion } from "./dsh-version.mjs";
 import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
 interface PackageMetadata {
@@ -81,7 +83,6 @@ if (!isRecord(parsedMetadata) || typeof parsedMetadata.name !== "string" || type
 }
 const packageMetadata: PackageMetadata = { name: parsedMetadata.name, version: parsedMetadata.version };
 const PROFILE_STATE_FILES = Object.freeze(["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]);
-const EXACT_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -161,25 +162,13 @@ function localDependency(dependency: string): boolean {
 }
 
 function exactRegistryVersion(dependency: string): string | undefined {
-  return EXACT_VERSION_PATTERN.test(dependency) ? dependency : undefined;
-}
-
-function compareVersions(left: string, right: string): number {
-  const parse = (value: string): readonly [number, number, number, string | undefined] => {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/u.exec(value);
-    if (!match) throw new TypeError(`invalid exact package version ${value}`);
-    return [Number(match[1]), Number(match[2]), Number(match[3]), match[4]];
-  };
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (a[index] as number) - (b[index] as number);
-    if (difference !== 0) return difference;
+  try {
+    const parsed = new SemVer(dependency);
+    const exact = parsed.version + (parsed.build.length ? `+${parsed.build.join(".")}` : "");
+    return dependency === exact ? dependency : undefined;
+  } catch {
+    return undefined;
   }
-  if (a[3] === b[3]) return 0;
-  if (a[3] === undefined) return 1;
-  if (b[3] === undefined) return -1;
-  return a[3].localeCompare(b[3]);
 }
 
 async function resolvedPackage(target: string): Promise<ResolvedPackage | undefined> {
@@ -203,6 +192,7 @@ async function resolvedPackage(target: string): Promise<ResolvedPackage | undefi
     issues.push(`cannot resolve installed package root: ${errorMessage(error)}`);
   }
   for (const relativePath of [
+    "control-center.cordis.patch.yml",
     "build/src/installer.mjs",
     "preset/odai/runtime/control-center-host.mjs",
     "preset/odai/runtime/control-center-runtime.mjs",
@@ -269,6 +259,10 @@ export async function inspectAgentControlCenter(
   if (order > 0) {
     issues.unshift(`installed registry version ${installed.version} is newer than this installer ${packageMetadata.version}`);
     return { status: "newer", issues, ...detail };
+  }
+  if (installed.version !== packageMetadata.version) {
+    issues.unshift(`installed build ${installed.version} does not match this installer ${packageMetadata.version}`);
+    return { status: "partial-drift", issues, ...detail };
   }
   return { status: "current", issues: [], ...detail };
 }
@@ -399,6 +393,10 @@ async function installAgentControlCenterUnderLock(
     throw new Error(`refusing to downgrade Agent Control Center at ${current.target}: ${current.issues.join("; ")}`);
   }
 
+  const dshVersion = readDshVersion({ dsh: options.dshBin, platform: options.platform, execute: options.execute });
+  if (!supportsDshVersion(dshVersion)) {
+    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
+  }
   const snapshot = await captureProfile(current.target);
   const packageSpec = options.packageSpec ?? `${packageMetadata.name}@${packageMetadata.version}`;
   try {

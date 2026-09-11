@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-plugin",
-  "version": "0.2.29",
+  "version": "0.2.30",
   "description": "Profile-wide odai governance and routing bundle for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -54,7 +54,7 @@
   "scripts": {
     "build:dsh": "npm --prefix ../.. run build:dsh",
     "typecheck:dsh": "npm --prefix ../.. run typecheck:dsh",
-    "check": "npm run typecheck:dsh && npm run build:dsh && find ../runtime/build build/bin -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "check": "npm --prefix ../.. run check:dsh",
     "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root skills --runtime-root runtime --client-root client --client-package odai-dsh-plugin",
     "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root skills --runtime-root runtime --client-root client --client-package odai-dsh-plugin",
     "prepare": "npm run prepare:artifact",

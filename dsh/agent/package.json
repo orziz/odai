@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-agent",
-  "version": "0.2.29",
+  "version": "0.2.30",
   "description": "独立维护的 odai 治理模式 preset，按任务需要提供治理与协作，可作为默认总控。",
   "license": "MIT",
   "repository": {
@@ -54,7 +54,7 @@
   "scripts": {
     "build:dsh": "npm --prefix ../.. run build:dsh",
     "typecheck:dsh": "npm --prefix ../.. run typecheck:dsh",
-    "check": "npm run typecheck:dsh && npm run build:dsh && find ../runtime/build build/bin build/src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "check": "npm --prefix ../.. run check:dsh",
     "prepare:artifact": "npm run build:dsh && node ../../scripts/package-odai-artifact.mjs prepare --skill-root preset/odai/skills --runtime-root preset/odai/runtime --client-root client --client-package odai-dsh-agent",
     "clean:artifact": "node ../../scripts/package-odai-artifact.mjs clean --skill-root preset/odai/skills --runtime-root preset/odai/runtime --client-root client --client-package odai-dsh-agent",
     "prepare": "npm run prepare:artifact",

@@ -89,7 +89,7 @@ const roles = Object.freeze([
 ]);
 const descriptions = {
   controller: "持续持有用户目标、全局状态、修正回路与最终交付。",
-  researcher: "只在多源决定证据压缩有实测收益时返回可追溯来源账本。",
+  researcher: "只为会改变决定的多源事实缺口返回有界来源账本，调用前有收益依据，回交后验贡献。",
   planner: "只在独立判断能改变路线时形成有界的证据化规划。",
   reviewer: "只在独立判断能改变放行结果时依据真实证据验收。",
   frontend: "只在界面设计或前端制作存在专业缺口时形成可验证成品。",
@@ -126,7 +126,7 @@ const metadata = {
     controller_identity: "persistent-task-thread",
     controller_owns_final_delivery: true,
     researcher_activation: models.researcher
-      ? "only-when-multi-source-decision-evidence-compression-has-measured-net-benefit"
+      ? "only-for-a-decision-blocking-multi-source-gap-with-justified-expected-benefit"
       : "unconfigured",
     planner_activation: "only-when-independent-judgment-can-change-route",
     reviewer_activation: "only-when-independent-judgment-can-change-release",

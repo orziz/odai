@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,16 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hook = path.join(repoRoot, "skills", "odai", "scripts", "odai-hook.mjs");
 const builder = path.join(repoRoot, "skills", "odai", "scripts", "build-hooks.mjs");
-const project = mkdtempSync(path.join(os.tmpdir(), "odai-hooks-project-"));
+const temporaryRoots = [];
+process.on("exit", () => {
+  for (const root of temporaryRoots) rmSync(root, { recursive: true, force: true });
+});
+function temporaryRoot(prefix) {
+  const root = mkdtempSync(path.join(os.tmpdir(), prefix));
+  temporaryRoots.push(root);
+  return root;
+}
+const project = temporaryRoot("odai-hooks-project-");
 
 run("git", ["init", "-q", project]);
 mkdirSync(path.join(project, ".odai"), { recursive: true });
@@ -77,7 +86,7 @@ assert.equal(passedStop.stdout, "");
 // Symlink regression tests (V-002)
 
 // Test 1: escaping the project root stays allowed by default, whatever the route.
-const externalDir = mkdtempSync(path.join(os.tmpdir(), "odai-external-"));
+const externalDir = temporaryRoot("odai-external-");
 let symlinkAvailable = true;
 try {
   symlinkSync(externalDir, path.join(project, "outside-link"));
@@ -153,9 +162,27 @@ writePolicy({ version: 1, protectedPaths: ["examples/reference/**"], blockUnreso
 const inboundSymlinkProtected = runHook("pre-tool", "codex", editPayload(path.join(externalDir, "into-project", "demo.js")));
 assert.equal(inboundSymlinkProtected.status, 2, "protected file reached through an outside symlink must be blocked");
 assert.match(inboundSymlinkProtected.stderr, /命中项目只读路径/);
+
+// A declared check must stay inside the project after resolving cwd aliases.
+const checkCommand = [process.execPath, "-e", 'require("node:fs").writeFileSync("check-ran", "yes")'];
+writePolicy({ version: 1, protectedPaths: [], checks: [
+  { name: "outside check", always: true, cwd: "outside-link", run: checkCommand, timeoutSeconds: 5 },
+] });
+const outsideCheck = runHook("stop", "codex", { cwd: project });
+assert.equal(outsideCheck.status, 0, "Codex Stop uses a structured rejection");
+const outsideDecision = JSON.parse(outsideCheck.stdout || "{}");
+assert.equal(outsideDecision.decision, "block", "Stop checks cannot escape through a cwd symlink");
+assert.match(outsideDecision.reason, /cwd.*项目根/);
+assert.equal(existsSync(path.join(externalDir, "check-ran")), false, "rejected check must not execute");
+writePolicy({ version: 1, protectedPaths: [], checks: [
+  { name: "inside check", always: true, cwd: "protected-alias", run: checkCommand, timeoutSeconds: 5 },
+] });
+const insideCheck = runHook("stop", "codex", { cwd: project });
+assert.equal(insideCheck.status, 0, insideCheck.stderr);
+assert.equal(readFileSync(path.join(project, "src/check-ran"), "utf8"), "yes");
 }
 
-const generatedRoot = mkdtempSync(path.join(os.tmpdir(), "odai-hook-adapters-"));
+const generatedRoot = temporaryRoot("odai-hook-adapters-");
 const build = run(process.execPath, [builder, "--host", "all", "--out", generatedRoot]);
 assert.equal(build.status, 0, build.stderr);
 

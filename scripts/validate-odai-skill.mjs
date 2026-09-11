@@ -304,6 +304,7 @@ function validateBehavior() {
         /修改共享对象或既有契约[^。\n]*保持默认/,
         /验证随影响面扩展[^。\n]*局部只跑命中检查[^。\n]*共享改动覆盖受影响消费者[^。\n]*不跑无关全量/,
         /“严格、完整、增强”提高证据、反证、保持项和验收强度/,
+        /整体整理须在授权范围内覆盖本体与配套[^。\n]*不以局部修复代替完整交付/,
         /用户确认只补授权、不补事实/,
         /未读、未做、未跑、未验证或未调用(?:都)?如实说明/,
         /完成只看当前要求、产物和相称验证/,
@@ -433,6 +434,8 @@ function validateBehavior() {
         /frontend[^。\n]*不是领域资料包/,
         /高后果只提高证据、授权和验收强度，不自动制造角色调用/,
         /预期不是已证收益[^。\n]*不要求首次调用先有该调用的历史结果/,
+        /同一缺口只选一条足够的路径/,
+        /角色合同用于约束职责[^。\n]*适配器只补缺失能力、用户映射或可核对的证据/,
         /同一模型的独立上下文可以提供独立复核[^。\n]*不能冒充模型升级/,
         /用量缺失限制成本结论[^。\n]*不抹掉已核实的交付证据/,
         /只有新的可核查修正依据才支持重试[^。\n]*停止条件/,
@@ -562,8 +565,8 @@ function validateRoutingSources() {
   const roleSources = [
     ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施、修正回路与最终交付", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "总控在当前上下文做最小修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
     ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", referenceFile("leverage")]],
-    ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "mode: direct", "mode: planned", "target", "evidence", "scope", "decision", "交回总控", "review: none", "accept", "stop", "steps", "增量重规划", "researcher 来源账本"]],
-    ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整 `accept`", "`pass`、`fail` 或 `unresolved`", "route: execution", "route: planning", "route: user", "route: blocked", "不得制造额外流程"]],
+    ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "交回总控", referenceFile("planning"), "完整目标", "事实与未知", "允许与禁止范围", "验收与停止条件", "不强制模式首行", "不是面向用户的最终交付", "用户原文来源", "增量重规划", "researcher 来源账本"]],
+    ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整验收", "通过、失败和仍未判定", "实施偏差回总控", "验收设计失效回总控", "用户取舍或不可取得的外部条件", "不强制状态首行", "不自行调度", "不得制造额外流程"]],
     ["frontend", readFileSync(roleFiles[4], "utf8"), ["frontend 专业责任", "不是第二个总控", "允许与禁止范围", "总控或 planner", "当前任务线程", "有界独立上下文", referenceFile("craft"), "局部修复保持最小", "不写入本通用责任合同"]],
   ];
   for (const [label, text, fragments] of roleSources) {
