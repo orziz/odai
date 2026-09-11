@@ -2060,7 +2060,8 @@ test("child native tools and DSH tool instructions agree with the execution boun
       .map((name) => ({ name: `tool:${name}`, text: `Native instructions for ${name}.` }));
     const makeAssembly = () => ({
       tools: hostNames.map((name) => ({ name })),
-      sections: [...ctx.captured.sections, ...retainedSections, ...unavailableSections],
+      sections: [...ctx.captured.sections, ...retainedSections, ...unavailableSections,
+        { name: "odai:child-execution-boundary", text: "stale child contract" }],
     });
     const assembly = makeAssembly();
     const assemble = ctx.captured.handlers.get("system-prompt/assemble");
@@ -2069,6 +2070,16 @@ test("child native tools and DSH tool instructions agree with the execution boun
       assert.equal(assembly.sections.find((section) => section.name === "tool:write")?.text, "");
       return assembly;
     });
+    const childSections = result.sections.filter(
+      (section: TestPromptSection) => section.name === "odai:child-execution-boundary",
+    );
+    assert.equal(childSections.length, 1, "replace stale child guidance without duplication");
+    assert.match(childSections[0].text, /unapplied patch with the inspected baseline/);
+    assert.match(childSections[0].text, /controller applies, integrates, and validates/);
+    assert.match(childSections[0].text, /Narrower researcher, planner, and reviewer contracts/);
+    for (const name of ["write", "bash"]) {
+      assert.equal(result.tools.some((tool: TestToolSchema) => tool.name === name), false);
+    }
     for (const name of hostNames) {
       const denied = ctx.captured.guards.some((guard) => guard({ name, agent }));
       assert.equal(result.tools.some((tool: TestToolSchema) => tool.name === name), !denied, name);
@@ -2093,6 +2104,9 @@ test("child native tools and DSH tool instructions agree with the execution boun
     };
     const parentAssembly = makeAssembly();
     const parentResult = await assemble(parentAssembly, { agent: parent }, async () => parentAssembly);
+    assert.equal(parentResult.sections.some(
+      (section: TestPromptSection) => section.name === "odai:child-execution-boundary",
+    ), false, "child guidance does not restrict the controller or same-turn scopes");
     assert.deepEqual(parentResult.tools.filter((tool: TestToolSchema) => hostNames.includes(tool.name)).map((tool: TestToolSchema) => tool.name), hostNames);
     for (const section of [...retainedSections, ...unavailableSections]) {
       assert.deepEqual(parentResult.sections.find((item: TestPromptSection) => item.name === section.name), section);
@@ -3123,10 +3137,12 @@ test("reviewer same-turn findings return to the controller for continued process
     },
   };
   seedCurrentEvidence(ctx, agent, events);
-  await ctx.captured.handlers.get("agent/pre-step")(
+  const entered = await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请审查当前实现并把 finding 交回总控继续处理")] }),
   );
+  const verificationOwner = readFileSync(resolve(import.meta.dirname, "../../../skills/odai/references/verification.md"), "utf8").trim();
+  assert.ok(messageText(entered.messages[1]).includes(verificationOwner), "same-turn reviewer receives its complete verification owner");
   const reviewerRequest = await ctx.captured.handlers.get("agent/request")(
     { agent, turn: 1, step: 1 },
     async () => controllerRoute,
@@ -3618,6 +3634,8 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.ok(startRequest);
   assert.match(blockText(startRequest.prompt[0]), /Odai bounded role context packet/u);
   assert.match(blockText(startRequest.prompt[0]), /Review planner acceptance A1 and A2 against the final patch/u);
+  const verificationOwner = readFileSync(resolve(import.meta.dirname, "../../../skills/odai/references/verification.md"), "utf8").trim();
+  assert.ok(blockText(startRequest.prompt[0]).includes(verificationOwner), "child reviewer receives its complete verification owner");
   assert.match(blockText(startRequest.prompt[0]), /Frozen requirement decisions/u);
   assert.match(blockText(startRequest.prompt[0]), /R-default/u);
   assert.match(blockText(startRequest.prompt[0]), /Preserve default behavior while fixing routing/u);

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { createCanonicalReferenceTool } from "../build/canonical-reference.mjs";
 import { loadSkillBundle } from "../build/skill-bundle.mjs";
+import { dshRoleContract } from "../build/role-overlays.mjs";
 import type { DshAgent } from "../src/runtime-types.mjs";
 
 const bundle = loadSkillBundle(resolve(import.meta.dirname, "../../../skills/odai/SKILL.md"));
@@ -23,4 +24,18 @@ test("canonical references use one selected snapshot and fail closed outside the
     () => denied.execute({ reference: "planning" }, { name: tool.name, agent }),
     /only to the controller outside a responsibility scope/u,
   );
+});
+
+test("responsibilities receive their owner and reject missing or invalid owner content", () => {
+  const references = { planning: "PLANNING_OWNER", verification: "VERIFICATION_OWNER", craft: "CRAFT_OWNER" };
+  for (const [role, owner] of [["planner", "planning"], ["reviewer", "verification"], ["frontend", "craft"]] as const) {
+    const contract = dshRoleContract(role, bundle.roleContracts[role], references);
+    for (const [name, text] of Object.entries(references)) {
+      assert.equal(contract.includes(text), name === owner, "each responsibility receives only its direct owner");
+    }
+    for (const invalid of [undefined, "", 42]) {
+      assert.throws(() => dshRoleContract(role, bundle.roleContracts[role], { ...references, [owner]: invalid }),
+        new RegExp(`canonical ${owner} reference is unavailable for ${role}`));
+    }
+  }
 });

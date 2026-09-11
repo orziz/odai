@@ -59,7 +59,7 @@ if (argv.includes("--help") || argv.includes("-h")) {
     [--researcher-effort <effort>] [--planner-effort <effort>] [--reviewer-effort <effort>] \\
     [--frontend-effort <effort>] [--verifier-command <command>]
 
-生成 odai 的可选宿主 auto 路由适配器。一个持续总控持有实施与最终交付，只在多源证据压缩、独立规划、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。这里不跨 provider、不增加第二总控或隐藏的每轮前置流程。`);
+生成 odai 的可选宿主 auto 路由适配器。一个持续总控负责实施整合与最终交付，只在多源证据压缩、独立规划、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。这里不跨 provider、不增加第二总控或隐藏的每轮前置流程。`);
   process.exit(0);
 }
 

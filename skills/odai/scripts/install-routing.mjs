@@ -441,7 +441,7 @@ Usage:
 
   node skills/odai/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] --uninstall --yes
 
-安装后用户只需正常使用 odai。总控是唯一持续任务线程并持有实施；planner、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker、executor 和 stage runner 托管文件。`);
+安装后用户只需正常使用 odai。总控是唯一持续任务线程并负责实施整合；planner、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker、executor 和 stage runner 托管文件。`);
 }
 
 function returnResult(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); process.exit(0); }

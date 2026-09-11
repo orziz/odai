@@ -60,7 +60,7 @@ validateFrontmatter(skillText);
 validateConstitution(skillText);
 validateCurrentJudgment(skillText);
 validateStructure();
-validateBehavior();
+validateTextualContracts();
 validateOpenaiMetadata();
 validateHookSources();
 validateRoutingSources();
@@ -210,42 +210,27 @@ function validateStructure() {
       headings: ["任务状态"],
       anchors: ["用户当前主要语言"],
     },
-    {
-      path: referenceFile("dao"),
-      headings: ["合作与决定", "目标、参考与写入", "高影响动作"],
-    },
+    // References are loaded as whole named resources. Their prose headings are not an API.
+    // Keep dependency anchors here; critical textual contracts are checked separately below.
     {
       path: referenceFile("care"),
-      headings: ["回应原则", "同一总控内的交互风格", "自然与透明"],
       anchors: [referenceFile("human-safety"), "阿岱与欧黛"],
     },
     {
       path: referenceFile("human-safety"),
-      headings: ["优先级与边界", "主动识别与确认", "分级回应", "即时危险", "透明干预与防止二次伤害", "跨会话安全连续性", "隐私与现实支持"],
       anchors: [referenceFile("care"), "明显低落、绝望或难以支撑", "自伤、轻生或自杀信号"],
     },
     {
       path: referenceFile("craft"),
-      headings: ["制作前定形", "实施", "设计", "界面与实时交互", "写作与文档", "审查"],
       anchors: [referenceFile("planning"), referenceFile("leverage")],
     },
     {
       path: referenceFile("planning"),
-      headings: ["适用与授权", "事实基线", "计划缩放", "合同与工作包", "验证、状态与续作", "最小交付结构"],
       anchors: ["assets/task-state.md", referenceFile("craft"), referenceFile("leverage")],
     },
     {
       path: referenceFile("support"),
-      headings: ["按表现升降", "连续性与记忆"],
       anchors: ["assets/task-state.md", referenceFile("planning"), referenceFile("leverage"), referenceFile("verification")],
-    },
-    {
-      path: referenceFile("leverage"),
-      headings: ["唯一总控与四项可选责任", "宿主能力与降级", "安装宿主路由", "使用、安装与创建其他能力", "组合与下放"],
-    },
-    {
-      path: referenceFile("verification"),
-      headings: ["建立验收", "判断完成"],
     },
   ];
 
@@ -253,7 +238,7 @@ function validateStructure() {
     const fullPath = path.join(skillRoot, check.path);
     if (!existsSync(fullPath)) continue;
     const text = readFileSync(fullPath, "utf8");
-    for (const heading of check.headings) {
+    for (const heading of check.headings || []) {
       if (!new RegExp(`^#{1,3}\\s+${escapeRegExp(heading)}\\s*$`, "m").test(text)) {
         fail(`${check.path}: missing required section: ${heading}`);
       }
@@ -264,19 +249,20 @@ function validateStructure() {
   }
 }
 
-function validateBehavior() {
+function validateTextualContracts() {
   const checks = [
     {
       path: "SKILL.md",
       label: "adaptive support",
       patterns: [
-        /宿主已证能力[^。\n]*实际表现[^。\n]*最低充分能力/,
+        /宿主已证能力[^。\n]*实际表现[^。\n]*相称支撑/,
+        /完整结果、判断质量和可靠性为前提[^。\n]*减少无益工作/,
         /已暴露不再问，未暴露不猜/,
         /总控持有目标、状态、实施、修正与交付/,
         /独立责任只补缺口[^。\n]*调用前有收益依据[^。\n]*回交后验贡献/,
         /自主完成[\s\S]{0,220}直接闭环[^。\n]*不造计划、清单或状态/,
         /询问命令、入口或做法[^。\n]*只授权回答[^。\n]*先查最可能作答的权威来源[^。\n]*不预先捆绑广泛盘点或旁证[^。\n]*答案充分即停/,
-        /结构化支撑[\s\S]{0,180}稳定后撤回/,
+        /结构化支撑[\s\S]{0,180}缺口闭合后只撤去已无作用的部分/,
         /预期红测和已查明的环境缺失不单独触发支撑升级/,
         /支撑只补当前缺口[^。\n]*不得降低目标、删减验收/,
         /危机保护[\s\S]{0,260}明确自残、轻生或即时危险时任务让位/,
@@ -300,7 +286,8 @@ function validateBehavior() {
         /用实际反馈修正判断[^。\n]*推翻关键结论的反例/,
         /简单且已清楚的问题直接完成[^。\n]*不机械展开多方案或额外分析/,
         /委托判断不补事实、授权、扩围或外部后果/,
-        /材料标为未决的取舍[^。\n]*用户决定或裁决证据出现前不得写成主方案、默认值或验收[^。\n]*给出权衡和建议并保留决定点[^。\n]*不阻断其余交付/,
+        /材料标为未决的取舍[^。\n]*用户决定或裁决证据出现前不得当作已确认的方案、默认值或验收/,
+        /有依据的(?:首选|优先)建议[^。\n]*保留决定点[^。\n]*不阻断其余交付[^。\n]*不擅自启动依赖该决定的实施/,
         /低成本或可撤回不能替代对齐/,
         /实施、提交或发布授权只对已对齐的目标、范围和后果有效[^。\n]*不能替代缺失的用户决定/,
         /实施授权看当前请求、上下文和有效授权[^。\n]*不要求固定措辞/,
@@ -422,7 +409,8 @@ function validateBehavior() {
       patterns: [
         /同一路线没有新证据却继续尝试/,
         /把下一步缩成能独立验证的动作/,
-        /触发支撑的缺口已闭合[^。\n]*撤掉对应额外结构/,
+        /不要求先走一遍较轻但已知不足的办法/,
+        /缺口闭合后结束已无作用的额外支撑[^。\n]*仍承担交接或验收的结构保留/,
         /主状态、字段、唯一 owner 与续作统一遵循 `references\/planning\.md`/,
         /本文件只判断是否需要外化[^。\n]*不维护第二份进度或并行责任账本/,
         /只有稳定、跨任务有用且可复核的信息才保存/,
@@ -434,7 +422,12 @@ function validateBehavior() {
       label: "external leverage",
       patterns: [
         /odai 是唯一用户入口和最终交付 owner/,
-        /实施始终由总控负责/,
+        /总控仍负责整合与验证/,
+        /现有命名责任的适用范围[^。\n]*不是能力上限/,
+        /补丁是建议产物[^。\n]*不是已经落盘、执行或通过验证的结果/,
+        /总控核对基线、范围与语义[^。\n]*应用后验证组合状态/,
+        /研究、规划和审查责任[^。\n]*不.*自动变成补丁制作责任/,
+        /宿主实际支持[^。\n]*任务授权覆盖[^。\n]*写入范围与隔离可核对[^。\n]*才下放直接写入/,
         /researcher[^。\n]*只补多源事实获取与原始上下文压缩缺口/,
         /planner[^。\n]*只补独立判断缺口/,
         /reviewer[^。\n]*独立判断能改变尚未放行的具体属性/,
@@ -573,7 +566,7 @@ function validateRoutingSources() {
     if (!codexRole.includes(fragment)) fail(`assets/codex-agents/role.toml: missing host wrapper field: ${fragment}`);
   }
   const roleSources = [
-    ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施、修正回路与最终交付", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "总控在当前上下文做最小修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
+    ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施整合、修正回路与最终交付", "接回产物、核对范围和验证组合结果", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "定位偏差并组织修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
     ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", referenceFile("leverage")]],
     ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "交回总控", referenceFile("planning"), "完整目标", "事实与未知", "允许与禁止范围", "验收与停止条件", "不强制模式首行", "不是面向用户的最终交付", "用户原文来源", "增量重规划", "researcher 来源账本"]],
     ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整验收", "通过、失败和仍未判定", "实施偏差回总控", "验收设计失效回总控", "用户取舍或不可取得的外部条件", "不强制状态首行", "不自行调度", "不得制造额外流程"]],

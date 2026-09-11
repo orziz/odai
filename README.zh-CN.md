@@ -98,7 +98,7 @@ Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 ca
 
 完整、独立安装的 Odai skill 可以比两个 DSH 包更快更新，但不会自行改变默认来源。只有用户明确要求，Odai 才会把 skill source 切换为 `auto` 或 `user`：`auto` 可以选择兼容的项目 `.dsh` / `.agents` bundle 与较新的用户安装，`user` 则忽略项目根；部署显式路径始终优先。Plugin 与 Agent 刻意共存时按 agent / turn 共用同一份快照，prompt 治理与路由 role contract 不会选到不同 bundle。
 
-两个 DSH 包都不会自行选择 researcher、planner、reviewer 或 frontend 模型。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
+两个 DSH 包都不会自行选择 researcher、planner、reviewer 或 frontend 模型。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。总控负责整合、验证和最终交付；DSH 子代理保持只读，在明确委派补丁制作时可返回待应用补丁，研究、规划和审查仍遵守各自的较窄合同。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
 
 DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用户明确要求，controller-only 工具才会把用户原文中的照护偏好、希望留意的信号、有效支持方式或自写安全计划保存到独立本地记录；用户可查看、导出、更正、逐条删除或物理清空，记录默认保留到用户执行删除。新会话只把它当历史照护偏好，不当成当前风险、诊断或隐藏评分，child agent 也拿不到这份记录。
 
@@ -120,7 +120,7 @@ DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用
 /odai 为当前项目安装并验证能力路由。
 ```
 
-odai 会从当前宿主的真实能力目录配置一个 controller 与 planner、reviewer，并可选配置 researcher、frontend，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由单一总控实施并闭环，可选责任只在独立工作能改变结果时调用，不增加隐藏的每轮前置流程或 stage runner。可靠直答和只读查询不为展示路由调用其他角色。
+odai 会从当前宿主的真实能力目录配置一个 controller 与 planner、reviewer，并可选配置 researcher、frontend，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由总控承担完整交付，制作可按宿主权限有界委派，可选责任只在独立工作能改变结果时调用，不增加隐藏的每轮前置流程或 stage runner。可靠直答和只读查询不为展示路由调用其他角色。
 
 不再使用时可以说“用 odai 卸载当前项目的能力路由”。安装器会合并既有宿主设置，记录原始 Codex 总控配置以便精确恢复，只删除清单中仍未被外部修改的托管文件，并保留无关设置；安装、更新或实际卸载后须开启新会话。默认只影响当前项目。自动安装器可为 Codex、Claude Code 与 GitHub Copilot CLI 生成托管角色配置；Codex 另有原生角色核验，另外两个宿主尚未取得等价证据时不能宣称同等程度的运行时路由。
 
@@ -298,7 +298,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前开发候选为 DSH `0.2.30` / canonical `0.3.13`，没有新采纳的模型成绩或 token 节省实测。已发布的 `0.3.11` 尚无新模型计分或 token 节省实测。`0.3.10` 冻结快照的 GPT-5.6 Sol/high C19 完整能力交付为 4/4，不作为 `0.3.11` 的成绩。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
+当前开发候选为 DSH `0.2.30` / canonical `0.3.15`，没有新采纳的模型成绩或 token 节省实测。已发布的 `0.3.11` 尚无新模型计分或 token 节省实测。`0.3.10` 冻结快照的 GPT-5.6 Sol/high C19 完整能力交付为 4/4，不作为 `0.3.11` 的成绩。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
 
 下表的历史全量与配对结果覆盖 19 条现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
 

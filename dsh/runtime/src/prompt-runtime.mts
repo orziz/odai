@@ -1,5 +1,6 @@
 import { decideRoute, extractLatestUserText } from "./router.mjs";
 import { DEFAULT_CHILD_ALLOWED_TOOLS } from "./governance.mjs";
+import { DSH_CHILD_EXECUTION_PROMPT } from "./role-overlays.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import {
   DEFAULT_OUTPUT_POLICY,
@@ -391,7 +392,9 @@ export function createPromptRuntime(deps: PromptDependencies) {
     }
     return {
       ...reconciledDownstream,
-      sections: reconciledDownstream.sections.map((section) => {
+      sections: reconciledDownstream.sections.filter(
+        (section) => section.name !== "odai:child-execution-boundary",
+      ).map((section) => {
         if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection) };
         if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
@@ -402,7 +405,10 @@ export function createPromptRuntime(deps: PromptDependencies) {
         if (section.name === "odai:compaction-model-configuration") return { ...section, text: activation.compactionConfig ? COMPACTION_CONFIG_PROMPT : "" };
         if (section.name === "odai:semantic-memory") return { ...section, text: activation.memory ? MEMORY_PROMPT : "" };
         return section;
-      }),
+      }).concat(childSession ? [{
+        name: "odai:child-execution-boundary",
+        text: DSH_CHILD_EXECUTION_PROMPT,
+      }] : []),
     };
   });
 

@@ -93,8 +93,11 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       "多种实现方式不等于多种用户目标",
       "上下文无法裁决且分歧会改变结果、价值取舍、写入范围或难撤回后果",
       "委托判断不补事实、授权、扩围或外部后果",
-      "材料标为未决的取舍，在用户决定或裁决证据出现前不得写成主方案、默认值或验收",
-      "给出权衡和建议并保留决定点，不阻断其余交付",
+      "用户决定或裁决证据出现前不得当作已确认的方案、默认值或验收",
+      "有依据的首选建议",
+      "保留决定点，不阻断其余交付",
+      "不擅自启动依赖该决定的实施",
+      "完整结果、判断质量和可靠性为前提",
       "实施、提交或发布授权只对已对齐的目标、范围和后果有效，不能替代缺失的用户决定",
       "低成本或可撤回不能替代对齐",
       "探索、决定与实施不自动切换",
@@ -139,10 +142,32 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       ["adapters supplement rather than duplicate native capabilities", "适配器只补缺失能力、用户映射或可核对的证据"],
       ["uncertainty is not proof of missing capability", "做法尚未想清楚不等于能力不足"],
       ["autonomy does not require repeated failed attempts", "不为证明自主而反复硬试"],
+      ["delegation retains controller integration", "总控仍负责整合与验证"],
+      ["mapped roles are not a capability ceiling", "不是能力上限"],
+      ["proposed patches are not executed results", "不是已经落盘、执行或通过验证的结果"],
+      ["integration must validate the combined state", "应用后验证组合状态"],
+      ["narrow responsibilities do not become patch authors", "不因工具只读就自动变成补丁制作责任"],
+      ["direct writing requires verifiable isolation", "写入范围与隔离可核对"],
     ];
     for (const [name, boundary] of capabilityBoundaries) {
       await rejects(name, leverage.replace(boundary, ""), /missing external leverage/u, leveragePath);
     }
+
+    await t.test("reference headings may change without weakening their contracts", () => {
+      const manifest = JSON.parse(readFileSync(resolve(repoRoot, "skills/odai/manifest.json"), "utf8"));
+      for (const reference of Object.values(manifest.referenceFiles)) {
+        const relativePath = `skills/odai/${reference}`;
+        const source = readFileSync(resolve(repoRoot, relativePath), "utf8");
+        const renamed = source.replace(/^(## .+)$/gmu, "$1（结构调整）");
+        assert.notEqual(renamed, source);
+        const result = validate(renamed, relativePath);
+        assert.equal(result.status, 0, result.output);
+      }
+    });
+    await t.test("equivalent recommendation wording remains valid", () => {
+      const result = validate(skillText.replace("有依据的首选建议", "有依据的优先建议"));
+      assert.equal(result.status, 0, result.output);
+    });
 
     for (const [role, boundaries] of [
       ["planner", ["不预做实施", "不是面向用户的最终交付", "用户原文来源", "验收与停止条件"]],

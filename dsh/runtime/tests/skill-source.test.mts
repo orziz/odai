@@ -177,11 +177,10 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
     "care",
     "human-safety",
   ]);
-  assert.match(bundled.referenceContracts.craft, /通用制作工艺/u);
-  assert.match(bundled.referenceContracts.verification, /验证与完成/u);
-  const leverage = readFileSync(resolve(canonicalRoot, "references/leverage.md"), "utf8");
-  assert.match(leverage, /唯一总控与四项可选责任/u);
-  assert.match(leverage, /实施始终由总控负责/u);
+  for (const [name, relativePath] of Object.entries(bundled.manifest.referenceFiles)) {
+    assert.equal(bundled.referenceContracts[name], readFileSync(resolve(canonicalRoot, relativePath), "utf8").trim(),
+      `${name} must load the complete source without prescribing its prose`);
+  }
   assert.match(bundled.digest, /^[a-f0-9]{64}$/u);
   assert.equal(compareSkillVersions("1.0.0-alpha.2", "1.0.0-alpha.10"), -1);
   assert.equal(compareSkillVersions("1.0.0+build.1", "1.0.0+build.2"), 0);
@@ -573,6 +572,7 @@ test("runtime injects one project snapshot into both prompt and routed role cont
     const prompt = startRequest.prompt;
     assert.ok(Array.isArray(prompt) && isUnknownRecord(prompt[0]) && typeof prompt[0].text === "string");
     assert.match(prompt[0].text, /PROJECT_RUNTIME_PLANNER/u);
+    assert.ok(prompt[0].text.includes(planning.contract.trim()), "planner receives its complete owner from the same selected snapshot");
 
     const sourceTool = ctx.captured.tools.find(({ name }) => name === "odai_skill_source_config");
     assert.ok(sourceTool);

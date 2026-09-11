@@ -1,3 +1,11 @@
+export const DSH_CHILD_EXECUTION_PROMPT = `## DSH child execution boundary
+
+Complete only the delegated portion and return it to the controller. DSH child sessions stay read-only: no file writes, shell commands, further delegation, or final delivery of the controller's task.
+
+When patch preparation is explicitly delegated, return an unapplied patch with the inspected baseline, repository-relative target paths, and required preserved behavior. Report missing baseline or scope evidence instead of inventing it. The controller applies, integrates, and validates the patch. Distinguish source inspection and supplied tool receipts from checks you actually performed; never present a proposed patch as applied or verified.
+
+This adds no tools or permissions. Narrower researcher, planner, and reviewer contracts and output formats remain binding; they are not patch-preparation assignments.`;
+
 const DSH_ROLE_OVERLAYS: Readonly<Record<string, string>> = Object.freeze({
   researcher: `## DSH researcher execution boundary
 
@@ -15,6 +23,8 @@ Same-turn dispatch runs in one bounded controller responsibility scope, is not a
 
 export interface RoleReferenceContracts {
   craft?: unknown;
+  planning?: unknown;
+  verification?: unknown;
 }
 
 export function dshRoleContract(
@@ -25,8 +35,15 @@ export function dshRoleContract(
   const canonical = typeof canonicalContract === "string" ? canonicalContract.trim() : "";
   const overlay = DSH_ROLE_OVERLAYS[role];
   if (!canonical) throw new Error(`canonical ${role} responsibility contract is unavailable`);
-  const craft = role === "frontend" && typeof referenceContracts.craft === "string"
-    ? `## Canonical craft reference\n\n${referenceContracts.craft.trim()}`
+  const referenceKey = role === "frontend" ? "craft"
+    : role === "planner" ? "planning"
+      : role === "reviewer" ? "verification" : undefined;
+  const reference = referenceKey ? referenceContracts[referenceKey] : undefined;
+  if (referenceKey && (typeof reference !== "string" || !reference.trim())) {
+    throw new Error(`canonical ${referenceKey} reference is unavailable for ${role}`);
+  }
+  const owner = referenceKey && typeof reference === "string"
+    ? `## Canonical ${referenceKey} reference\n\n${reference.trim()}`
     : "";
-  return [canonical, craft, overlay].filter(Boolean).join("\n\n");
+  return [canonical, owner, overlay].filter(Boolean).join("\n\n");
 }
