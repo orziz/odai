@@ -4,9 +4,9 @@
 
 本报告只记录 DeepSeek Harness（DSH）能力路由的产品契约、机械验证和冻结对照。普通单模型全量与 A/B 结果见 [`evaluation-results.md`](evaluation-results.md)。单次路由样本用于证明真实换模、边界、质量和资源足迹，不用于宣称路由稳定优于单一充分能力总控。
 
-> 当前候选为 DSH `0.2.29` / canonical `0.3.11` / runtime contract `6`，尚未运行新的计分路由评测。当前配置和兼容边界见 [`dsh/README.md`](../dsh/README.md)。下列产品契约与机械验证按 `0.2.22` 历史口径保留：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。该版补充带认证用户原文来源的 active/superseded requirement provenance，使用 manifest schema 2 与 controller-only reference bridge。独立 Executor、route card 与 Codex stage runner 已退役，相关数值只用于解释删除决定，不是当前能力或配置说明。
+> 当前已发布 DSH `0.2.29` / canonical `0.3.11` / runtime contract `6`，尚未运行新的计分路由评测。当前配置和兼容边界见 [`dsh/README.md`](../dsh/README.md)。下列产品契约与机械验证按 `0.2.22` 历史口径保留：controller 是唯一持续任务线程并拥有实施；可选责任只有 researcher、planner、reviewer、frontend。该版补充带认证用户原文来源的 active/superseded requirement provenance，使用 manifest schema 2 与 controller-only reference bridge。独立 Executor、route card 与 Codex stage runner 已退役，相关数值只用于解释删除决定，不是当前能力或配置说明。
 >
-> 当前候选把 bounded role context packet 升级为 schema 3。packet 优先绑定 responsibility gap 的认证 direct-user task message，只从该边界起选择 tool、assistant、diff、test 与 acceptance 证据；没有显式绑定时使用最新 direct-user task，显式 ID 无法唯一解析时不借用 session 旧证据并判为不充分。边界来源、消息 ID、起点和排除事件数进入 packet/evidence digest、责任正文与 `odai/route-context`，便于复核跨任务隔离。该行为目前只有机械回归证据，不计入下列历史模型分数。
+> 当前发布版把 bounded role context packet 升级为 schema 3。packet 优先绑定 responsibility gap 的认证 direct-user task message，只从该边界起选择 tool、assistant、diff、test 与 acceptance 证据；没有显式绑定时使用最新 direct-user task，显式 ID 无法唯一解析时不借用 session 旧证据并判为不充分。边界来源、消息 ID、起点和排除事件数进入 packet/evidence digest、责任正文与 `odai/route-context`，便于复核跨任务隔离。该行为目前只有机械回归证据，不计入下列历史模型分数。
 
 ## `0.2.22` 路由契约（历史）
 
@@ -71,7 +71,7 @@ Researcher 的运行时触发只判断任务是否匹配，不感知 provider �
 | Plugin/Agent pack dry-run | 通过 | Plugin 192 文件、Agent 201 文件；临时 bundled source 与 tgz 均已清理 |
 | 双版本 installed-artifact release matrix | 通过 | 真实 Plugin/Agent tgz 在 DSH rc.2 与 alpha.2 隔离安装；分别为 188 / 215 包纯依赖图，Standard digest、official session compatibility、Plugin load 与 Agent scope/child guard 均通过 |
 
-这组历史验证只覆盖当时的源码、迁移和打包机制，不替代模型质量样本，也不迁移为当前候选的通过证明。普通 canonical 已有 `0.3.8` 全量/A-B 与 `0.3.7` intent/C04 定向结果，见 [`evaluation-results.md`](evaluation-results.md)；这些结果不证明 DSH 路由质量，下面样本按各自旧指纹保留。
+这组历史验证只覆盖当时的源码、迁移和打包机制，不替代模型质量样本，也不迁移为当前发布版的通过证明。普通 canonical 已有 `0.3.8` 全量/A-B 与 `0.3.7` intent/C04 定向结果，见 [`evaluation-results.md`](evaluation-results.md)；这些结果不证明 DSH 路由质量，下面样本按各自旧指纹保留。
 
 ## 退役与历史质量/成本证据
 
@@ -161,7 +161,7 @@ D、E、G、H 都从原始自然语言命中 `PLANNER_UNVERIFIED_HIGH_IMPACT_CHA
 | 12 文件冻结迁移 | Sol/high controller -> Luna/max executor | 只改 12 个目标值；项目测试通过 | 218,731 | 222.9s | $0.213 |
 | 同一迁移单模型对照 | Sol/high controller | 同等改动与验证结果 | 137,261 | 63.6s | $0.201 |
 
-独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是 `0.3.7` 删除 Executor、route card 与 stage 机制的直接依据；当前候选延续该结论，不提供恢复开关。
+独立 Executor 分流真实发生且没有降低质量，但相对单 Sol 多用 59.4% runner token、墙钟约 3.5 倍、估算成本高 6.0%。这组证据没有证明分离实施的净收益，是 `0.3.7` 删除 Executor、route card 与 stage 机制的直接依据；当前发布版延续该结论，不提供恢复开关。
 
 ## 历史架构摘要
 
