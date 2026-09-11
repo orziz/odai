@@ -98,6 +98,7 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       "保留决定点，不阻断其余交付",
       "不擅自启动依赖该决定的实施",
       "完整结果、判断质量和可靠性为前提",
+      "最低充分支撑",
       "实施、提交或发布授权只对已对齐的目标、范围和后果有效，不能替代缺失的用户决定",
       "低成本或可撤回不能替代对齐",
       "探索、决定与实施不自动切换",
