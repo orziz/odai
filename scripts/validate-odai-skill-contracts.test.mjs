@@ -125,6 +125,65 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       await rejects(`missing intent boundary ${index + 1}`, skillText.replace(boundary, ""), /SKILL\.md: missing/u);
     }
 
+    // Delete each consequential part separately: removing a whole sentence alone
+    // would not prove that its second condition or opposite direction is protected.
+    const retainedBoundaries = [
+      "先定位或修正", "再重试", "无相关变化不重复大范围执行",
+      "评估请求直接交付", "不提前实施", "或等再次催促",
+      "状态询问不自动停工", "明确叫停后不借旧目标继续执行",
+      "诊断、预览也按真实副作用判断", "不借检查绕过联网、安装或执行的授权",
+      "交付依赖异步或外部结果时", "核对对应产物的最终回执",
+      "已提交、", "已启动及", "局部成功", "均不等于完成",
+      "因安装、启用或外部动作需要许可时", "先完成授权内的准备",
+      "在最终答复中引用权威来源", "写出已有依据的安装或启用、后续操作及验证步骤",
+      "已知命令不能省略成概述", "影响和未知前提明示", "不只承诺“获准后再补”",
+    ];
+    for (const boundary of retainedBoundaries) {
+      await rejects(`retained boundary: ${boundary}`, skillText.replace(boundary, ""), /missing shared boundaries/u);
+    }
+
+    const equivalentBoundaries = [
+      ["先定位或修正，再重试", "先修正或定位，再重试"],
+      ["评估请求直接交付，不提前实施或等再次催促", "评估请求直接给出结果，不提前实施，也不等再次催促"],
+      ["状态询问不自动停工，明确叫停后", "状态询问不自动中止任务；明确要求停止后"],
+      ["诊断、预览也按真实副作用判断", "诊断与预览也按实际副作用判断"],
+      ["交付依赖异步或外部结果时，核对", "交付依赖外部或异步结果时，确认"],
+      ["已提交、已启动及局部成功均不等于完成", "已提交、已启动和局部成功都不代表完成"],
+      ["在最终答复中引用权威来源", "最终交付中引用权威来源"],
+      ["不只承诺“获准后再补”", '不只承诺"获准后再补"'],
+    ];
+    for (const [original, equivalent] of equivalentBoundaries) {
+      await t.test(`equivalent retained boundary: ${original}`, () => {
+        const revised = skillText.replace(original, equivalent);
+        assert.notEqual(revised, skillText);
+        const result = validate(revised);
+        assert.equal(result.status, 0, result.output);
+      });
+    }
+
+    await t.test("reviewed size is informational and new growth remains advisory", () => {
+      const report = baseline.output.match(/Entry size: estimate (\d+); review target (\d+); reviewed baseline (\d+); delta ([+-]\d+)\./u);
+      assert.ok(report, baseline.output);
+      const estimate = Number(report[1]);
+      assert.equal(Number(report[4]), estimate - Number(report[3]));
+      const validatorPath = "scripts/validate-odai-skill.mjs";
+      const validator = readFileSync(resolve(scratch, validatorPath), "utf8");
+      const baselineDeclaration = /const entryReviewedBaseline = \d+;/u;
+      assert.match(validator, baselineDeclaration);
+      // Control only the disposable validator's baseline. Requiring the real entry
+      // to stay exactly at today's size would turn an advisory warning into a CI gate.
+      for (const delta of [-1, 0, 1]) {
+        const reviewed = estimate - delta;
+        const result = validate(validator.replace(baselineDeclaration,
+          `const entryReviewedBaseline = ${reviewed};`), validatorPath);
+        assert.equal(result.status, 0, result.output);
+        assert.ok(result.output.includes(`Entry size: estimate ${estimate}; review target ${report[2]}; ` +
+          `reviewed baseline ${reviewed}; delta ${delta >= 0 ? "+" : ""}${delta}.`), result.output);
+        if (delta > 0) assert.ok(result.output.includes(`exceeds reviewed baseline ${reviewed} by ${delta}`), result.output);
+        else assert.doesNotMatch(result.output, /exceeds reviewed baseline/u);
+      }
+    });
+
     const minimalLookupGate = "先查最可能作答的权威来源，不预先捆绑广泛盘点或旁证，答案充分即停";
     await rejects("simple lookup must not pre-batch broad discovery", skillText.replace(minimalLookupGate, ""), /missing adaptive support/u);
 

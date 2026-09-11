@@ -77,8 +77,16 @@ const referenceTokenEstimate = files
 const roleContractTokenEstimate = files
   .filter((file) => /^assets\/routing-roles\/.*\.md$/u.test(file))
   .reduce((total, file) => total + estimateTokens(readFileSync(path.join(skillRoot, file), "utf8")), 0);
-if (entryTokenEstimate > 2700) {
-  warn(`SKILL.md: entry estimate ${entryTokenEstimate} exceeds capability-preserving review threshold 2700`);
+const entryReviewTarget = 2700;
+// Reviewed at b6d54e5. Change only after an explicit capability-preserving review,
+// in either direction; never derive this baseline from the current entry size.
+const entryReviewedBaseline = 3002;
+const entryGrowth = entryTokenEstimate - entryReviewedBaseline;
+console.log(`Entry size: estimate ${entryTokenEstimate}; review target ${entryReviewTarget}; ` +
+  `reviewed baseline ${entryReviewedBaseline}; delta ${entryGrowth >= 0 ? "+" : ""}${entryGrowth}.`);
+if (entryGrowth > 0) {
+  warn(`SKILL.md: entry estimate ${entryTokenEstimate} exceeds reviewed baseline ${entryReviewedBaseline} ` +
+    `by ${entryGrowth}; review the added content for capability value before updating the baseline`);
 }
 
 if (warnings.length > 0) {
@@ -273,6 +281,16 @@ function validateTextualContracts() {
       label: "shared boundaries",
       patterns: [
         /新动作[^。\n]*事实依据、必要性和授权/,
+        /失败后[^。\n]*先(?:定位或修正|修正或定位)[^。\n]*再重试/,
+        /无相关变化[^。\n]*不重复大范围执行/,
+        /评估请求[^。\n]*(?:直接交付|直接给出结果)[^。\n]*不提前实施[^。\n]*(?:或等|不等)再次催促/,
+        /状态询问(?:不自动停工|不自动中止任务)/,
+        /明确(?:叫停|要求停止)后[^。\n]*不借旧目标继续执行/,
+        /诊断[、与和]预览[^。\n]*按(?:真实|实际)副作用判断[^。\n]*不借检查绕过联网、安装或执行的授权/,
+        /交付依赖(?:异步或外部|外部或异步)结果时[^。\n]*(?:核对|确认)对应产物的最终回执/,
+        /已提交[、，及和与\s]+已启动[、，及和与\s]+局部成功[^。\n]*(?:均不等于|都不代表)完成/,
+        /因安装、启用或外部动作需要许可时[^。\n]*先完成授权内的准备[^。\n]*(?:在最终答复|最终交付)中引用权威来源[^。\n]*写出已有依据的安装或启用、后续操作及验证步骤/,
+        /已知命令[^。\n]*不能省略成概述[^。\n]*影响和未知前提明示[^。\n]*不只承诺[“"]获准后再补[”"]/,
         /用户点名局部结果[^。\n]*只改完成它所需对象/,
         /背景、约束、样式、示例和参考实现默认只读[^。\n]*不产生写入授权/,
         /根因和手段先作为待验证输入/,
