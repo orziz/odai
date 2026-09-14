@@ -2546,25 +2546,22 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
 
   assert.equal(result.kind, "enter");
   assert.equal(result.messages.length, 2);
-  assert.match(messageText(result.messages[1]), /role: controller/u);
-  assert.match(messageText(result.messages[1]), /target responsibility: planner/u);
-  assert.match(messageText(result.messages[1]), /concrete evidence-gathering steps and explicit decision criteria/u);
-  assert.match(messageText(result.messages[1]), /do not implement, persist, or publish/u);
-  assert.deepEqual(events.slice(0, 2).map((event) => event.type), [
-    "odai/route-decided",
-    "odai/route-protection",
-  ]);
+  assert.match(messageText(result.messages[1]), /Odai risk evidence notice/u);
+  assert.match(messageText(result.messages[1]), /Inspect decisive evidence and authorization before acting/u);
+  assert.match(messageText(result.messages[1]), /Native execution permissions remain in force/u);
+  assert.deepEqual(events.map((event) => event.type), ["odai/route-decided"]);
   assert.equal(events[0].data.role, "controller");
-  assert.equal(events[0].data.action, "upgrade");
-  assert.equal(events[0].data.targetRole, "planner");
-  assert.equal(events[0].data.reasonCode, "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE");
-  assert.equal(events[1].data.mode, "read-only");
-  assert.equal(events[1].data.source, "observe");
-
+  assert.equal(events[0].data.action, "direct");
+  assert.equal(events[0].data.targetRole, undefined);
+  assert.equal(events[0].data.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
+  const inherited = { provider: "base", model: "controller", reasoningEffort: "high" };
+  assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
+    { agent, turn: 1, step: 1, signal }, async () => inherited,
+  ), inherited);
   const guard = ctx.captured.guards[0];
-  assert.match(guard({ callId: "write-1", agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.equal(guard({ callId: "write-1", agent, name: "write" }), undefined);
   assert.equal(guard({ callId: "read-1", agent, name: "read" }), undefined);
-  assert.equal(last(events).type, "odai/governance-denied");
+  assert.equal(events.some((event) => event.type === "odai/governance-denied"), false);
 
   await handler({ agent, turn: 2, step: 1, signal }, async () => ({
     kind: "enter",
@@ -2658,6 +2655,7 @@ test("global and preset runtime instances deduplicate durable evidence and routi
     },
   };
   const payload = { agent, turn: 1, step: 1, signal: new AbortController().signal };
+  seedCurrentEvidence(globalCtx, agent, [responsibilityGapEvent("planner")]);
   const base = async () => ({
     kind: "enter",
     messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
@@ -2691,6 +2689,122 @@ test("global and preset runtime instances deduplicate durable evidence and routi
   })));
   assert.deepEqual(capped, { provider: "base", model: "controller", maxTokens: 2_500 });
   assert.equal(events.filter((event) => event.type === "odai/output-budget-applied").length, 1);
+});
+
+test("global and preset preserve one same-turn scope across hook order changes and handback", async () => {
+  for (const reversed of [false, true]) {
+    const contexts = [fakeContext(), fakeContext()];
+    const planner = { provider: "base", model: "planner", reasoningEffort: "high" };
+    const controller = { provider: "base", model: "controller", reasoningEffort: "max" };
+    for (const ctx of contexts) apply(ctx, { skillPath, routing: { roles: { planner } } });
+    const original = userMessage("请修复并验证当前路由问题");
+    const events: DshEvent[] = [
+      { type: "turn/start", seq: 1, data: { turn: 1 } },
+      { type: "user/message", seq: 2, data: original },
+      { type: "step/start", seq: 3, data: { turn: 1, step: 1 } },
+      { ...responsibilityGapEvent("planner"), seq: 4 },
+    ];
+    let actualHeader: { config?: ModelRoute } = {};
+    const agent = { phase: { turn: 1, step: 1 }, session: {
+      header: {}, events, snapshotEvents: () => events, requestHeader() { return actualHeader; },
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+    } };
+    seedCurrentEvidence(contexts[0], agent, events);
+    const signal = new AbortController().signal;
+    const dispatchEvent = (event: DshEvent) => {
+      for (const ctx of contexts) ctx.captured.handlers.get("session/event")(agent.session, event);
+    };
+    for (const step of [1, 2]) {
+      agent.phase.step = step;
+      const [outer, inner] = (reversed === (step === 1)) ? contexts : [...contexts].reverse();
+      const payload = { agent, turn: 1, step, signal };
+      await outer.captured.handlers.get("agent/pre-step")(payload, () => inner.captured.handlers.get("agent/pre-step")(
+        payload, async () => ({ kind: "enter", messages: [original] }),
+      ));
+      const request = await outer.captured.handlers.get("agent/request")(payload, () => inner.captured.handlers.get("agent/request")(
+        payload, async () => controller,
+      ));
+      assert.deepEqual(request, planner);
+      actualHeader = { config: request };
+      dispatchEvent({ type: "request/header", data: { turn: 1, step, header: actualHeader } });
+      dispatchEvent({ type: "assistant/message", data: { turn: 1, step, message: { content: [{ type: "tool-call", id: `read-${step}`, name: "read", arguments: "{}" }] } } });
+      for (const ctx of contexts) assert.match(ctx.captured.guards[0]({ agent, name: "write" }), /active read-only responsibility/);
+    }
+    assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-started").length, 1);
+    assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-claimed").length, 1);
+    assert.equal(events.some((event) => ["odai/responsibility-scope-stopped", "odai/route-protection-released", "odai/responsibility-scope-restored"].includes(event.type)), false);
+    // Either registered tool instance must hand back through the true scope owner.
+    const tool = contexts[reversed ? 0 : 1].captured.tools.find((tool: TestTool) => tool.name === "odai_responsibility_return");
+    await tool.execute({ target: "controller", summary: "Plan ready for implementation.", evidenceRefs: ["current-task"] }, { agent });
+    assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-stopped").length, 1);
+    agent.phase.step = 3;
+    const payload = { agent, turn: 1, step: 3, signal };
+    const restored = await contexts[0].captured.handlers.get("agent/request")(payload, () => contexts[1].captured.handlers.get("agent/request")(
+      payload, async () => planner,
+    ));
+    assert.deepEqual(restored, controller);
+    for (const ctx of contexts) assert.equal(ctx.captured.guards[0]({ agent, name: "write" }), undefined);
+  }
+});
+
+test("coexisting runtimes leave request failures and disposal recovery to the scope owner", async () => {
+  for (const outcome of ["cancelled", "context", "provider", "dispose"]) for (const reversed of [false, true]) {
+    const disposers = new Map<string, () => void>();
+    const owner = fakeContext({ effect(factory: () => () => void, label: string) { disposers.set(label, factory()); } });
+    const peer = fakeContext();
+    const contexts = [owner, peer];
+    const planner = { provider: "base", model: "planner" };
+    const controller = { provider: "base", model: "controller" };
+    for (const ctx of contexts) apply(ctx, { skillPath, routing: { roles: { planner } } });
+    const original = userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。");
+    const events: DshEvent[] = [
+      { type: "turn/start", data: { turn: 1 } },
+      { type: "user/message", data: original },
+      responsibilityGapEvent("planner"),
+    ];
+    const agent = { phase: { turn: 1, step: 1 }, session: {
+      header: {}, events, snapshotEvents: () => events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+    } };
+    seedCurrentEvidence(owner, agent, events);
+    const cancellation = new AbortController();
+    const payload = { agent, turn: 1, step: 1, signal: cancellation.signal };
+    await peer.captured.handlers.get("agent/pre-step")(payload, () => owner.captured.handlers.get("agent/pre-step")(
+      payload, async () => ({ kind: "enter", messages: [original] }),
+    ));
+    assert.deepEqual(await peer.captured.handlers.get("agent/request")(payload, () => owner.captured.handlers.get("agent/request")(
+      payload, async () => controller,
+    )), planner);
+    if (outcome === "dispose") {
+      const dispose = disposers.get("odai: responsibility scope owner");
+      assert.ok(dispose);
+      dispose();
+      agent.phase.step = 2;
+      const resumed = { ...payload, step: 2 };
+      await peer.captured.handlers.get("agent/pre-step")(resumed, async () => ({ kind: "enter", messages: [original] }));
+      const restored = await peer.captured.handlers.get("agent/request")(resumed, async () => planner);
+      assert.deepEqual(restored, controller);
+      peer.captured.handlers.get("session/event")(agent.session, { type: "request/header", data: { turn: 1, step: 2, header: { config: restored } } });
+      assert.equal(findLastEvent(events, (event) => event.type === "odai/responsibility-scope-restored").data.status, "applied");
+      assert.equal(peer.captured.guards[0]({ agent, name: "write" }), undefined);
+    } else {
+      if (outcome === "cancelled") cancellation.abort();
+      const failure = { ...payload, provider: "base", failure: { code: outcome === "context" ? "CONTEXT_WINDOW_EXCEEDED" : "RATE_LIMIT", message: "busy" } };
+      const [outer, inner] = reversed ? contexts : [...contexts].reverse();
+      const result = await outer.captured.handlers.get("agent/request-error")(failure, () => inner.captured.handlers.get("agent/request-error")(
+        failure, async () => ({ kind: "failed" }),
+      ));
+      assert.equal(result.kind, outcome === "provider" ? "retry" : "failed");
+      if (outcome === "provider") {
+        assert.ok(events.some((event) => event.type === "odai/route-protection" && event.data.source === "route-request-failure"), JSON.stringify(events.filter((event) => ["odai/route-protection", "odai/route-fallback", "odai/responsibility-scope-stopped"].includes(event.type))));
+        for (const [index, ctx] of contexts.entries()) assert.match(ctx.captured.guards[0]({ agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/, `runtime=${index}, reversed=${reversed}`);
+      }
+      for (const ctx of contexts) ctx.captured.handlers.get("session/event")(agent.session, { type: "turn/end", data: { turn: 1, reason: { kind: "error" } } });
+      assert.equal(events.some((event) => event.type === "odai/route-applied" && event.data.stopReason === "no-effective-request"), false);
+      assert.equal(events.filter((event) => event.type === "odai/route-fallback").length, outcome === "provider" ? 1 : 0);
+    }
+    assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-stopped").length, 1);
+  }
 });
 
 test("global and preset execute routing starts exactly one subagent", async () => {
@@ -2807,46 +2921,27 @@ test("cancelled responsibilities never start anew or accept a late successful ha
   }
 });
 
-test("default auto reports an unconfigured planner only when the gap is needed", async () => {
+test("default auto verifies high-impact evidence without inventing a planner gap", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath });
-
   const events: DshEvent[] = [];
-  const agent = {
-    session: {
-      header: {},
-      events, snapshotEvents: () => events,
-      append(type: string, data: RuntimeEventData) {
-        events.push({ type, data });
-      },
-    },
-  };
-  const preStep = ctx.captured.handlers.get("agent/pre-step");
+  const agent = { session: {
+    header: {}, events, snapshotEvents: () => events,
+    append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+  } };
   const signal = new AbortController().signal;
-  const result = await preStep({ agent, turn: 1, step: 1, signal }, async () => ({
-    kind: "enter",
-    messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
+  const result = await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
+    kind: "enter", messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
   }));
-
-  assert.deepEqual(events.map((event) => event.type), [
-    "odai/route-decided",
-    "odai/route-config-missing",
-    "odai/route-protection",
-  ]);
-  assert.equal(events[1].data.role, "planner");
-  assert.equal(events[1].data.status, "unconfigured");
-  assert.equal(events[2].data.source, "route-config-missing");
-  assert.match(messageText(result.messages[1]), /required responsibility: planner/u);
-  assert.match(messageText(result.messages[1]), /natural language/u);
-  assert.match(messageText(result.messages[1]), /odai_routing_config/u);
-  assert.doesNotMatch(messageText(result.messages[1]), /requested controller route|routing:\n/u);
-
+  assert.deepEqual(events.map((event) => event.type), ["odai/route-decided"]);
+  assert.equal(events[0].data.action, "direct");
+  assert.equal(events[0].data.targetRole, undefined);
+  assert.equal(events[0].data.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
+  assert.match(messageText(result.messages[1]), /Inspect decisive evidence and authorization before acting/u);
+  assert.doesNotMatch(messageText(result.messages[1]), /required responsibility: planner|odai_routing_config/u);
   const inherited = { provider: "openai", model: "current-controller", reasoningEffort: "high" };
-  assert.deepEqual(
-    await ctx.captured.handlers.get("agent/request")({ agent, turn: 1 }, async () => inherited),
-    inherited,
-  );
-  assert.match(ctx.captured.guards[0]({ callId: "missing-planner-write", agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.deepEqual(await ctx.captured.handlers.get("agent/request")({ agent, turn: 1, step: 1, signal }, async () => inherited), inherited);
+  assert.equal(ctx.captured.guards[0]({ callId: "risk-notice-write", agent, name: "write" }), undefined);
 });
 
 test("an invalid user routing store keeps governance loaded and repairs through the tool", async () => {
@@ -2869,7 +2964,7 @@ test("an invalid user routing store keeps governance loaded and repairs through 
       },
     },
   };
-  seedCurrentEvidence(ctx, agent, events);
+  seedCurrentEvidence(ctx, agent, [responsibilityGapEvent("planner")]);
   const result = await ctx.captured.handlers.get("agent/pre-step")({
     agent,
     turn: 1,
@@ -2974,7 +3069,7 @@ test("configured auto mode upgrades the current controller turn without a child"
   });
 
   const events: DshEvent[] = [];
-  let actualHeader: UnknownRecord | undefined;
+  let actualHeader: { config?: ModelRoute } = {};
   const agent = {
     session: {
       header: {},
@@ -2985,6 +3080,7 @@ test("configured auto mode upgrades the current controller turn without a child"
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, [responsibilityGapEvent("planner")]);
   const preStep = ctx.captured.handlers.get("agent/pre-step");
   const request = ctx.captured.handlers.get("agent/request");
   assert.deepEqual(ctx.captured.handlerOptions.get("agent/request"), { prepend: true });
@@ -2999,6 +3095,7 @@ test("configured auto mode upgrades the current controller turn without a child"
   assert.match(messageText(result.messages[1]), /requested controller route: openai\/gpt-5\.6-sol \(reasoning: high, maxTokens: 2048\)/u);
   assert.deepEqual(events.map((event) => event.type), [
     "odai/route-decided",
+    "odai/responsibility-gap-consumed",
     "odai/route-context",
     "odai/responsibility-scope-started",
     "odai/route-protection",
@@ -3007,15 +3104,17 @@ test("configured auto mode upgrades the current controller turn without a child"
   assert.equal(events[0].data.role, "controller");
   assert.equal(events[0].data.action, "upgrade");
   assert.equal(events[0].data.targetRole, "planner");
-  assert.equal(events[1].data.mode, "same-turn");
-  assert.match(requiredString(events[1].data.digest), /^[a-f0-9]{64}$/u);
-  assert.equal(events[2].data.role, "planner");
-  assert.equal(events[2].data.continuationPolicy, "read-only-tool-chain");
-  assert.equal(events[3].data.source, "responsibility-scope-planner");
-  assert.equal(events[3].data.scopeId, events[2].data.scopeId);
-  assert.equal(events[4].data.status, "requested");
-  assert.equal(events[4].data.responsibilityScopeId, events[2].data.scopeId);
-  assert.deepEqual(events[4].data.requestedRoute, {
+  assert.equal(events[1].data.responsibility, "planner");
+  assert.equal(events[1].data.routeAction, "upgrade");
+  assert.equal(events[2].data.mode, "same-turn");
+  assert.match(requiredString(events[2].data.digest), /^[a-f0-9]{64}$/u);
+  assert.equal(events[3].data.role, "planner");
+  assert.equal(events[3].data.continuationPolicy, "read-only-tool-chain");
+  assert.equal(events[4].data.source, "responsibility-scope-planner");
+  assert.equal(events[4].data.scopeId, events[3].data.scopeId);
+  assert.equal(events[5].data.status, "requested");
+  assert.equal(events[5].data.responsibilityScopeId, events[3].data.scopeId);
+  assert.deepEqual(events[5].data.requestedRoute, {
     provider: "openai",
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
@@ -3086,6 +3185,7 @@ test("configured auto mode upgrades the current controller turn without a child"
   }));
   assert.deepEqual(await request({ agent, turn: 2, step: 1 }, async () => inherited), inherited);
 
+  seedCurrentEvidence(ctx, agent, [responsibilityGapEvent("planner", { turn: 3, stateDigest: "f".repeat(64) })]);
   await preStep({ agent, turn: 3, step: 1, signal }, async () => ({
     kind: "enter",
     messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
@@ -3176,7 +3276,69 @@ test("auto mode honors explicit child dispatch for planner and frontend", async 
   }
 });
 
-test("researcher same-turn dispatch returns its read-only packet to the controller", async () => {
+for (const dispatch of ["child", "same-turn"] as const) {
+  test(`researcher ${dispatch} preserves a non-high-impact evidence gap and source constraints`, async () => {
+    const route = { provider: "openai", model: "researcher-task-contract" };
+    const task = "核对 config/checkout.json 与 logs/incidents.md 分别记录哪些信息，给出来源对照。";
+    const proposed = {
+      gap: "配置文件与事件记录的信息范围尚未逐项核实。",
+      expectedChange: "给出两个文件各自记录内容的来源对照，并标明未知项。",
+      evidenceRefs: ["config/checkout.json:4", "logs/incidents.md:12"],
+    };
+    const starts: TestSubagentRequest[] = [];
+    let disposed = 0;
+    const ctx = fakeContext({ subagents: {
+      async start(_provider: string, request: UnknownRecord) {
+        starts.push(asTestSubagentRequest(request));
+        return {
+          localAgent: { session: childSession(route) },
+          result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: researchPacketText({ question: proposed.gap }) }] }),
+          async dispose() { disposed += 1; },
+        };
+      },
+    } });
+    apply(ctx, { skillPath, routing: { roles: { researcher: route }, dispatch: { researcher: dispatch } } });
+    const events: DshEvent[] = [responsibilityGapEvent("researcher", proposed)];
+    const agent = { session: {
+      header: { cwd: researchProjectRoot }, events, snapshotEvents: () => events,
+      append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+    } };
+    seedCurrentEvidence(ctx, agent, events);
+    const signal = new AbortController().signal;
+    const entered = await ctx.captured.handlers.get("agent/pre-step")(
+      { agent, turn: 1, step: 1, signal }, async () => ({ kind: "enter", messages: [userMessage(task)] }),
+    );
+    let prompt: string;
+    if (dispatch === "child") {
+      assert.equal(starts.length, 1);
+      assert.equal(disposed, 1);
+      assert.equal(starts[0].signal, signal);
+      prompt = blockText(starts[0].prompt[0]);
+      const receipt = findEvent(events, (event) => event.type === "odai/research-result");
+      assert.equal(receipt.data.status, "completed");
+      assert.equal(receipt.data.sourceCount, 2);
+      assert.match(messageText(entered.messages[1]), /Odai bounded researcher evidence packet/u);
+    } else {
+      assert.equal(starts.length, 0);
+      prompt = entered.messages.slice(1).map(messageText).join("\n");
+      assert.match(prompt, /no fields beyond this exact shape/u);
+      assert.match(prompt, /call odai_responsibility_return with target=controller/u);
+      assert.match(prompt, /controller must independently verify any same-turn handback/u);
+      assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
+        { agent, turn: 1, step: 1 }, async () => ({ provider: "openai", model: "controller" }),
+      ), route);
+    }
+    const payload = /# Evidence-grounded responsibility gap\n([\s\S]*?)\n\n# Direct user task\n/u.exec(prompt);
+    assert.ok(payload);
+    assert.deepEqual(JSON.parse(payload[1]), { responsibility: "researcher", ...proposed });
+    assert.ok(prompt.includes(task));
+    assert.match(prompt, /Allowed source scope: the current project root only/u);
+    assert.match(prompt, /excerpt must exactly equal the complete cited source line/u);
+    assert.doesNotMatch(prompt, /user's causal claim|requested high-impact change/u);
+  });
+}
+
+test("researcher same-turn dispatch returns its read-only packet to the controller",  async () => {
   const researcherRoute = { provider: "openai", model: "researcher-inline" };
   const controllerRoute = { provider: "openai", model: "controller" };
   const ctx = fakeContext();
@@ -3524,7 +3686,7 @@ test("a planner mapping identical to the controller stays inline without a dupli
     routing: { roles: { planner: { provider: "openai", model: "gpt-5.6-sol", reasoningEffort: "xhigh" } } },
   });
   const events: DshEvent[] = [];
-  let actualHeader: UnknownRecord | undefined;
+  let actualHeader: { config?: ModelRoute } = {};
   const agent = {
     session: {
       header: {},
@@ -3533,6 +3695,7 @@ test("a planner mapping identical to the controller stays inline without a dupli
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  seedCurrentEvidence(ctx, agent, [responsibilityGapEvent("planner")]);
   const signal = new AbortController().signal;
   await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({
     kind: "enter",
@@ -4671,7 +4834,7 @@ test("frontend missing mapping falls through and an omitted role budget keeps th
   assert.deepEqual(configuredOutput.responsibilityBudgets, shownRouting.responsibilityBudgets);
 });
 
-test("auto mode upgrades an implicit continuation of earlier high-impact context", async () => {
+test("auto mode retains high-impact evidence reminders on continuation without upgrading", async () => {
   const ctx = fakeContext();
   apply(ctx, {
     skillPath,
@@ -4714,21 +4877,18 @@ test("auto mode upgrades an implicit continuation of earlier high-impact context
   }));
 
   const routeEvents = events.filter((event) => event.type.startsWith("odai/route-"));
-  assert.equal(routeEvents[0].type, "odai/route-decided");
-  assert.equal(routeEvents[0].data.action, "upgrade");
-  assert.equal(routeEvents[0].data.reasonCode, "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE");
-  assert.equal(routeEvents[1].type, "odai/route-context");
-  assert.equal(routeEvents[2].type, "odai/route-protection");
-  assert.equal(routeEvents[3].type, "odai/route-upgrade");
+  assert.deepEqual(routeEvents.map((event) => event.type), ["odai/route-decided"]);
+  assert.equal(routeEvents[0].data.action, "direct");
+  assert.equal(routeEvents[0].data.targetRole, undefined);
+  assert.equal(routeEvents[0].data.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
   assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
     { agent, turn: 3, step: 1 },
     async () => ({ provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "max" }),
   ), {
-    provider: "openai",
-    model: "gpt-5.6-sol",
-    reasoningEffort: "high",
-    maxTokens: 2_048,
+    provider: "openai", model: "gpt-5.6-luna", reasoningEffort: "max",
   });
+  assert.equal(ctx.captured.guards[0]({ callId: "continuation-write", agent, name: "write" }), undefined);
+  assert.equal(events.some((event) => event.type === "odai/responsibility-scope-started"), false);
 });
 
 test("configured auto mode keeps an evidence-grounded planner gap in the current turn", async () => {
@@ -4827,7 +4987,7 @@ test("configured auto mode keeps an evidence-grounded planner gap in the current
   });
 });
 
-test("configured researcher compresses evidence before planner without replacing the decision route", async () => {
+test("configured researcher compresses evidence for the controller without inventing a planner gap", async () => {
   const starts: TestSubagentRequest[] = [];
   const subagents = {
     async start(_provider: string, request: UnknownRecord) {
@@ -4880,7 +5040,8 @@ test("configured researcher compresses evidence before planner without replacing
   assert.equal(result.messages.length, 3);
   assert.match(messageText(result.messages[1]), /Odai bounded researcher evidence packet/u);
   assert.match(messageText(result.messages[1]), /config\/checkout\.json/u);
-  assert.match(result.messages[2].content[0].text, /planner responsibility contract/u);
+  assert.match(messageText(result.messages[2]), /Odai risk evidence notice/u);
+  assert.doesNotMatch(messageText(result.messages[2]), /planner responsibility contract/u);
   const researchResult = findEvent(events, (event) => event.type === "odai/research-result");
   assert.equal(researchResult.data.status, "completed");
   assert.equal(researchResult.data.sourceCount, 2);
@@ -4889,16 +5050,16 @@ test("configured researcher compresses evidence before planner without replacing
   assert.equal(researchResult.data.routeReceiptStatus, "applied");
   assert.deepEqual(researchResult.data.actualRoute, researchResult.data.requestedRoute);
   assert.match(requiredString(researchResult.data.packetDigest), /^[a-f0-9]{64}$/u);
-  assert.deepEqual(events.filter((event) => event.type === "odai/route-decided").map((event) => event.data.targetRole), ["planner"]);
+  const decision = findEvent(events, (event) => event.type === "odai/route-decided").data;
+  assert.equal(decision.action, "direct");
+  assert.equal(decision.targetRole, undefined);
+  assert.equal(decision.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
+  assert.deepEqual(events.filter((event) => event.type === "odai/responsibility-gap-consumed").map((event) => event.data.responsibility), ["researcher"]);
+  assert.equal(events.some((event) => ["odai/route-config-missing", "odai/route-upgrade", "odai/route-protection", "odai/responsibility-scope-started"].includes(event.type)), false);
   assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
     { agent, turn: 1, step: 1 },
     async () => ({ provider: "openai", model: "controller", reasoningEffort: "max", maxTokens: 8_000 }),
-  ), {
-    provider: "openai",
-    model: "gpt-5.6-sol",
-    reasoningEffort: "high",
-    maxTokens: 2_048,
-  });
+  ), { provider: "openai", model: "controller", reasoningEffort: "max", maxTokens: 8_000 });
 
   const mismatchCtx = fakeContext({
     subagents: {
@@ -4973,12 +5134,13 @@ test("configured researcher compresses evidence before planner without replacing
   }, async () => ({ kind: "enter", messages: [userMessage(requestText)] }));
   assert.equal(starts.length, 2);
   assert.equal(missingResult.messages.length, 3);
-  assert.match(missingResult.messages[2].content[0].text, /required responsibility: planner/u);
-  assert.equal(findEvent(missingEvents, (event) => event.type === "odai/route-config-missing" && event.data.role === "planner").data.status, "unconfigured");
-  assert.match(missingPlannerCtx.captured.guards[0]({ callId: "write", agent: missingAgent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.match(messageText(missingResult.messages[1]), /Odai bounded researcher evidence packet/u);
+  assert.match(messageText(missingResult.messages[2]), /Odai risk evidence notice/u);
+  assert.equal(missingEvents.some((event) => ["odai/route-config-missing", "odai/route-protection", "odai/route-upgrade"].includes(event.type)), false);
+  assert.equal(missingPlannerCtx.captured.guards[0]({ callId: "write", agent: missingAgent, name: "write" }), undefined);
 });
 
-test("invalid researcher output is discarded before the planner sees it", async () => {
+test("invalid researcher output is discarded before the controller sees it", async () => {
   const ctx = fakeContext({
     subagents: {
       async start() {
@@ -5065,6 +5227,7 @@ test("high-impact execute routing fails closed when the planner is unavailable",
       },
     },
   };
+  seedCurrentEvidence(ctx, agent, [responsibilityGapEvent("planner")]);
   const handler = ctx.captured.handlers.get("agent/pre-step");
   const result = await handler({
     agent,
@@ -5076,16 +5239,18 @@ test("high-impact execute routing fails closed when the planner is unavailable",
     messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
   }));
 
-  assert.deepEqual(events.slice(0, 4).map((event) => event.type), [
+  assert.deepEqual(events.slice(0, 5).map((event) => event.type), [
     "odai/route-decided",
+    "odai/responsibility-gap-consumed",
     "odai/route-context",
     "odai/route-result",
     "odai/route-protection",
   ]);
-  assert.equal(events[1].data.mode, "bounded-packet");
-  assert.equal(events[2].data.status, "fallback");
-  assert.equal(events[3].data.source, "route-failure");
-  assert.equal(events[3].data.failure, "provider unavailable");
+  assert.equal(events[1].data.responsibility, "planner");
+  assert.equal(events[2].data.mode, "bounded-packet");
+  assert.equal(events[3].data.status, "fallback");
+  assert.equal(events[4].data.source, "route-failure");
+  assert.equal(events[4].data.failure, "provider unavailable");
   assert.match(messageText(result.messages[1]), /High-impact fail-closed protection is active/u);
   assert.doesNotMatch(messageText(result.messages[1]), /continue directly/u);
 
@@ -5343,6 +5508,7 @@ test("the model can persist every user-specified responsibility mapping", async 
   assert.match(rendered, /Researcher routing is task-gated but not price-aware[^\n]*does not guarantee lower cost/u);
   assert.equal(events.filter((event) => event.type === "odai/routing-configured").length, 4);
 
+  seedCurrentEvidence(secondRuntimeCtx, agent, [responsibilityGapEvent("planner")]);
   const preStep = secondRuntimeCtx.captured.handlers.get("agent/pre-step");
   await preStep({
     agent,

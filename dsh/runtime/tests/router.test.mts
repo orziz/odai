@@ -173,7 +173,8 @@ test("research prefetch requires an evidence-grounded source gap and stays indep
     "evidence-grounded-responsibility-gap",
     `state:${proposal.stateDigest}`,
   ]);
-  assert.equal(decideRoute({ text: causal }).targetRole, "planner");
+  assert.equal(decideRoute({ text: causal }).targetRole, undefined);
+  assert.equal(decideRoute({ text: causal }).reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
 
   for (const text of [
     "README 的安装命令是什么？",
@@ -269,36 +270,40 @@ test("review language is only a candidate while current acceptance evidence can 
   assert.equal(decision.reasonCode, "REVIEWER_EVIDENCE_STATE_GAP");
 });
 
-test("unverified causal claim plus concrete high-impact change upgrades the controller", () => {
-  const decision = decideRoute({
-    text: "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
-  });
-  assert.equal(decision.role, "controller");
-  assert.equal(decision.action, "upgrade");
-  assert.equal(decision.targetRole, "planner");
-  assert.equal(decision.reasonCode, "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE");
-  assert.deepEqual(decision.signals, [
-    "risk-present",
-    "unverified-causal-claim",
-    "concrete-change-request",
-    "specific-operational-parameter",
-    "urgency-pressure",
-  ]);
+test("high-impact causal claims require evidence without inventing a capability gap", () => {
+  for (const text of [
+    "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
+    "It looks like the billing provider is unstable. Reduce the client timeout to 3 seconds and increase retries to 3 as a hotfix.",
+  ]) {
+    const decision = decideRoute({ text });
+    assert.equal(decision.role, "controller");
+    assert.equal(decision.action, "direct");
+    assert.equal(decision.targetRole, undefined);
+    assert.equal(decision.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
+    assert.equal(requiresFailClosedProtection(decision), false);
+    assert.ok(decision.signals.includes("risk-present"));
+    const supported = decideRoute({ text, proposal: gap("planner") });
+    assert.equal(supported.targetRole, "planner");
+    assert.equal(supported.reasonCode, "PLANNER_EVIDENCE_STATE_GAP");
+    assert.equal(requiresFailClosedProtection(supported), true);
+  }
 });
 
-test("contextual planner gap works without C04-specific wording", () => {
-  const decision = decideRoute({
-    text: "It looks like the billing provider is unstable. Reduce the client timeout to 3 seconds and increase retries to 3 as a hotfix.",
-  });
-  assert.equal(decision.role, "controller");
-  assert.equal(decision.action, "upgrade");
-  assert.equal(decision.targetRole, "planner");
-  assert.equal(decision.reasonCode, "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE");
+test("quoted risk examples and evaluation requests do not trigger roles or protection", () => {
+  const risk = "It looks like the billing provider is unstable. Reduce the client timeout to 3 seconds and increase retries to 3 as a hotfix.";
+  for (const text of [`Explain this example: \"${risk}\"`, `翻译以下内容：\n\n\`\`\`\n${risk}\n\`\`\``, `解释这段话：\n> ${risk}`]) {
+    const decision = decideRoute({ text });
+    assert.equal(decision.action, "direct");
+    assert.equal(decision.targetRole, undefined);
+    assert.equal(requiresFailClosedProtection(decision), false);
+    assert.equal(decision.signals.includes("risk-present"), false);
+  }
 });
 
 test("high-impact observe and route failure notices require a read-only decision path", () => {
   const decision = decideRoute({
     text: "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
+    proposal: gap("planner"),
   });
   assert.equal(requiresFailClosedProtection(decision), true);
 
@@ -355,6 +360,7 @@ test("every missing responsibility asks for a natural-language model choice", ()
 
   const protectedNotice = renderMissingRouteConfigNotice(decideRoute({
     text: "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
+    proposal: gap("planner"),
   }), "auto");
   assert.match(protectedNotice, /High-impact fail-closed protection is active/u);
 
@@ -474,7 +480,8 @@ test("routing text inherits referenced high-impact context but keeps low-risk tr
   const continued = extractRoutingText([user("继续深入判断刚才这个迁移是否可以安全发布")], sessionEvents);
   assert.match(continued, /Referenced earlier high-impact user context/u);
   assert.match(continued, /确认超时改成 30 秒/u);
-  assert.equal(decideRoute({ text: continued }).action, "upgrade");
+  assert.equal(decideRoute({ text: continued }).action, "direct");
+  assert.equal(decideRoute({ text: continued }).targetRole, undefined);
 
   const unrelated = extractRoutingText([user("把普通按钮文案改清楚")], sessionEvents);
   assert.equal(unrelated, "把普通按钮文案改清楚");

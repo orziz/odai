@@ -4,9 +4,32 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { satisfies, validRange } from "semver";
+import { gt, satisfies, valid, validRange } from "semver";
 
 import { assertRepositoryVersionPolicy } from "./version-policy.mjs";
+
+// Offline consistency only: registry publication facts still require a registry
+// lookup. Historical releases keep their original versions and attribution.
+export function assertDshReleaseNotes({ changelog, compatibility, packageVersion, skillVersion }) {
+  const headings = [...changelog.matchAll(/^## (.+)$/gmu)].map((match) => match[1]);
+  const candidates = headings.filter((heading) => /^Unreleased\b/u.test(heading));
+  if (candidates.length > 1) throw new Error("CHANGELOG.md must have at most one Unreleased owner");
+  if (candidates.length === 1 && (headings[0] !== candidates[0]
+    || candidates[0] !== `Unreleased — DSH ${packageVersion} / canonical ${skillVersion}`)) {
+    throw new Error("CHANGELOG.md Unreleased owner must be first and match the current DSH and canonical versions");
+  }
+  const rows = [...compatibility.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|/gmu)]
+    .map((match) => [match[1], match[2]])
+    .filter(([plugin, agent]) => valid(plugin) && valid(agent));
+  if (rows[0]?.[0] !== packageVersion || rows[0]?.[1] !== packageVersion) {
+    throw new Error("dsh/COMPATIBILITY.md must put the current package pair first");
+  }
+  for (let index = 1; index < rows.length; index += 1) {
+    if (!gt(rows[index - 1][0], rows[index][0]) || !gt(rows[index - 1][1], rows[index][1])) {
+      throw new Error("dsh/COMPATIBILITY.md release rows must be unique and in descending version order");
+    }
+  }
+}
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assertRepositoryVersionPolicy({ repoRoot });
@@ -44,6 +67,13 @@ if (releaseContracts.dshRange !== release.dshRange
   || JSON.stringify(releaseContracts.dshVersions) !== JSON.stringify(release.dshVersions)) {
   throw new Error(`dsh/release-contracts.json must match the ${packageVersion} range, source, and matrix targets`);
 }
+
+assertDshReleaseNotes({
+  changelog: readFileSync(resolve(repoRoot, "CHANGELOG.md"), "utf8"),
+  compatibility: readFileSync(resolve(repoRoot, "dsh/COMPATIBILITY.md"), "utf8"),
+  packageVersion,
+  skillVersion: JSON.parse(readFileSync(resolve(repoRoot, "skills/odai/manifest.json"), "utf8")).skillVersion,
+});
 
 process.stdout.write(`DSH package versions match: ${packageVersion}; peer @deepseek-ai/dsh ${release.dshRange}; matrix targets ${release.dshVersions.join(", ")}; compatibility metadata verified\n`);
 

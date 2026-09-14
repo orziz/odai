@@ -165,6 +165,8 @@ node scripts/odai-canary-harness.mjs --suite ab --skill-mode off --out /tmp/odai
 
 原始 transcript、diff、status、manifest 和单次 report 留在 `.tmp/` 或临时目录，不进仓库。仓库分别在 [`docs/evaluation-results.md`](docs/evaluation-results.md) 保留普通模型全量 / A/B 与定向质量结果，在 [`docs/routing-results.md`](docs/routing-results.md) 保留可选路由实验。指纹用于复现；只有变化触达具体 case 的运行时语义或评测契约时才使相应证据失效，不把无关 source 变化或调试轮次写成整表失效。
 
+版本调整前先核对两包 metadata、当前 Unreleased 和 registry 的实际发布记录；曾发布的标识不复用。`node scripts/verify-dsh-package-versions.mjs` 同时检查双包、peer、release matrix、Unreleased 与 canonical 版本归属、兼容表首行和倒序，但这只是本地一致性检查。以当前候选为例，发布事实另用 `npm view odai-dsh-plugin time --json` 与 `npm view odai-dsh-agent time --json` 核实；registry 查询失败不能当作未发布。实际发布入口继续按同一 tarball 摘要校验既有版本和发布后回执。
+
 发布 / 打包相关修改还必须运行：
 
 ```bash

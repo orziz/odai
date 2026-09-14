@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -67,7 +67,7 @@ const yaml = (value: string): string => JSON.stringify(value);
 
 function findDshPackageRoot(command: string): string {
   const locator = process.platform === "win32" ? "where" : "which";
-  const located = existsSync(command)
+  const located = existsSync(command) && statSync(command).isFile()
     ? [resolve(command)]
     : execFileSync(locator, [command], { encoding: "utf8" })
       .trim()

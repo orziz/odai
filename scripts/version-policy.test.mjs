@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertRepositoryVersionPolicy, validateOwnedVersion } from "./version-policy.mjs";
+import { assertDshReleaseNotes } from "./verify-dsh-package-versions.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -29,4 +30,20 @@ test("repository policy covers every current owned version carrier", () => {
       "skills/odai/manifest.json#runtimeContract",
     ],
   );
+});
+
+test("release notes bind a unique candidate and preserve descending historical versions", () => {
+  const current = "## Unreleased — DSH 0.2.31 / canonical 0.3.15";
+  const row = (version) => `| \`${version}\` | \`${version}\` | pinned peer | notes |`;
+  const fixture = { packageVersion: "0.2.31", skillVersion: "0.3.15", changelog: `${current}\n\n## 0.2.30`, compatibility: [row("0.2.31"), row("0.2.30"), row("0.2.14")].join("\n") };
+  assert.doesNotThrow(() => assertDshReleaseNotes(fixture));
+  // A consumed release can be the current source without an Unreleased section.
+  assert.doesNotThrow(() => assertDshReleaseNotes({ ...fixture, changelog: "## 0.2.31 — published" }));
+  for (const changelog of [
+    `${current}\n${current}`, `## 0.2.30\n${current}`,
+    current.replace("0.2.31", "0.2.30"), current.replace("0.3.15", "0.3.11"),
+  ]) assert.throws(() => assertDshReleaseNotes({ ...fixture, changelog }), /Unreleased owner/);
+  for (const versions of [["0.2.30", "0.2.31"], ["0.2.31", "0.2.31"], ["0.2.31", "0.2.29", "0.2.30"]]) {
+    assert.throws(() => assertDshReleaseNotes({ ...fixture, compatibility: versions.map(row).join("\n") }), /package pair first|descending version order/);
+  }
 });

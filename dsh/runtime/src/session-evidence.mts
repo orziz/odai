@@ -114,6 +114,10 @@ function evidenceId(type: string, data: RuntimeEventData): string {
     && typeof data.childSessionId === "string" && data.childSessionId !== ""
     && typeof data.childReceiptId === "string" && data.childReceiptId !== "") {
     identity = stableJson(["child-route-receipt", type, data.childSessionId, data.childReceiptId]);
+  } else if (type === "odai/route-protection") {
+    // A failed responsibility can release its scope and establish a different
+    // protection in the same request. Coexisting runtimes must observe both.
+    identity = stableJson([type, data.turn, data.step, data.scopeId, data.source, data.reasonCode]);
   } else if (type === "odai/responsibility-returned" && typeof data.scopeId === "string" && data.scopeId !== "") {
     identity = `${type}:${data.scopeId}`;
   } else if (Number.isSafeInteger(data?.turn) && Number.isSafeInteger(data?.step)) {

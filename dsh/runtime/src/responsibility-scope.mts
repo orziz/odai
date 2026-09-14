@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { DshEvent, DshMessage, ModelRoute, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
+import type { DshAgent, DshEvent, DshMessage, DshSession, ModelRoute, RuntimeEventData, UnknownRecord } from "./runtime-types.mjs";
 import type { RouteDecision } from "./router.mjs";
 
 export type InPlaceResponsibility = "researcher" | "planner" | "reviewer" | "frontend";
@@ -278,4 +278,89 @@ export function pendingResponsibilityScopeRestoration(events: readonly DshEvent[
       && (event.data?.status === "applied" || event.data?.status === "chained")) candidate = undefined;
   }
   return candidate;
+}
+
+interface ResponsibilityScopeOwnerDependencies {
+  appendEvent(agent: DshAgent, type: string, data: object): void;
+  events(agent: DshAgent): readonly DshEvent[];
+  routeProtections: Pick<WeakMap<DshAgent, { scopeId?: string }>, "get" | "delete">;
+}
+
+export type ResponsibilityScopeOwner = ReturnType<typeof createResponsibilityScopeOwner>;
+
+type StopScope = (agent: DshAgent, reason: string, position?: RuntimeEventData) => ResponsibilityScope | undefined;
+interface LiveScope {
+  owner: { active: boolean };
+  scope: ResponsibilityScope;
+  stop: StopScope;
+}
+// Agent and Plugin can load separate copies of this module in one process.
+// Only the originating owner mutates its scope and releases its protection.
+const sharedScopes = globalThis as typeof globalThis & { __odaiLiveResponsibilityScopes?: WeakMap<DshAgent, LiveScope> };
+const liveScopes = sharedScopes.__odaiLiveResponsibilityScopes ??= new WeakMap<DshAgent, LiveScope>();
+
+export function createResponsibilityScopeOwner(deps: ResponsibilityScopeOwnerDependencies) {
+  const { appendEvent, events, routeProtections } = deps;
+  const identity = { active: true };
+  const live = (agent: DshAgent): LiveScope | undefined => {
+    const entry = liveScopes.get(agent);
+    return entry?.owner.active ? entry : undefined;
+  };
+  const isOwnedElsewhere = (agent: DshAgent): boolean => {
+    const entry = live(agent);
+    return entry !== undefined && entry.owner !== identity;
+  };
+  const owners = new WeakMap<DshSession, DshAgent>();
+  const bindOwner = (agent: DshAgent): void => { owners.set(agent.session, agent); };
+  const stop: StopScope = (agent, reason, position = {}) => {
+    const entry = live(agent);
+    if (!entry) return undefined;
+    if (entry.owner !== identity) return entry.stop(agent, reason, position);
+    const scope = entry.scope;
+    if (position.scopeId && position.scopeId !== scope.id) return undefined;
+    liveScopes.delete(agent);
+    const protection = routeProtections.get(agent);
+    if (protection?.scopeId === scope.id) routeProtections.delete(agent);
+    appendEvent(agent, "odai/route-protection-released", { scopeId: scope.id, turn: scope.turn, reason });
+    appendEvent(agent, "odai/responsibility-scope-stopped", responsibilityScopeStoppedEvent(scope, reason, position));
+    return scope;
+  };
+  return Object.freeze({
+    get: (agent: DshAgent) => live(agent)?.scope,
+    has: (agent: DshAgent) => live(agent) !== undefined,
+    isOwnedElsewhere,
+    dispose: () => { identity.active = false; },
+    bindOwner,
+    ownerFor(session: DshSession) {
+      const agent = owners.get(session);
+      return agent && !isOwnedElsewhere(agent) ? agent : undefined;
+    },
+    start(agent: DshAgent, options: CreateResponsibilityScopeOptions) {
+      if (!identity.active) throw new Error("cannot start a scope through a disposed owner");
+      stop(agent, "superseded", { step: options.startStep });
+      const scope = createResponsibilityScope(options);
+      liveScopes.set(agent, { owner: identity, scope, stop });
+      if (agent?.session) bindOwner(agent);
+      appendEvent(agent, "odai/responsibility-scope-started", responsibilityScopeStartedEvent(scope));
+      return scope;
+    },
+    claim(agent: DshAgent, scope: ResponsibilityScope, options: ClaimResponsibilityScopeOptions) {
+      const entry = live(agent);
+      if (entry?.owner !== identity || entry.scope !== scope) throw new Error("cannot claim a stale responsibility scope");
+      const claimed = claimResponsibilityScope(scope, options);
+      liveScopes.set(agent, { owner: identity, scope: claimed, stop });
+      appendEvent(agent, "odai/responsibility-scope-claimed", responsibilityScopeClaimedEvent(claimed));
+      return claimed;
+    },
+    stop,
+    stopDangling(agent: DshAgent, reason: string): RuntimeEventData | undefined {
+      if (live(agent)) return undefined;
+      liveScopes.delete(agent);
+      const dangling = latestDanglingResponsibilityScope(events(agent));
+      if (!dangling) return undefined;
+      appendEvent(agent, "odai/route-protection-released", { scopeId: dangling.scopeId, turn: dangling.turn, reason });
+      appendEvent(agent, "odai/responsibility-scope-stopped", { ...dangling, reason });
+      return dangling;
+    },
+  });
 }

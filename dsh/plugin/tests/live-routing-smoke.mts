@@ -278,6 +278,9 @@ function parseArgs(argv: readonly string[]): SmokeArgs {
     }
     parsed[field] = parsed[field].trim();
   }
+  if (!argv.includes("--task") && (parsed.mode === "auto" || parsed.mode === "execute") && parsed.plannerModel) {
+    parsed.task = "这是 planner 路由的集成验证，不修改文件。请独立比较支付请求的超时与重试方案：当前缺口是因果假设尚未验证，而延迟、重复交易和回退成本之间存在路线取舍；预期贡献是区分可证实条件并给出决策方法，不拍具体参数。请用 odai_responsibility_gap 记录这一 planner 缺口，以本条任务为证据来源，按配置派发并核对回执；不要声称已有运行数据或实现验收。";
+  }
   if (typeof parsed.task !== "string" || parsed.task.trim() === "") {
     throw new Error("task must be a non-empty string");
   }
@@ -389,7 +392,8 @@ function verifySmoke(sessions: readonly SessionSummary[], options: SmokeArgs) {
   const children = sessions.filter((session) => session.origin === "subagent");
   const controllers = sessions.filter((session) => session.origin !== "subagent");
   const events = controllers.flatMap((session) => session.routeEvents);
-  const decision = events.find((event) => event.type === "odai/route-decided");
+  const decision = events.find((event) => event.type === "odai/route-decided"
+    && ((expectedMode !== "auto" && expectedMode !== "execute") || event.data.targetRole === targetRole));
   const configMissing = events.find((event) => event.type === "odai/route-config-missing");
   const upgrade = events.find((event) => event.type === "odai/route-upgrade");
   const result = events.find((event) => event.type === "odai/route-result");
@@ -407,33 +411,18 @@ function verifySmoke(sessions: readonly SessionSummary[], options: SmokeArgs) {
   if (expectedMode === "off") {
     if (children.length !== 0) errors.push(`off mode started ${children.length} child sessions`);
     if (events.length !== 0) errors.push(`off mode emitted ${events.length} route events`);
-  } else if (expectedMode === "observe") {
-    if (children.length !== 0) errors.push(`observe mode started ${children.length} child sessions`);
+  } else if (expectedMode === "observe" || expectedMode === "auto-unconfigured") {
+    if (children.length !== 0) errors.push(`${expectedMode} started ${children.length} child sessions`);
     if (decision?.data?.role !== "controller"
-      || decision?.data?.action !== "upgrade"
-      || decision?.data?.targetRole !== "planner"
-      || decision?.data?.mode !== "observe") {
-      errors.push("observe mode did not record the expected controller-upgrade decision");
+      || decision?.data?.action !== "direct"
+      || decision?.data?.targetRole !== undefined
+      || decision?.data?.mode !== (expectedMode === "observe" ? "observe" : "auto")) {
+      errors.push("risk language alone must keep the original controller without inventing a responsibility gap");
     }
-    if (protection?.data?.mode !== "read-only") {
-      errors.push("observe mode did not record read-only protection for the high-impact smoke task");
+    if (configMissing || upgrade || result || protection) {
+      errors.push("risk-only smoke unexpectedly requested a role, switched models, or activated whole-turn protection");
     }
-  } else if (expectedMode === "auto-unconfigured") {
-    if (children.length !== 0) errors.push(`unconfigured auto mode started ${children.length} child sessions`);
-    if (decision?.data?.role !== "controller"
-      || decision?.data?.action !== "upgrade"
-      || decision?.data?.targetRole !== "planner"
-      || decision?.data?.mode !== "auto") {
-      errors.push("published default did not record the expected planner capability gap");
-    }
-    if (configMissing?.data?.role !== "planner" || configMissing?.data?.status !== "unconfigured") {
-      errors.push("published default did not record the missing planner configuration");
-    }
-    if (upgrade || result) errors.push("unconfigured auto mode claimed an upgrade or child result");
-    if (protection?.data?.mode !== "read-only" || protection?.data?.source !== "route-config-missing") {
-      errors.push("unconfigured high-impact default did not fail closed");
-    }
-    if (!controllerRoute) errors.push("unconfigured auto mode did not remain on the base controller route");
+    if (!controllerRoute) errors.push(`${expectedMode} did not remain on the base controller route`);
   } else if (expectedMode === "auto") {
     if (children.length !== 0) errors.push(`auto mode started ${children.length} child sessions`);
     if (decision?.data?.role !== "controller"

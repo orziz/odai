@@ -7,19 +7,10 @@ import {
 import { installCompactionRuntime } from "./compaction-runtime.mjs";
 import { installControlCenterRuntimeWhenAvailable } from "./control-center-runtime.mjs";
 import { installLifecycleRuntime } from "./lifecycle-runtime.mjs";
-import type {
-  OutputUsage,
-  PendingRestoration,
-  PendingRouteReceipt,
-  ResponsibilityScope,
-  RouteProtection,
-} from "./lifecycle-runtime.mjs";
+import type { RouteProtection } from "./lifecycle-runtime.mjs";
 import { classifyModelRouteFailure, probeModelRoute } from "./model-route.mjs";
 import { createPromptRuntime } from "./prompt-runtime.mjs";
-import {
-  latestDanglingResponsibilityScope,
-  responsibilityScopeStoppedEvent,
-} from "./responsibility-scope.mjs";
+import { createResponsibilityScopeOwner } from "./responsibility-scope.mjs";
 import { classifyPendingReviewerText, extractLatestUserText, hasExplicitRequestRevision } from "./router.mjs";
 import { invalidatePersistedRoleRoute } from "./routing-config.mjs";
 import {
@@ -175,44 +166,10 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     skillPath,
   } = promptRuntime;
   const routeProtections = new WeakMap<DshAgent, RouteProtection>();
-  const responsibilityScopes = new WeakMap<DshAgent, ResponsibilityScope>();
-  const responsibilityScopeOwners = new WeakMap<DshSession, DshAgent>();
-  const pendingRouteReceipts = new WeakMap<DshSession, PendingRouteReceipt>();
-  const pendingScopeRestorations = new WeakMap<DshSession, PendingRestoration>();
-  const outputUsageBySession = new WeakMap<DshSession, OutputUsage>();
-  const stopResponsibilityScope = (
-    agent: DshAgent,
-    reason: string,
-    position: RuntimeEventData = {},
-  ) => {
-    const scope = responsibilityScopes.get(agent);
-    if (!scope || (position.scopeId && position.scopeId !== scope.id)) return undefined;
-    responsibilityScopes.delete(agent);
-    const protection = routeProtections.get(agent);
-    if (protection?.scopeId === scope.id) routeProtections.delete(agent);
-    appendEvent(agent, "odai/route-protection-released", {
-      scopeId: scope.id,
-      turn: scope.turn,
-      reason,
-    });
-    appendEvent(agent, "odai/responsibility-scope-stopped", responsibilityScopeStoppedEvent(scope, reason, position));
-    return scope;
-  };
-  const stopDanglingResponsibilityScope = (agent: DshAgent, reason: string): RuntimeEventData | undefined => {
-    if (responsibilityScopes.has(agent)) return undefined;
-    const dangling = latestDanglingResponsibilityScope(evidence.events(agent));
-    if (!dangling) return undefined;
-    appendEvent(agent, "odai/route-protection-released", {
-      scopeId: dangling.scopeId,
-      turn: dangling.turn,
-      reason,
-    });
-    appendEvent(agent, "odai/responsibility-scope-stopped", {
-      ...dangling,
-      reason,
-    });
-    return dangling;
-  };
+  const responsibilityScopes = createResponsibilityScopeOwner({
+    appendEvent, events: (agent) => evidence.events(agent), routeProtections,
+  });
+  ctx.effect?.(() => responsibilityScopes.dispose, "odai: responsibility scope owner");
   const configuredRole = (agent: DshAgent, role: string, turn = currentAgentTurn(agent)) => {
     const state = routingSnapshotFor(agent, turn);
     if (state.error || !state.snapshot) return state;
@@ -331,14 +288,13 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   installToolRuntime({
     appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath,
     hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime,
-    responsibilityScopes, routeProtections, selectOutputForAgent, stopResponsibilityScope,
+    responsibilityScopes, routeProtections, selectOutputForAgent,
   });
 
   installLifecycleRuntime({
     appendEvent, bundled, config, configuredRole, ctx, evidence, hasSessionEvent, invalidateFailedRoleRoute,
-    logger, memorySettingsFor, outputUsageBySession, pendingResponsibilityGap, pendingRouteReceipts,
-    pendingScopeRestorations, responsibilityScopeOwners, responsibilityScopes, routeProtections,
-    selectOutputForAgent, stopDanglingResponsibilityScope, stopResponsibilityScope,
+    logger, memorySettingsFor, pendingResponsibilityGap, responsibilityScopes, routeProtections,
+    selectOutputForAgent,
   });
 
   logger.info(`loaded canonical governance ${bundled.manifest.skillVersion} from ${skillPath}; skillSource=${explicitSkillPath ? "path" : config.governance.skillSource}; routing=${config.routing.mode}`);

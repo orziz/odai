@@ -64,6 +64,7 @@ export interface RouteProtection {
 
 export interface RouteProtectionGuardOptions extends ToolGuardOptions {
   protectionFor?(agent: DshAgent | undefined): RouteProtection | undefined;
+  isReadOnlyResponsibility?(agent: DshAgent | undefined): boolean;
 }
 
 export interface ToolResultSummary {
@@ -159,6 +160,13 @@ export function createRouteProtectionGuard(
   return (execution) => {
     if (isSubagent(execution?.agent)) return undefined;
     if (allowed.has(execution?.name)) return undefined;
+    if (options.isReadOnlyResponsibility?.(execution?.agent)) {
+      // Preserve the public denial code while enforcing responsibility permissions
+      // independently of risk classification, routing mode, or risk-release state.
+      const reason = `ODAI_HIGH_IMPACT_ROUTE_BLOCKED: active read-only responsibility may not execute ${execution.name}; return evidence to the controller instead.`;
+      onDenied(execution, reason);
+      return reason;
+    }
     const protection = protectionFor(execution?.agent);
     if (!protection) return undefined;
 

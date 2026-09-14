@@ -99,7 +99,27 @@ test("high-impact route protection denies controller mutations only for the acti
   assert.equal(guard({ agent: protectedController, name: "write" }), undefined);
 });
 
-test("tool summaries retain evidence identity without arguments or output", () => {
+test("read-only responsibility remains enforced without risk protection", () => {
+  let active = true;
+  let lookups = 0;
+  const guard = createRouteProtectionGuard({
+    isReadOnlyResponsibility: (agent) => agent === controller && active,
+    protectionFor() { lookups += 1; return undefined; },
+    additionalDeniedTools: ["web_fetch"],
+  });
+  for (const name of ["write", "edit", "bash", "pwsh", "future_side_effect", "web_fetch"]) {
+    assert.match(denial(guard({ agent: controller, name, arguments: { file_path: "unrelated/notes.md" } })), /active read-only responsibility/);
+  }
+  for (const name of ["read", "glob", "grep", "ask_user_question", "odai_responsibility_return"]) {
+    assert.equal(guard({ agent: controller, name }), undefined);
+  }
+  assert.equal(lookups, 0);
+  active = false;
+  assert.equal(guard({ agent: controller, name: "write" }), undefined);
+  assert.equal(lookups, 1);
+});
+
+test("tool summaries retain evidence identity without arguments or output",  () => {
   assert.deepEqual(summarizeToolResult({
     callId: "call-1",
     rootCallId: "root-1",

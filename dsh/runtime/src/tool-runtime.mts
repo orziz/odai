@@ -16,7 +16,7 @@ import { bindResponsibilityGapToTask, createResponsibilityGapTool } from "./resp
 import type { RequirementSourceCandidate, ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { createResponsibilityReturnTool } from "./responsibility-return.mjs";
 import type { ResponsibilityReturnResult } from "./responsibility-return.mjs";
-import type { ResponsibilityScope } from "./responsibility-scope.mjs";
+import type { ResponsibilityScopeOwner } from "./responsibility-scope.mjs";
 import { createSkillSourceConfigTool } from "./skill-source-config.mjs";
 import { createSkillEvolutionTool, applySkillEvolutionSelection } from "./skill-evolution.mjs";
 import { createSemanticMemoryTool, latestDirectUserMessage } from "./semantic-memory.mjs";
@@ -45,14 +45,14 @@ interface ToolRuntimeDependencies {
   logger: RuntimeLogger;
   pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
   promptRuntime: PromptInstaller;
-  responsibilityScopes: WeakMap<DshAgent, ResponsibilityScope>;
+  responsibilityScopes: Pick<ResponsibilityScopeOwner, "get" | "has" | "stop">;
   routeProtections: WeakMap<DshAgent, RouteProtection>;
   selectOutputForAgent(): { policy: OutputPolicy };
-  stopResponsibilityScope(agent: DshAgent, reason: string, position?: RuntimeEventData): ResponsibilityScope | undefined;
 }
 
 export function installToolRuntime(deps: ToolRuntimeDependencies): void {
-  const { appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityScopes, routeProtections, selectOutputForAgent, stopResponsibilityScope } = deps;
+  const { appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityScopes, routeProtections, selectOutputForAgent } = deps;
+  const { stop: stopResponsibilityScope } = responsibilityScopes;
   const onDenied = (execution: ToolExecution & { agent: DshAgent }, reason: string) => {
     appendEvent(execution.agent, "odai/governance-denied", {
       callId: String(execution.callId),
@@ -67,6 +67,10 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
   const routeProtectionGuard = createRouteProtectionGuard({
     additionalDeniedTools: config.governance.additionalDeniedTools,
     onDenied,
+    isReadOnlyResponsibility(agent) {
+      const role = agent ? responsibilityScopes.get(agent)?.role : undefined;
+      return role === "researcher" || role === "planner" || role === "reviewer";
+    },
     protectionFor(agent: DshAgent) {
       if (config.routing.mode === "off") return undefined;
       return routeProtections.get(agent) ?? activeRouteProtection(agent, evidence.events(agent));

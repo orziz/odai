@@ -335,7 +335,9 @@ export function classifyImplementationAuthorization(text: unknown): Readonly<Imp
   return Object.freeze({ status: "unknown" });
 }
 
-function hasContextualPlannerGap(text: string): boolean {
+function hasHighImpactEvidenceGap(text: string): boolean {
+  text = stripQuotedMaterial(text);
+  if (isLowRiskTransform(text) || matchesAny(text, NON_IMPLEMENTATION_QUERY_PATTERNS)) return false;
   return matchesAny(text, RISK_PATTERNS)
     && matchesAny(text, UNVERIFIED_CAUSAL_PATTERNS)
     && matchesAny(text, CONCRETE_CHANGE_PATTERNS)
@@ -465,12 +467,12 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
   const proposal = input.proposal;
   const signals: string[] = [];
   const considerations: RouteConsideration[] = [];
-  const riskPresent = matchesAny(text, RISK_PATTERNS);
-  const unverifiedCausalClaim = matchesAny(text, UNVERIFIED_CAUSAL_PATTERNS);
-  const concreteChangeRequest = matchesAny(text, CONCRETE_CHANGE_PATTERNS);
-  const specificOperationalParameter = matchesAny(text, SPECIFIC_PARAMETER_PATTERNS);
-  const urgencyPressure = matchesAny(text, URGENCY_PATTERNS);
-  const irreversibleAction = matchesAny(text, IRREVERSIBLE_ACTION_PATTERNS);
+  const riskPresent = matchesAny(explicitIntentText, RISK_PATTERNS);
+  const unverifiedCausalClaim = matchesAny(explicitIntentText, UNVERIFIED_CAUSAL_PATTERNS);
+  const concreteChangeRequest = matchesAny(explicitIntentText, CONCRETE_CHANGE_PATTERNS);
+  const specificOperationalParameter = matchesAny(explicitIntentText, SPECIFIC_PARAMETER_PATTERNS);
+  const urgencyPressure = matchesAny(explicitIntentText, URGENCY_PATTERNS);
+  const irreversibleAction = matchesAny(explicitIntentText, IRREVERSIBLE_ACTION_PATTERNS);
   const frontend = frontendSpecializationSignals(explicitIntentText);
 
   if (riskPresent) signals.push("risk-present");
@@ -549,18 +551,17 @@ export function decideRoute(input: RouteDecisionInput = {}): Readonly<RouteDecis
     }));
   }
 
-  const contextualPlannerGap = riskPresent
+  const highImpactEvidenceGap = riskPresent
     && unverifiedCausalClaim
     && concreteChangeRequest
     && (specificOperationalParameter || urgencyPressure || irreversibleAction);
-  if (contextualPlannerGap) {
+  if (highImpactEvidenceGap && !isLowRiskTransform(explicitIntentText)
+    && !matchesAny(explicitIntentText, NON_IMPLEMENTATION_QUERY_PATTERNS)) {
     return route(
       "controller",
-      HIGH_IMPACT_PLANNER_REASON,
-      "An unverified causal claim is being used to justify a concrete high-impact change, so the controller needs a stronger decision route.",
+      "HIGH_IMPACT_EVIDENCE_REQUIRED",
+      "The requested high-impact change relies on an unverified causal claim. Verify the evidence and authorization; risk alone does not establish an independent capability gap.",
       signals,
-      "upgrade",
-      "planner",
     );
   }
 
@@ -610,7 +611,7 @@ export function extractRoutingText(
   const texts = genuineUserTexts(messages, sessionEvents);
   const latest = texts[0] ?? "";
   if (!latest
-    || hasContextualPlannerGap(latest)
+    || hasHighImpactEvidenceGap(latest)
     || !matchesAny(stripQuotedMaterial(latest), CONTINUATION_PATTERNS)
     || isLowRiskTransform(latest)) {
     return latest;
@@ -619,7 +620,7 @@ export function extractRoutingText(
   let referencedHighImpact;
   let referencedFrontend;
   for (const text of texts.slice(1)) {
-    if (hasContextualPlannerGap(text)) {
+    if (hasHighImpactEvidenceGap(text)) {
       referencedHighImpact = text;
       break;
     }

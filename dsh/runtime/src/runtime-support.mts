@@ -142,13 +142,13 @@ export function outputText(blocks: unknown): string {
 
 export function renderResearchTaskContract(taskText: string): string {
   return [
-    "Decision-blocking factual question: Determine whether the user's causal claim is supported and which existing repository facts govern the safety of the requested high-impact change.",
+    "Factual question: Resolve the assigned responsibility gap using the expected change, evidence references, and original user task below. Treat evidence references as leads to verify. If no gap is supplied, use the factual question in the user task; if it is unclear, return the missing evidence boundary.",
     "Allowed source scope: the current project root only. Use repository-relative paths and read-only source tools; do not inspect parent, sibling, user, or unrelated directories.",
     "Authority and freshness: label each current-checkout source by its actual role (for example runtime configuration, implementation, test, incident record, or documentation). Do not invent an authority hierarchy; report unresolved conflicts and missing freshness evidence as unknowns.",
     "Stop condition: return the smallest packet with 2-6 source-backed facts from at least two files, or stop with the missing evidence boundary. Do not select a route or continue after additional reading cannot change this factual question.",
     "For every fact, excerpt must exactly equal the complete cited source line after trimming leading and trailing whitespace.",
     "",
-    "Original user request:",
+    "Assigned research task:",
     taskText,
   ].join("\n");
 }

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   claimResponsibilityScope,
   createResponsibilityScope,
+  createResponsibilityScopeOwner,
   latestDanglingResponsibilityScope,
   latestStoppedResponsibilityScope,
   pendingResponsibilityInterruption,
@@ -13,7 +14,7 @@ import {
 } from "../build/responsibility-scope.mjs";
 import type { InPlaceResponsibility } from "../build/responsibility-scope.mjs";
 import type { RouteDecision } from "../build/router.mjs";
-import type { DshEvent } from "../build/runtime-types.mjs";
+import type { DshAgent, DshEvent } from "../build/runtime-types.mjs";
 
 const decision: Readonly<RouteDecision> = Object.freeze({
   role: "controller",
@@ -25,6 +26,76 @@ const decision: Readonly<RouteDecision> = Object.freeze({
 });
 const baseRoute = Object.freeze({ provider: "openai", model: "controller", reasoningEffort: "high", maxTokens: 500 });
 const roleRoute = Object.freeze({ provider: "openai", model: "planner", reasoningEffort: "xhigh" });
+
+test("scope owner keeps transition order and rejects stale scope mutations", () => {
+  const events: DshEvent[] = [];
+  const agent: DshAgent = { session: { header: {}, snapshotEvents: () => events, append() {} } };
+  const protections = new WeakMap<DshAgent, { scopeId?: string }>();
+  const owner = createResponsibilityScopeOwner({
+    events: () => events, routeProtections: protections,
+    appendEvent(_agent, type, data) {
+      if (type === "odai/route-protection-released") assert.equal(owner.has(agent), false);
+      events.push({ type, data: { ...data } });
+    },
+  });
+  const options = { turn: 1, startStep: 2, role: "planner" as const, route: roleRoute };
+  const pending = owner.start(agent, options);
+  assert.equal(owner.ownerFor(agent.session), agent);
+  const active = owner.claim(agent, pending, { step: 2, baseRoute, temporaryRoute: roleRoute, routeMode: "same-turn" });
+  assert.equal(active.id, pending.id);
+  protections.set(agent, { scopeId: active.id });
+  const next = owner.start(agent, { ...options, startStep: 3 });
+  assert.equal(protections.has(agent), false);
+  assert.deepEqual(events.map((event) => event.type), [
+    "odai/responsibility-scope-started", "odai/responsibility-scope-claimed",
+    "odai/route-protection-released", "odai/responsibility-scope-stopped", "odai/responsibility-scope-started",
+  ]);
+  assert.deepEqual(events.map((event) => event.data.scopeId), [active.id, active.id, active.id, active.id, next.id]);
+  assert.equal(events[3].data.stopStep, 3);
+  assert.equal(owner.stop(agent, "route-mismatch", { scopeId: active.id }), undefined);
+  assert.throws(() => owner.claim(agent, pending, { step: 2, baseRoute, temporaryRoute: roleRoute, routeMode: "same-turn" }), /stale/);
+  assert.equal(owner.get(agent), next);
+  const unrelated = { scopeId: "another-scope" };
+  protections.set(agent, unrelated);
+  assert.equal(owner.stop(agent, "responsibility-returned", { scopeId: next.id }), next);
+  assert.equal(protections.get(agent), unrelated);
+  assert.equal(owner.stopDangling(agent, "runtime-resume"), undefined);
+  assert.equal(events.length, 7);
+});
+
+test("coexisting owners preserve live scopes and recover disposed owners", () => {
+  for (const dispose of [false, true]) {
+    const events: DshEvent[] = [];
+    const agent: DshAgent = { session: { header: {}, snapshotEvents: () => events, append() {} } };
+    const protections = new WeakMap<DshAgent, { scopeId?: string }>();
+    const deps = { events: () => events, routeProtections: protections,
+      appendEvent(_agent: DshAgent, type: string, data: object) { events.push({ type, data: { ...data } }); } };
+    const first = createResponsibilityScopeOwner(deps);
+    const second = createResponsibilityScopeOwner({ ...deps, routeProtections: new WeakMap() });
+    second.bindOwner(agent);
+    const pending = first.start(agent, { turn: 1, startStep: 1, role: "planner", route: roleRoute });
+    const active = first.claim(agent, pending, { step: 1, baseRoute, temporaryRoute: roleRoute, routeMode: "same-turn" });
+    protections.set(agent, { scopeId: active.id });
+    assert.equal(second.get(agent), active);
+    assert.equal(second.isOwnedElsewhere(agent), true);
+    assert.equal(second.ownerFor(agent.session), undefined);
+    assert.equal(second.stopDangling(agent, "runtime-resume"), undefined);
+    assert.equal(events.length, 2);
+    assert.throws(() => second.claim(agent, active, { step: 2, baseRoute, temporaryRoute: roleRoute, routeMode: "same-turn" }), /stale/);
+    if (dispose) {
+      first.dispose();
+      assert.equal(second.get(agent), undefined);
+      assert.equal(second.stopDangling(agent, "runtime-resume")?.scopeId, active.id);
+      assert.throws(() => first.start(agent, { turn: 2, startStep: 1, role: "planner", route: roleRoute }), /disposed/);
+    } else {
+      assert.equal(second.stop(agent, "responsibility-returned"), active);
+      assert.equal(protections.has(agent), false);
+      assert.equal(first.get(agent), undefined);
+    }
+    assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-stopped").length, 1);
+    assert.equal(second.stopDangling(agent, "runtime-resume"), undefined);
+  }
+});
 
 function pendingScope(role: InPlaceResponsibility = "planner") {
   return createResponsibilityScope({

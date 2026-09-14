@@ -23,17 +23,13 @@ import {
 } from "./runtime-support.mjs";
 import type { RoutedRoleOutcome, SubagentsService } from "./runtime-support.mjs";
 import {
-  claimResponsibilityScope,
-  createResponsibilityScope,
   latestStoppedResponsibilityScope,
   pendingResponsibilityInterruption,
   pendingResponsibilityScopeRestoration,
-  responsibilityScopeClaimedEvent,
   responsibilityScopeOwnsRequest,
-  responsibilityScopeStartedEvent,
   responsibilityScopeStopReason,
 } from "./responsibility-scope.mjs";
-import type { InPlaceResponsibility, ResponsibilityScope } from "./responsibility-scope.mjs";
+import type { InPlaceResponsibility, ResponsibilityScopeOwner } from "./responsibility-scope.mjs";
 export type { ResponsibilityScope } from "./responsibility-scope.mjs";
 import { buildRoleContextPacket, renderRoleContextPacket } from "./routing-context.mjs";
 import {
@@ -121,20 +117,18 @@ interface LifecycleDependencies {
   invalidateFailedRoleRoute(agent: DshAgent, role: string, route: ModelRoute, source: string | undefined, failure: RouteFailure, position?: RuntimeEventData): UnknownRecord;
   logger: RuntimeLogger;
   memorySettingsFor(agent: DshAgent, turn?: number): MemorySettings;
-  outputUsageBySession: WeakMap<DshSession, OutputUsage>;
   pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
-  pendingRouteReceipts: WeakMap<DshSession, PendingRouteReceipt>;
-  pendingScopeRestorations: WeakMap<DshSession, PendingRestoration>;
-  responsibilityScopeOwners: WeakMap<DshSession, DshAgent>;
-  responsibilityScopes: WeakMap<DshAgent, ResponsibilityScope>;
+  responsibilityScopes: ResponsibilityScopeOwner;
   routeProtections: WeakMap<DshAgent, RouteProtection>;
   selectOutputForAgent(agent?: DshAgent, turn?: number): SessionOutputSelection;
-  stopDanglingResponsibilityScope(agent: DshAgent, reason: string): RuntimeEventData | undefined;
-  stopResponsibilityScope(agent: DshAgent, reason: string, position?: RuntimeEventData): ResponsibilityScope | undefined;
 }
 
 export function installLifecycleRuntime(deps: LifecycleDependencies): void {
-  const { appendEvent, bundled, config, configuredRole, ctx, evidence, hasSessionEvent, invalidateFailedRoleRoute, logger, memorySettingsFor, outputUsageBySession, pendingResponsibilityGap, pendingRouteReceipts, pendingScopeRestorations, responsibilityScopeOwners, responsibilityScopes, routeProtections, selectOutputForAgent, stopDanglingResponsibilityScope, stopResponsibilityScope } = deps;
+  const { appendEvent, bundled, config, configuredRole, ctx, evidence, hasSessionEvent, invalidateFailedRoleRoute, logger, memorySettingsFor, pendingResponsibilityGap, responsibilityScopes, routeProtections, selectOutputForAgent } = deps;
+  const { stop: stopResponsibilityScope, stopDangling: stopDanglingResponsibilityScope } = responsibilityScopes;
+  const pendingRouteReceipts = new WeakMap<DshSession, PendingRouteReceipt>();
+  const pendingScopeRestorations = new WeakMap<DshSession, PendingRestoration>();
+  const outputUsageBySession = new WeakMap<DshSession, OutputUsage>();
   const inputRequests = new WeakMap<DshAgent, { token: object; turn: number; signal: AbortSignal }>();
   const inputGuards = new WeakSet<DshAgent>();
   ctx.on("agent/inbox/claimed", ({ agent, turn, message }: { agent: DshAgent; turn: number; message: DshMessage }) => {
@@ -152,7 +146,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       });
       inputGuards.add(agent);
     }
-    responsibilityScopeOwners.set(agent.session, agent);
+    responsibilityScopes.bindOwner(agent);
     observeNativeDirectInput(agent, turn, message);
   });
   ctx.on("agent/disposed", ({ agent }: { agent: DshAgent }) => {
@@ -167,9 +161,10 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     if (input?.phase === "claimed" && input.token) inputRequests.set(agent, { token: input.token, turn, signal });
     else inputRequests.delete(agent);
     let proposed = await next();
+    if (responsibilityScopes.isOwnedElsewhere(agent)) return proposed;
     const childRole = routedRoleOf(agent);
     if (!childRole && !isSubagentSession(agent)) {
-      if (agent.session) responsibilityScopeOwners.set(agent.session, agent);
+      if (agent.session) responsibilityScopes.bindOwner(agent);
       const directMessage = latestDirectUserMessage(agent);
       prepareSessionOutputControl({
         events: evidence.events(agent),
@@ -278,14 +273,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         const baseRoute = routeFromConfig(proposed);
         const temporaryRoute = routeFromConfig(request);
         if (!baseRoute || !temporaryRoute) throw new Error("responsibility scope claim requires complete request routes");
-        scope = claimResponsibilityScope(scope, {
-          step,
-          baseRoute,
-          temporaryRoute,
-          routeMode,
-        });
-        responsibilityScopes.set(agent, scope);
-        appendEvent(agent, "odai/responsibility-scope-claimed", responsibilityScopeClaimedEvent(scope));
+        scope = responsibilityScopes.claim(agent, scope, { step, baseRoute, temporaryRoute, routeMode });
       }
       const validation = scope?.routeValidated
         ? Object.freeze({ status: "verified" })
@@ -391,6 +379,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     { agent, turn, step, provider, failure, signal }: AgentRequestErrorEvent,
     next: () => Promise<unknown>,
   ) => {
+    if (responsibilityScopes.isOwnedElsewhere(agent)) return next();
     const childRole = routedRoleOf(agent);
     const scope = responsibilityScopes.get(agent);
     if (!childRole && scope && (signal.aborted || failure?.code === "CONTEXT_WINDOW_EXCEEDED")) {
@@ -472,7 +461,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
   };
 
   ctx.on("session/event", (session: DshSession, event: DshEvent) => {
-    const owner = responsibilityScopeOwners.get(session);
+    const owner = responsibilityScopes.ownerFor(session);
     if (owner && event.type === "turn/end") invalidateNativeDirectInput(owner);
     if (owner && event.type === "user/message" && !isSubagentSession(owner)) {
       const message = latestDirectUserMessage(owner);
@@ -761,6 +750,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       next: () => Promise<StepResult>,
     ) => {
       const subagentSession = isSubagentSession(agent);
+      if (responsibilityScopes.isOwnedElsewhere(agent) && responsibilityScopes.get(agent)?.turn === turn) return next();
       if (!subagentSession) {
         if (step === 1) {
           stopResponsibilityScope(agent, "new-turn");
@@ -773,6 +763,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         invalidateNativeDirectInput(agent);
         return downstream;
       }
+      if (responsibilityScopes.isOwnedElsewhere(agent)) return downstream;
       const authenticatedDirectMessage = latestDirectUserMessage(agent, undefined, { turn });
       const suppliedDirectMessages = Array.isArray(downstream.messages)
         ? downstream.messages.filter((message) => message?.source?.kind === "user")
@@ -906,6 +897,20 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       routed.add(routeKey);
 
       const taskText = extractRoutingText(downstream.messages, sessionEvents(agent?.session)).slice(0, config.routing.maxInputChars);
+      const responsibilityTaskFor = (role: string): string => responsibilityGap?.responsibility === role
+        ? [
+            "# Evidence-grounded responsibility gap",
+            JSON.stringify({
+              responsibility: responsibilityGap.responsibility,
+              gap: responsibilityGap.gap,
+              expectedChange: responsibilityGap.expectedChange,
+              evidenceRefs: responsibilityGap.evidenceRefs,
+            }, undefined, 2),
+            "",
+            "# Direct user task",
+            taskText,
+          ].join("\n")
+        : taskText;
       let routedDownstream = downstream;
       let researchPacketText = "";
       let sameTurnResearchDecision: RouteDecision | undefined;
@@ -961,7 +966,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
                   subagents,
                   provider: config.routing.provider,
                   decision: researchDecision,
-                  taskText: renderResearchTaskContract(taskText),
+                  taskText: renderResearchTaskContract(responsibilityTaskFor("researcher")),
                   roleContract: researchContract,
                   agent,
                   signal,
@@ -1024,20 +1029,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         interruption: responsibilityContinuation,
       });
       let routeRole = decision.targetRole ?? decision.role;
-      const responsibilityTaskText = responsibilityGap?.responsibility === routeRole
-        ? [
-            "# Evidence-grounded responsibility gap",
-            JSON.stringify({
-              responsibility: responsibilityGap.responsibility,
-              gap: responsibilityGap.gap,
-              expectedChange: responsibilityGap.expectedChange,
-              evidenceRefs: responsibilityGap.evidenceRefs,
-            }, undefined, 2),
-            "",
-            "# Direct user task",
-            taskText,
-          ].join("\n")
-        : taskText;
+      const responsibilityTaskText = responsibilityTaskFor(routeRole);
       const roleTaskText = researchPacketText ? `${responsibilityTaskText}\n\n${researchPacketText}` : responsibilityTaskText;
       let roleContext = decision.action === "direct"
         ? undefined
@@ -1101,6 +1093,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       }
 
       if (decision.action === "direct") {
+        if (decision.reasonCode === "HIGH_IMPACT_EVIDENCE_REQUIRED") {
+          return { ...routedDownstream, messages: [...routedDownstream.messages, pluginMessage(
+            "Odai risk evidence notice: the requested high-impact change relies on an unverified causal claim. Inspect decisive evidence and authorization before acting; use the canonical dao reference when needed. This signal does not select a model, certify an independent gap, or activate a whole-turn tool restriction. Request configured support only for a real capability or independent judgment gap. Keep unresolved dependent actions at their boundary and continue unrelated authorized work. Native execution permissions remain in force.",
+            "odai controller retains ownership while verifying high-impact evidence",
+          )] };
+        }
         if (!localReviewerCoverage) return routedDownstream;
         if (!roleContext) throw new Error("reviewer fallback is missing its context packet");
         if (reviewerDeferralAlreadyReported) return routedDownstream;
@@ -1338,8 +1336,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
       if (inPlaceUpgrade) {
         if (!isInPlaceResponsibility(routeRole)) throw new Error(`unsupported in-place responsibility: ${routeRole}`);
-        stopResponsibilityScope(agent, "superseded", { step });
-        const responsibilityScope = createResponsibilityScope({
+        const responsibilityScope = responsibilityScopes.start(agent, {
           turn,
           startStep: step,
           role: routeRole,
@@ -1349,9 +1346,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           routeValidated: rolePreflightVerified,
           ...(responsibilityContinuation ? { resumeOfScopeId: responsibilityContinuation.scopeId } : {}),
         });
-        responsibilityScopes.set(agent, responsibilityScope);
-        if (agent?.session) responsibilityScopeOwners.set(agent.session, agent);
-        appendEvent(agent, "odai/responsibility-scope-started", responsibilityScopeStartedEvent(responsibilityScope));
         if (["researcher", "planner", "reviewer"].includes(routeRole)) {
           protectController(agent, turn, step, decision, `responsibility-scope-${routeRole}`, undefined, responsibilityScope.id);
         }
@@ -1387,6 +1381,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
                 "",
                 `${routeRole} responsibility contract:`,
                 roleContract,
+                ...(routeRole === "researcher" ? ["", renderResearchTaskContract(roleTaskText)] : []),
               ].join("\n"),
               `odai upgraded controller route (${decision.reasonCode})`,
             ),
