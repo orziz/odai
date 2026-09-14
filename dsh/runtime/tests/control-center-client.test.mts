@@ -23,6 +23,7 @@ interface TestingTrace {
   turns: TestingTraceGroup[];
   currentTurn?: TestingTraceGroup;
   currentRoles: Record<string, TestingTraceItem | undefined>;
+  nativeCalls: TestingTraceItem[];
 }
 
 interface ClientTesting {
@@ -93,7 +94,24 @@ test("shared client projection separates proposal, same-turn, child, and handbac
   assert.equal(trace.currentRoles.reviewer?.state, "child");
 });
 
-test("timeline orders groups by recent evidence without defaulting to out-of-turn evidence", async () => {
+test("native calls remain distinct from named roles and preserve errors and unknown turns", async () => {
+  const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
+  const trace = client.projectTrace([
+    { seq: 1, type: "odai/tool-observed", data: { tool: "subagent", child: false, callId: "a", isError: false } },
+    { seq: 2, type: "odai/tool-observed", data: { tool: "subagent", child: false, callId: "a", isError: false } },
+    { seq: 3, type: "odai/tool-observed", data: { tool: "subagent_fork", child: false, callId: "b", isError: true } },
+    { seq: 4, type: "odai/tool-observed", data: { tool: "subagent", child: true, callId: "c", isError: true } },
+    { seq: 5, type: "odai/tool-observed", data: { tool: "read", child: false, callId: "d" } },
+    { seq: 6, type: "odai/route-decided", data: { turn: 2, role: "controller", action: "direct" } },
+  ]);
+  assert.equal(trace.nativeCalls.length, 2);
+  assert.equal(trace.nativeCalls[0].turn, undefined);
+  assert.equal(trace.currentTurn?.turn, 2);
+  assert.ok(Object.values(trace.currentRoles).every((item) => item === undefined));
+  assert.equal(client.projectTrace([]).nativeCalls.length, 0);
+});
+
+test("timeline orders groups by recent evidence without defaulting to out-of-turn evidence",  async () => {
   const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
   const trace = client.projectTrace([
     { seq: 1, type: "odai/route-decided", data: { turn: 1, step: 1 } },

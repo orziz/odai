@@ -52,7 +52,7 @@ DSH classifies this as a `trust: user` preset. User presets have the same privil
 
 ## Control Center
 
-The optional profile entry ships inside `odai-dsh-agent`; it is not a third package. It adds one Chinese Control Center launcher to DSH Web with a real current-turn responsibility graph, session evidence timeline, structured event inspector, and routing controls for the four optional responsibilities. The controller remains host-managed and read-only. Routing writes use the same validated, locked, atomic routing action as the conversation tool and apply on the next user turn. Configured models alone are never displayed as execution evidence.
+The optional profile entry ships inside `odai-dsh-agent`; it is not a third package. It adds one Chinese Control Center launcher to DSH Web with a real current-turn responsibility graph, session evidence timeline, structured event inspector, and routing controls for the four optional responsibilities. The controller remains host-managed and read-only. Routing writes use the same validated, locked, atomic routing action as the conversation tool and apply on the next user turn. Configured models alone are never displayed as execution evidence. A separate native-collaboration summary shows observed controller `subagent`/`subagent_fork` tool receipts from the loaded session evidence, including errors and unknown turn attribution. These receipts are not named-role model verification or child completion evidence; the summary shows the latest five calls and leaves the rest in the timeline.
 
 The main `install` prompt is the recommended entry. These lifecycle commands remain available for inspection, recovery, and automation:
 

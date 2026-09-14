@@ -39,6 +39,7 @@ interface ProjectedTrace {
   turns: readonly TraceGroup[];
   currentTurn?: TraceGroup;
   currentRoles: Readonly<Record<Responsibility, TraceItem | undefined>>;
+  nativeCalls: readonly TraceItem[];
 }
 
 interface EvidenceSnapshot {
@@ -252,7 +253,18 @@ window.__ModuleLoader__.load({
         const roleItems = currentTurn?.items.filter((item) => item.role === role) ?? [];
         return [role, roleItems.at(-1)];
       })) as Record<Responsibility, TraceItem | undefined>;
-      return Object.freeze({ items: Object.freeze(items), turns: Object.freeze(groups), currentTurn, currentRoles: Object.freeze(currentRoles) });
+      const seenCalls = new Set<string>();
+      const nativeCalls = items.filter((item) => {
+        const data = record(item.raw);
+        if (item.type !== "odai/tool-observed" || data?.child !== false ||
+          !["subagent", "subagent_fork"].includes(data?.tool)) return false;
+        const id = typeof data.callId === "string" ? data.callId : item.key;
+        if (seenCalls.has(id)) return false;
+        seenCalls.add(id);
+        return true;
+      });
+      return Object.freeze({ items: Object.freeze(items), turns: Object.freeze(groups), currentTurn,
+        currentRoles: Object.freeze(currentRoles), nativeCalls: Object.freeze(nativeCalls) });
     }
 
     function defaultTraceItem(trace: ProjectedTrace): TraceItem | undefined {
@@ -362,6 +374,7 @@ window.__ModuleLoader__.load({
 
     function FlowBoard({ trace, onSelect }: { trace: ProjectedTrace; onSelect(key: string): void }) {
       const turn = trace.currentTurn;
+      const calls = trace.nativeCalls;
       return h("section", { className: "odaiCC__flow" },
         h("div", { className: "odaiCC__sectionHead" },
           h("div", null, h("span", { className: "odaiCC__kicker" }, "当前轮次"), h("h3", null, turn?.title ?? "暂无轮次证据")),
@@ -392,6 +405,22 @@ window.__ModuleLoader__.load({
             );
           })),
         ),
+        h("div", { className: "odaiCC__sectionHead" },
+          h("div", null,
+            h("h3", null, "原生子代理调用 · 当前已载入会话证据"),
+            h("p", null, "与上方当前轮命名职责分开显示；调用回执不等于子任务完成，也不证明使用了已配置的职责模型。"),
+          ),
+          h("span", { className: "odaiCC__eventCount" }, `${calls.length} 次调用回执`),
+        ),
+        calls.length ? h("div", { className: "odaiCC__roleStack" }, calls.slice(-5).map((item) => {
+          const data = record(item.raw);
+          return h("button", { key: item.key, type: "button", className: "odaiCC__flowRole", onClick: () => onSelect(item.key) },
+            h("span", { className: "odaiCC__roleNode" },
+              h("strong", null, `${data?.tool} · ${data?.isError ? "调用报错" : "已收到工具回执"}`),
+              h("small", null, `${formatTime(item.time)} · ${item.turn ? `第 ${item.turn} 轮` : "未记录轮次"} · #${item.seq}`),
+            ));
+        })) : h("p", null, "未观测到原生子代理调用回执；这不代表所有协作路径都未使用。"),
+        calls.length > 5 ? h("p", null, "此处显示最近 5 次，其余可在事件时间线查看。") : null,
       );
     }
 
