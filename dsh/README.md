@@ -16,6 +16,12 @@ A planner route identical to the current controller remains inline and does not 
 
 DSH children remain read-only. An explicitly delegated production task may return an unapplied patch with its inspected baseline, target paths, and preserved behavior; the controller reviews, applies, and validates it. This does not grant research, planning, or review responsibilities permission to produce implementation patches. The runtime supplies planning, verification, and craft owners from the selected bundle to planner, reviewer, and frontend respectively, without exposing controller-only reference tools to those scopes. Existing high-impact fail-closed execution gates remain in force.
 
+Native delegation and named responsibilities share one capability policy. The controller receives runtime guidance to use `odai_responsibility_gap` for matching research, planning, review, or frontend tasks; this preserves configured models, dispatch preferences, and evidence gates. Generic native children remain available for other bounded work or explicitly authorized alternatives. This is an explicit responsibility choice, not keyword-based classification of arbitrary prompts.
+
+For exceptional manual planner/frontend children, native `description` prefixes `odai-planner:` and `odai-frontend:` select the configured model and inject the role contract. Researcher/reviewer require managed dispatch: a copied label cannot bypass evidence gates. Local managed identity is bound to the direct parent and one child session and lasts through disposal; the parent-supplied contract is not injected twice. Remote results without verified request-header evidence remain unverified.
+
+Verified local child model receipts are mirrored into parent evidence with child identity. They prove model routing, not task completion or independent acceptance. Initial child work retains the parent activation turn; later resident work without authenticated turn association stays at session scope. The Control Center distinguishes child routes, mismatches, and unverified receipts, preserves sibling failures, and does not let late historical receipts redefine the current turn. Existing historical child logs are not migrated.
+
 ## Install and use
 
 Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; the current `0.2.29` release targets exactly `dsh@0.1.5-rc.1`. Previous SDK versions are retired from current support.

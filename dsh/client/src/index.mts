@@ -131,7 +131,11 @@ window.__ModuleLoader__.load({
       if (type === "odai/responsibility-gap-deferred" || type === "odai/route-protection") return "blocked";
       if (type === "odai/responsibility-returned") return "handback";
       if (type.includes("interruption") || type === "odai/controller-output-interrupted") return "interrupted";
-      if (type === "odai/responsibility-scope-started" || type === "odai/responsibility-scope-claimed" || type === "odai/route-upgrade" || type === "odai/route-applied") return "same-turn";
+      if (type === "odai/route-applied") {
+        if (data?.status !== "applied") return "blocked";
+        return data?.routeMode === "child" ? "child" : data?.routeMode === "inline" ? "direct" : "same-turn";
+      }
+      if (type === "odai/responsibility-scope-started" || type === "odai/responsibility-scope-claimed" || type === "odai/route-upgrade") return "same-turn";
       if (type === "odai/route-result") {
         if (data?.status === "fallback" || data?.status === "failed") return "blocked";
         return data?.action === "delegate" ? "child" : "direct";
@@ -155,7 +159,7 @@ window.__ModuleLoader__.load({
         case "odai/responsibility-scope-stopped": return `${role}职责已停止`;
         case "odai/route-decided": return `${role}路由已决策 · ${text(data?.action, "完成")}`;
         case "odai/route-upgrade": return `${role}已切换同轮职责`;
-        case "odai/route-applied": return `${role}路由已应用`;
+        case "odai/route-applied": return `${role}${data?.routeMode === "child" ? "子代理" : ""}路由${data?.status === "applied" ? "已核实" : data?.status === "mismatch" ? "不匹配" : "未核实"}`;
         case "odai/route-result": return `${role}执行结果 · ${text(data?.status, "完成")}`;
         case "odai/route-fallback": return `${role}路由已回退`;
         case "odai/route-config-missing": return `${role}路由不可用`;
@@ -248,10 +252,16 @@ window.__ModuleLoader__.load({
         const byLatestEvidence = (right.items.at(-1)?.seq ?? -1) - (left.items.at(-1)?.seq ?? -1);
         return byLatestEvidence || (right.turn ?? -1) - (left.turn ?? -1);
       });
-      const currentTurn = groups.find((group) => group.turn !== undefined) ?? groups.at(0);
+      const currentTurn = groups.filter((group) => group.turn !== undefined)
+        .sort((left, right) => (right.turn ?? 0) - (left.turn ?? 0))[0] ?? groups.at(0);
       const currentRoles = Object.fromEntries(ROLES.map((role): [Responsibility, TraceItem | undefined] => {
         const roleItems = currentTurn?.items.filter((item) => item.role === role) ?? [];
-        return [role, roleItems.at(-1)];
+        const childLatest = new Map<string, TraceItem>();
+        for (const item of roleItems) {
+          const childId = record(item.raw)?.childSessionId;
+          if (typeof childId === "string") childLatest.set(childId, item);
+        }
+        return [role, [...childLatest.values()].find((item) => item.state === "blocked") ?? roleItems.at(-1)];
       })) as Record<Responsibility, TraceItem | undefined>;
       const seenCalls = new Set<string>();
       const nativeCalls = items.filter((item) => {

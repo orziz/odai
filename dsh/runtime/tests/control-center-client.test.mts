@@ -111,7 +111,22 @@ test("native calls remain distinct from named roles and preserve errors and unkn
   assert.equal(client.projectTrace([]).nativeCalls.length, 0);
 });
 
-test("timeline orders groups by recent evidence without defaulting to out-of-turn evidence",  async () => {
+test("late child receipts retain roles without hiding a sibling failure or changing current turn", async () => {
+  const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
+  const trace = client.projectTrace([
+    { seq: 1, type: "odai/route-applied", data: { turn: 2, responsibility: "planner", routeMode: "child", status: "mismatch", childSessionId: "bad" } },
+    { seq: 2, type: "odai/route-applied", data: { turn: 2, responsibility: "planner", routeMode: "child", status: "applied", childSessionId: "good" } },
+    { seq: 3, type: "odai/route-applied", data: { turn: 1, responsibility: "reviewer", routeMode: "child", status: "applied", childSessionId: "late" } },
+    { seq: 4, type: "odai/route-applied", data: { responsibility: "frontend", routeMode: "child", status: "unverified", childSessionId: "resident" } },
+  ]);
+  assert.equal(trace.currentTurn?.turn, 2);
+  assert.equal(trace.currentRoles.planner?.state, "blocked");
+  assert.equal(trace.currentRoles.reviewer, undefined);
+  assert.deepEqual(Array.from(trace.items, (item) => item.state), ["blocked", "child", "child", "blocked"]);
+  assert.equal(trace.turns.find((turn) => turn.key === "session")?.items[0].role, "frontend");
+});
+
+test("timeline orders groups by recent evidence without defaulting to out-of-turn evidence",   async () => {
   const client = await loadClient("odai-dsh-agent", ["odai-dsh-agent"]);
   const trace = client.projectTrace([
     { seq: 1, type: "odai/route-decided", data: { turn: 1, step: 1 } },

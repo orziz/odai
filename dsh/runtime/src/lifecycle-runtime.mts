@@ -17,7 +17,7 @@ import { selectSharedOutputPolicyForTurn } from "./output-policy-state.mjs";
 import { prepareSessionOutputControl, previewSessionOutputControl } from "./output-session.mjs";
 import type { SessionOutputSelection } from "./output-session.mjs";
 import {
-  isSubagentSession, outputText, pluginMessage,
+  isSubagentSession, isManagedRoleChild, outputText, pluginMessage,
   renderOutputLimitInterruptionNotice, renderResearchTaskContract, routeFromConfig,
   routeMismatchFor, routedRoleOf, runRoutedRole, sameRequestModelRoute,
 } from "./runtime-support.mjs";
@@ -185,6 +185,9 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       throw new Error(childRoleState?.error
         ? `Odai ${childRole} child route is unavailable: ${childRoleState.detail}`
         : `Odai ${childRole} child route is not configured`);
+    }
+    if (["researcher", "reviewer"].includes(childRole ?? "") && !isManagedRoleChild(agent)) {
+      throw new Error(`ODAI_MANAGED_RESPONSIBILITY_REQUIRED: ${childRole} requires odai_responsibility_gap and managed evidence validation; a native description label cannot bypass it`);
     }
     let scope = responsibilityScopes.get(agent);
     if (scope && !responsibilityScopeOwnsRequest(scope, turn, step)) {

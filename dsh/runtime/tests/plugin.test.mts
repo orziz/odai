@@ -16,6 +16,7 @@ import {
   resolveSessionEvidenceRoot,
 } from "../build/session-evidence.mjs";
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
+import { isManagedRoleChild } from "../build/runtime-support.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
 import { resolveRoutingConfigPath } from "../build/routing-config.mjs";
 import { buildRoleContextPacket } from "../build/routing-context.mjs";
@@ -253,7 +254,10 @@ function fakeContext(extra: FakeContextExtra = {}): FakeContext {
       },
     },
     on(event: string, handler: CallableFunction, options?: UnknownRecord) {
-      captured.handlers.set(event, handler);
+      const previous = captured.handlers.has(event) ? captured.handlers.get(event) : undefined;
+      captured.handlers.set(event, event === "agent/created" && previous
+        ? (...args: unknown[]) => { previous(...args); return handler(...args); }
+        : handler);
       captured.handlerOptions.set(event, options);
     },
     logger() {
@@ -1291,7 +1295,105 @@ test("persisted handbacks join their native task without replacing tool verifica
   assert.equal(buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored, taskMessageId: "handback-task" }).entries.filter((entry) => entry.kinds.includes("planning")).length, 2);
 });
 
-test("only explicit Odai responsibility labels route manual children", async () => {
+test("managed children bind parent and session, avoid duplicate contracts, and keep evidence gates", async () => {
+  const ctx = fakeContext();
+  const route = { provider: "openai", model: "verified-role" };
+  apply(ctx, { skillPath, routing: { roles: { reviewer: route, researcher: route } } });
+  for (const role of ["reviewer", "researcher"] as const) {
+    const parent: DshAgent = { session: { header: { id: `managed-parent-${role}` }, snapshotEvents: () => [], append() {} } };
+    let child: DshAgent | undefined;
+    const outcome = await runRoutedRole({
+      provider: "spawn", decision: { role }, roleContract: "SUPPLIED_OWNER", taskText: "bounded verified evidence", agent: parent,
+      signal: new AbortController().signal, roleRoute: route,
+      subagents: { async start(_provider, request) {
+        const label = String(request.label);
+        const makeChild = (parentId: string, id: string): DshAgent => ({ session: {
+          header: { id, parentSession: parentId, origin: "subagent" },
+          snapshotEvents: () => [{ type: "subagent/descriptor", data: { label } }, { type: "request/header", data: { header: { config: route } } }], append() {},
+        } });
+        assert.equal(isManagedRoleChild(makeChild("other-parent", "forged")), false);
+        assert.equal(isManagedRoleChild(makeChild("", "missing-parent")), false);
+        child = makeChild(String(parent.session.header.id), "managed-child");
+        assert.equal(isManagedRoleChild(child), true);
+        assert.equal(isManagedRoleChild(makeChild(String(parent.session.header.id), "copied-label")), false);
+        const requested = await ctx.captured.handlers.get("agent/request")({ agent: child, turn: 1, step: 1 }, async () => ({ provider: "openai", model: "base" }));
+        assert.equal(requested.model, route.model);
+        const assembly = { sections: [...ctx.captured.sections], tools: [] };
+        const assembled = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent: child }, async () => assembly);
+        assert.equal(assembled.sections.some((section: TestPromptSection) => section.name === "odai:child-responsibility-contract"), false);
+        assert.ok(JSON.stringify(request.prompt).includes("SUPPLIED_OWNER"));
+        return { localAgent: child, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "result" }] }),
+          async dispose() { assert.ok(child && isManagedRoleChild(child)); } };
+      } },
+    });
+    assert.equal(outcome.status, "completed");
+    assert.ok(child);
+    assert.equal(isManagedRoleChild(child), false);
+    await assert.rejects(ctx.captured.handlers.get("agent/request")({ agent: child, turn: 2, step: 1 }, async () => route), /ODAI_MANAGED_RESPONSIBILITY_REQUIRED/);
+  }
+});
+
+test("native child route receipts reach the parent without collisions or late turn reassignment",  async () => {
+  const parentEvents: DshEvent[] = [{ type: "turn/start", seq: 1, data: { turn: 3 } }, { type: "step/start", seq: 2, data: { turn: 3, step: 2 } }];
+  const parent: DshSession = { header: { id: "receipt-parent" }, snapshotEvents: () => parentEvents, append() {} };
+  const ctx = fakeContext({ sessions: { get: (id: string) => id === "receipt-parent" ? parent : undefined } });
+  const configPath = resolve(testDshHome, "native-bridge", "routing.json");
+  const route = { provider: "openai", model: "planner" };
+  apply(ctx, { skillPath, routing: { configPath, roles: { planner: route } } });
+  const children = ["one", "two", "mismatch"].map((id) => {
+    const events: DshEvent[] = [{ type: "turn/start", data: { turn: 1 } }];
+    const agent: DshAgent = { session: { header: { id: `receipt-child-${id}`, origin: "subagent", parentSession: "receipt-parent" }, snapshotEvents: () => events, append() {} } };
+    ctx.captured.handlers.get("agent/created")({ agent });
+    events.push({ type: "subagent/descriptor", data: { label: "odai-planner: decision" } });
+    return agent;
+  });
+  parentEvents.push({ type: "turn/end", seq: 3, data: { turn: 3 } }, { type: "turn/start", seq: 4, data: { turn: 4 } });
+  for (const [index, agent] of children.entries()) {
+    await ctx.captured.handlers.get("agent/request")({ agent, turn: 1, step: 1 }, async () => ({ provider: "openai", model: "base" }));
+    const event = { type: "request/header", data: { turn: 1, step: 1, header: { config: index === 2 ? { ...route, model: "wrong" } : route } } };
+    ctx.captured.handlers.get("session/event")(agent.session, event);
+    ctx.captured.handlers.get("session/event")(agent.session, event);
+  }
+  const evidence = createSessionEvidence({ root: resolveSessionEvidenceRoot(configPath) });
+  let receipts = evidence.events({ session: parent }).filter((event) => event.type === "odai/route-applied");
+  assert.equal(receipts.length, 3);
+  assert.ok(receipts.every((event) => event.data.turn === 3 && event.data.step === 2 && event.data.childTurn === 1));
+  assert.deepEqual(receipts.map((event) => event.data.status).sort(), ["applied", "applied", "mismatch"]);
+  await ctx.captured.handlers.get("agent/request")({ agent: children[0], turn: 2, step: 1 }, async () => route);
+  ctx.captured.handlers.get("session/event")(children[0].session, { type: "request/header", data: { turn: 2, step: 1, header: { config: route } } });
+  receipts = evidence.events({ session: parent }).filter((event) => event.type === "odai/route-applied");
+  assert.equal(receipts.length, 4);
+  assert.equal(receipts[3].data.turn, undefined);
+  assert.equal(receipts[3].data.parentAssociation, "parent-session-only");
+  assert.equal(evidence.events({ session: parent }).some((event) => event.type === "odai/route-result"), false);
+});
+
+test("native labelled children deliver role owners and generic delegation explains configured routing",  async () => {
+  const ctx = fakeContext();
+  apply(ctx, { skillPath });
+  const assemble = ctx.captured.handlers.get("system-prompt/assemble");
+  for (const role of ["researcher", "planner", "reviewer", "frontend", "generic"]) {
+    const events: DshEvent[] = [{ type: "subagent/descriptor", data: { label: role === "generic" ? "patch preparation" : `odai-${role}: task` } }];
+    const agent = { session: { header: { origin: "subagent" }, snapshotEvents: () => events } };
+    const assembly = { tools: [{ name: "read" }], sections: [...ctx.captured.sections,
+      { name: "odai:child-responsibility-contract", text: "stale" }] };
+    const result = await assemble(assembly, { agent }, async () => assembly);
+    const sections = result.sections.filter((section: TestPromptSection) => section.name === "odai:child-responsibility-contract");
+    assert.equal(sections.length, role === "generic" ? 0 : 1);
+    if (role === "generic") continue;
+    assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai/assets/routing-roles/${role}.md`), "utf8").trim()));
+    const owner = { planner: "planning", reviewer: "verification", frontend: "craft" }[role];
+    if (owner) assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai/references/${owner}.md`), "utf8").trim()));
+  }
+  const parent = { session: { header: {}, snapshotEvents: () => [] } };
+  const assembly = { tools: [{ name: "subagent", description: "Native tool" }, { name: "subagent_fork" }], sections: [...ctx.captured.sections] };
+  const result = await assemble(assembly, { agent: parent }, async () => assembly);
+  assert.match(result.sections.find((section: TestPromptSection) => section.name === "odai:native-delegation").text, /matching responsibility.*odai_responsibility_gap/);
+  const again = await assemble(result, { agent: parent }, async () => result);
+  assert.equal(again.sections.filter((section: TestPromptSection) => section.name === "odai:native-delegation").length, 1);
+});
+
+test("only explicit Odai responsibility labels route manual children",  async () => {
   const ctx = fakeContext();
   apply(ctx, {
     skillPath,
@@ -3028,7 +3130,7 @@ test("auto mode honors explicit child dispatch for planner and frontend", async 
       subagents: {
         async start(_provider: string, options: UnknownRecord) {
           starts += 1;
-          assert.equal(options.label, `odai-${fixture.role}`);
+          assert.match(String(options.label), new RegExp(`^odai-${fixture.role}: managed-`));
           const childEvents: DshEvent[] = [{ type: "request/header", data: { header: { config: fixture.route } } }];
           return {
             localAgent: {
@@ -4769,7 +4871,7 @@ test("configured researcher compresses evidence before planner without replacing
   }));
 
   assert.equal(starts.length, 1);
-  assert.equal(starts[0].label, "odai-researcher");
+  assert.match(String(starts[0].label), /^odai-researcher: managed-/u);
   assert.deepEqual(starts[0].agentOptions, { provider: "openai", model: "gpt-5.6-luna", maxTokens: 500 });
   assert.match(blockText(starts[0].prompt[0]), /no fields beyond this exact shape/u);
   assert.match(blockText(starts[0].prompt[0]), /"claim":"\.\.\.","excerpt":"exact complete cited line"/u);

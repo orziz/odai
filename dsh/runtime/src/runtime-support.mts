@@ -9,6 +9,7 @@ import { ODAI_CONTEXTUAL_TOOL_NAMES, ODAI_CORE_TOOL_NAMES } from "./context-acti
 import { ROUTED_ROLES } from "./runtime-config.mjs";
 import type {
   DshAgent,
+  DshSession,
   DshContentBlock,
   DshEvent,
   DshMessage,
@@ -214,6 +215,19 @@ export function routeMismatch(expected?: ModelRoute, actual?: ModelRoute): strin
   return routeMismatchFor(expected, actual, "child");
 }
 
+interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession }
+const managedChildState = globalThis as typeof globalThis & { __odaiManagedChildBindings?: Map<string, ManagedChildBinding> };
+const managedChildLabels = managedChildState.__odaiManagedChildBindings ??= new Map<string, ManagedChildBinding>();
+export function isManagedRoleChild(agent: DshAgent): boolean {
+  const descriptor = sessionEvents(agent.session).findLast((event) => event.type === "subagent/descriptor");
+  const binding = typeof descriptor?.data.label === "string" ? managedChildLabels.get(descriptor.data.label) : undefined;
+  if (!binding || !isSubagentSession(agent) || !agent.session.header.id
+    || agent.session.header.parentSession !== binding.parentSessionId || routedRoleOf(agent) !== binding.role
+    || (binding.childSession && binding.childSession !== agent.session)) return false;
+  binding.childSession ??= agent.session;
+  return true;
+}
+
 export async function runRoutedRole({
   subagents,
   provider,
@@ -235,10 +249,15 @@ export async function runRoutedRole({
 }): Promise<Readonly<RoutedRoleOutcome>> {
   let run: RoutedRun | undefined;
   let outcome: Readonly<RoutedRoleOutcome>;
+  const label = `odai-${decision.role}: managed-${randomUUID()}`;
+  const parentSessionId = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
+    ? agent.session.header.id : undefined;
+  if (typeof parentSessionId === "string" && parentSessionId) managedChildLabels.set(label, { parentSessionId, role: decision.role });
+  try {
   try {
     signal.throwIfAborted();
     run = await subagents.start(provider, {
-      label: `odai-${decision.role}`,
+      label,
       prompt: [{ type: "text", text: renderDelegationPrompt(decision, taskText, roleContract) }],
       parent: agent,
       signal,
@@ -331,6 +350,9 @@ export async function runRoutedRole({
     });
   }
   return outcome;
+  } finally {
+    managedChildLabels.delete(label);
+  }
 }
 
 export function canonicalPrompt(selection: SkillSelection): string {

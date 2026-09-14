@@ -30,6 +30,7 @@ import {
 import {
   RUNTIME_NAME,
   loggerFor,
+  routedRoleOf,
   routeFromConfig,
   runRoutedRole,
   sameRequestModelRoute,
@@ -93,9 +94,43 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     root: resolveSessionEvidenceRoot(config.routing.configPath),
     logger,
   });
+  const childReceiptParents = new WeakMap<DshSession, { parent: DshAgent; parentId: string; turn?: number; step?: number }>();
+  ctx.on("agent/created", ({ agent }: { agent: DshAgent }) => {
+    const parentId = agent.session.header.parentSession;
+    if (typeof parentId !== "string" || !parentId || parentId === agent.session.header.id) return;
+    try {
+      const parent = ctx.sessions?.get(parentId);
+      if (!parent || parent.header.id !== parentId) return;
+      const events = parent.snapshotEvents();
+      const boundary = events.findLast((event) => event.type === "turn/start" || event.type === "turn/end");
+      const turn = boundary?.type === "turn/start" && Number.isSafeInteger(boundary.data.turn) ? Number(boundary.data.turn) : undefined;
+      const stepEvent = turn === undefined ? undefined : events.findLast((event) => event.type === "step/start" && event.data.turn === turn);
+      const step = Number.isSafeInteger(stepEvent?.data.step) ? Number(stepEvent?.data.step) : undefined;
+      childReceiptParents.set(agent.session, { parent: { session: parent }, parentId, turn, step });
+    } catch (error) {
+      logger.warn(`failed to associate child route evidence: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
   const appendEvent = (agent: DshAgent, type: string, data: object) => {
     try {
-      evidence.append(agent, type, data);
+      const receipt = evidence.append(agent, type, data);
+      if (!receipt || !["odai/route-applied", "odai/route-fallback"].includes(type)
+        || receipt.data.routeMode !== "child" || !routedRoleOf(agent)) return;
+      const link = childReceiptParents.get(agent.session);
+      const childSessionId = agent.session.header.id;
+      if (!link || typeof childSessionId !== "string" || !childSessionId
+        || agent.session.header.parentSession !== link.parentId) return;
+      const { turn: childTurn, step: childStep, ...details } = receipt.data;
+      // Later resident work has no authenticated parent-turn binding.
+      const firstNativeTurn = agent.session.snapshotEvents().find((event) => event.type === "turn/start");
+      const firstTurn = Number.isSafeInteger(firstNativeTurn?.data.turn) && childTurn === firstNativeTurn?.data.turn;
+      evidence.append(link.parent, type, {
+        ...details,
+        ...(firstTurn && link.turn !== undefined ? { turn: link.turn } : {}),
+        ...(firstTurn && link.step !== undefined ? { step: link.step } : {}),
+        childSessionId, childReceiptId: receipt.id, childTurn, childStep,
+        parentAssociation: firstTurn ? "child-activation" : "parent-session-only",
+      });
     } catch (error) {
       logger.warn(`failed to record ${type}: ${error instanceof Error ? error.message : String(error)}`);
     }

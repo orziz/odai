@@ -110,7 +110,11 @@ function stableJson(value: unknown): string {
 
 function evidenceId(type: string, data: RuntimeEventData): string {
   let identity: string;
-  if (type === "odai/responsibility-returned" && typeof data.scopeId === "string" && data.scopeId !== "") {
+  if (["odai/route-applied", "odai/route-fallback"].includes(type) && data.routeMode === "child"
+    && typeof data.childSessionId === "string" && data.childSessionId !== ""
+    && typeof data.childReceiptId === "string" && data.childReceiptId !== "") {
+    identity = stableJson(["child-route-receipt", type, data.childSessionId, data.childReceiptId]);
+  } else if (type === "odai/responsibility-returned" && typeof data.scopeId === "string" && data.scopeId !== "") {
     identity = `${type}:${data.scopeId}`;
   } else if (Number.isSafeInteger(data?.turn) && Number.isSafeInteger(data?.step)) {
     identity = `${type}:${data.turn}:${data.step}`;

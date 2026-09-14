@@ -1,6 +1,6 @@
 import { decideRoute, extractLatestUserText } from "./router.mjs";
 import { DEFAULT_CHILD_ALLOWED_TOOLS } from "./governance.mjs";
-import { DSH_CHILD_EXECUTION_PROMPT } from "./role-overlays.mjs";
+import { DSH_CHILD_EXECUTION_PROMPT, DSH_NATIVE_DELEGATION_GUIDANCE, dshRoleContract } from "./role-overlays.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import {
   DEFAULT_OUTPUT_POLICY,
@@ -39,6 +39,8 @@ import {
   canonicalPrompt,
   currentAgentStep,
   isSubagentSession,
+  routedRoleOf,
+  isManagedRoleChild,
   reconcileAdaptiveToolSchemas,
   renderEffectiveRoutingContext,
 } from "./runtime-support.mjs";
@@ -390,10 +392,15 @@ export function createPromptRuntime(deps: PromptDependencies) {
         ...(outputSelection.sessionCeiling ? { sessionCeiling: outputSelection.sessionCeiling } : {}),
       });
     }
+    const childRole = childSession ? routedRoleOf(agent) : undefined;
+    const childRoleSections = childRole && !isManagedRoleChild(agent) ? [{
+      name: "odai:child-responsibility-contract",
+      text: dshRoleContract(childRole, selection.bundle.roleContracts[childRole], selection.bundle.referenceContracts),
+    }] : [];
     return {
       ...reconciledDownstream,
       sections: reconciledDownstream.sections.filter(
-        (section) => section.name !== "odai:child-execution-boundary",
+        (section) => !["odai:child-execution-boundary", "odai:child-responsibility-contract", "odai:native-delegation"].includes(section.name),
       ).map((section) => {
         if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection) };
         if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
@@ -408,7 +415,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       }).concat(childSession ? [{
         name: "odai:child-execution-boundary",
         text: DSH_CHILD_EXECUTION_PROMPT,
-      }] : []),
+      }] : [{ name: "odai:native-delegation", text: DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
     };
   });
 

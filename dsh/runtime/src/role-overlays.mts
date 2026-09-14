@@ -1,3 +1,5 @@
+export const DSH_NATIVE_DELEGATION_GUIDANCE = "Odai responsibility routing: before delegating, match the bounded task against researcher, planner, reviewer, or frontend contracts. For a matching responsibility, request it through odai_responsibility_gap so the shared configured model, dispatch preference, evidence gates, and parent receipts apply; do not silently substitute a generic child. Use this native tool for work outside those contracts, such as explicitly assigned patch preparation, or a user-authorized alternative. A generic child does not prove use of a configured responsibility. Do not dispatch both paths for the same gap.";
+
 export const DSH_CHILD_EXECUTION_PROMPT = `## DSH child execution boundary
 
 Complete only the delegated portion and return it to the controller. DSH child sessions stay read-only: no file writes, shell commands, further delegation, or final delivery of the controller's task.
