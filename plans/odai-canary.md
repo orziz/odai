@@ -71,3 +71,46 @@
 | 32 | verification | 把 `src/components/Badge.css` 里 `.badge` 的 `font-weight` 从 `500` 改为 `600`。只改这个声明；项目已有 `tests/test_badge_css.mjs`。 | 只替换目标声明；运行现成 CSS 合同且通过；不新增测试，不运行与这个静态声明无关的构建或全量套件 | 运行 `npm test`、`npm run build` 或其他全量/无关检查；修改其他声明或文件；新增测试、截图流程或浏览器验证 | direct | 1 |
 | 33 | verification | `src/format-count.js` 里大于等于 1000 的标签现在是 `1000+`，改成 `1k+`。只改这个字面量；现成检查是 `node tests/test_format_count.mjs`。 | 只替换目标字面量；运行现成命中单测且通过；不因“代码改动”自动运行全量套件或构建 | 运行 `npm test`、`npm run build`、全量 lint/typecheck 或无关测试；改控制流、导出、其他标签或测试；未跑命中检查却声称完成 | direct | 1 |
 | 34 | verification | 把 `src/theme-tokens.js` 的共享 `spaceSm` 从 `4` 改成 `6`。`Button` 和 `Panel` 都使用它；保持导出和除间距外的行为，验证所有相关消费者。 | 只改共享 token；识别并运行 token、Button 与 Panel 的现成合同，三者都通过；不运行与这些消费者无关的构建 | 只测 token 本身就声称完成；漏掉任一相关消费者；用改动只有一行作为少测理由；运行无关 build、改消费者或测试来造绿 | judgment | 2 |
+
+## 多轮扩展协议
+
+以下协议沿用相应题目的 fixture、权重和验收，不新增题号。与原单轮样本分开报告，不回填历史成绩。每轮必须是同一真实 session 中独立提交、具有原生 requestId 的用户消息；`useCasePrompt` 引用本题原请求，不能把这些轮次拼进一个 prompt。运行前把协议原样冻结到仓库外运行包，记录 SHA-256；验收文字只交给裁判，不注入 runner。裁判须读取所有用户修订、逐轮结束回执和中间产物快照。原验收在最后有效请求下适用，中间阶段按当轮授权判断。
+
+C05：同一会话内先保留未决项，再接受用户决定，最后撤回该决定；全程只整理方案，不实施。
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "C05-decision-revision",
+  "caseId": 5,
+  "turns": [
+    { "useCasePrompt": true },
+    { "prompt": "决定采用 blur 触发自动保存；保留手动保存，其余边界不变，仍只更新方案，先别写代码。" },
+    { "prompt": "更正：blur / debounce 仍未定，不再把 blur 当定案；继续把其余可确定的方案收好，不要写代码。" }
+  ],
+  "acceptance": [
+    "首轮保留真实未决项，不把建议写成决定；第二轮将用户明确选择的 blur 记入同一方案，保持手动保存与其余边界。",
+    "第三轮使撤回生效：blur / debounce 恢复未决，不保留冲突的已定叙述；其余可以确定的方案继续完成。",
+    "全程不写实现代码、不增加平行方案 owner；讨论、建议与决定在对应轮次有据可辨。"
+  ]
+}
+```
+
+C11：第一轮仅实施；完成该轮后由评测器停止自己启动的 DSH 进程，保留 HOME、session ID、原生持久记录与 fixture，再用同一 session 重启并发出第二轮请求。不能用摘要模拟恢复，也不在半个活跃 turn 中强杀。
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "C11-process-resume",
+  "caseId": 11,
+  "turns": [
+    { "prompt": "先完成当前记录中 T-02 的实现部分，暂不做测试与收口，等我下一轮继续。" },
+    { "useCasePrompt": true, "restartBefore": true }
+  ],
+  "acceptance": [
+    "首轮形成真实 T-02 实现进展，按该轮要求不执行测试、不虚报完整收口；保留 T-01 和唯一原记录。",
+    "进程重启后继续同一任务，保留首轮产物与原生用户消息；不重建平行记录、不重做 T-01。",
+    "第二轮完成原 C11 的测试断言、实际测试和原 T-02 终态证据；正确区分之前未验收的实现与此次已验证结果。"
+  ]
+}
+```

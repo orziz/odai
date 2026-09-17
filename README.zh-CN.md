@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前已发布的 `0.2.29` Plugin 与 Agent 仅面向精确 `dsh@0.1.5-rc.1`，旧 SDK 不再进入当前支持范围；已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
+当前已发布的 `0.2.31` Plugin 与 Agent 仅面向精确 `dsh@0.1.5-rc.1`，旧 SDK 不再进入当前支持范围；已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
@@ -298,11 +298,11 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前开发候选为 DSH `0.2.31` / canonical `0.3.15`，没有新采纳的模型成绩或 token 节省实测。已发布的 `0.3.11` 尚无新模型计分或 token 节省实测。`0.3.10` 冻结快照的 GPT-5.6 Sol/high C19 完整能力交付为 4/4，不作为 `0.3.11` 的成绩。完整输出、范围、保持项与指纹见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。`0.3.9` 冻结快照仍为 18/19、142/144，其 C19 历史 3/4 保留；这些分数及下表的更早结果不迁移到当前源码。
+当前源码候选为 DSH `0.2.32` / canonical `0.3.15`，已发布 DSH 为 `0.2.31`。当前定向评估使用 GPT-6 Astra / xhigh 总控和 GPT-5.6 Terra / xhigh 独立裁判，覆盖实际任务、多轮讨论、会话重启和配置路由。
 
-下表的历史全量与配对结果覆盖 19 条现实委托和其中 13 条配对 A/B。只有 2 题是明确低风险对照；其余只给自然症状、意见或宽泛请求，关键事实藏在项目代码、日志、brief、diff、任务状态和 runbook 中。指纹用于复现精确运行；只要题面、fixture、模型配置、评分语义和该题实际依赖的 skill 行为等价，无关的路由资产或维护改动不会让整张成绩自动失效。GPT-6 Astra、Gemini 3.7 与 DeepSeek V4 Pro（DSH）按跨平台 `odai-canary-isolation/v1` 运行；其余公开行形成于该契约生效前，只保留为历史能力证据。
+当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 
-结果先按真实完成度评为 0-4，再乘预设权重；全量满分 144，A/B 满分 96。direct、judgment、complex、boundary 四层分别报告，严重越权、生产风险和虚报验证另设硬封顶。on 臂满分本身不算价值证明，必须与同模型 off 的结果和成本一起看。
+下表保留历史冻结版本的全量与配对测评，覆盖19条现实委托和其中13条配对A/B。每题先按真实完成度评为0–4，再乘预设权重；全量满分144、A/B满分96。历史分数按各自版本、宿主和采样方法解释，不迁移为当前源码成绩。
 
 | Runner | 全量 on | A/B on | A/B off | 净增 | A/B runner token on / off |
 |---|---:|---:|---:|---:|---:|
@@ -317,8 +317,6 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 | DeepSeek V4 Pro / max（DSH） | **144/144** | **96/96** | 63/96 | **+33** | 2,131,373 / 1,652,030（+29.0%） |
 | DeepSeek V4 Flash | **144/144** | **96/96** | 61/96 | **+35** | 5,341,138 / 3,975,731（+34.3%） |
 
-GPT-6 Astra 的 adopted 能力证据中，19 条 on 均为满分，A/B 比 off 高 10 分，同时多用 41.6% runner token。adopted 行采用 C06、C10 的完整复跑证据，并在 C05 rubric 与用户决定边界对齐后重裁未变的原 runner。十个公开 runner 都取得正配对增益，其中九个 runner 的 on token 更高，只有 Gemini 3.6 更低。因此质量增益和成本变化都依模型与宿主实测，不支持无条件提质或无条件省 token。
-
-当前评测契约见 [`docs/evaluation.md`](docs/evaluation.md)，模型全量 / A/B 的逐题分数、支撑读取和 token 明细见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，可选宿主能力路由的质量、角色 usage、耗时和成本实验见 [`docs/routing-results.md`](docs/routing-results.md)。
+GPT-6 Astra 的历史 adopted 结果使用C06/C10完整复跑及未变C05的规则对齐重裁；该方法不是首跑或稳定性统计。GPT-6 Astra、Gemini 3.7与DeepSeek V4 Pro（DSH）取得逐题隔离回执，其余记录形成于该契约生效前。十个历史runner的配对分差均为正，但九个用了更多token，不能推导无条件提质或节省。原始版本、范围和采样说明保留在测评报告中。
 
 欢迎 star，也欢迎 PR。

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 function record(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
 }
@@ -28,7 +30,7 @@ async function exchangeLaunchToken(url) {
 const remoteMethods = Object.freeze({
   "agentPreset.list": { endpoint: "agentPresets/list", request: () => ({ args: {} }) },
   "session.create": { endpoint: "session/create", request: (payload) => ({ args: { request: payload } }) },
-  "session.prompt": { endpoint: "session/prompt", request: (payload) => ({ args: { request: payload } }) },
+  "session.prompt": { endpoint: "session/prompt", request: (payload) => ({ args: { request: { ...payload, requestId: payload.requestId ?? randomUUID() } } }) },
   "session.selectModel": { endpoint: "session/selectModel", request: (payload) => ({ args: { request: payload } }) },
   "session.history": {
     endpoint: "session/page",
@@ -36,7 +38,8 @@ const remoteMethods = Object.freeze({
       args: {
         request: {
           address: { kind: "session", sessionId: payload.sessionId },
-          throughSeq: Number.MAX_SAFE_INTEGER,
+          throughSeq: payload.throughSeq,
+          ...(payload.beforeSeq === undefined ? {} : { beforeSeq: payload.beforeSeq }),
           ...(payload.maxMessages === undefined ? {} : { maxMessages: payload.maxMessages }),
         },
       },
@@ -77,7 +80,46 @@ async function callRpc(baseUrl, endpoint, payload, cookie) {
   return result.value;
 }
 
+async function sessionCursor(baseUrl, sessionId, cookie) {
+  const url = new URL("/api/remote.mux", baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const streamId = randomUUID();
+  return await new Promise((accept, reject) => {
+    const socket = new WebSocket(url, { headers: { origin: new URL(baseUrl).origin, ...(cookie ? { cookie } : {}) } });
+    let settled = false;
+    const finish = (error, cursor) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel", streamId }));
+      socket.close();
+      if (error) reject(error); else accept(cursor);
+    };
+    const timer = setTimeout(() => finish(new Error("timed out reading DSH session/follow cursor")), 20_000);
+    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "open", streamId,
+      endpoint: "session/follow", payload: { args: { request: { address: { kind: "session", sessionId }, maxMessages: 1 } } } })));
+    socket.addEventListener("message", (event) => {
+      if (settled) return;
+      try {
+        const frame = JSON.parse(String(event.data));
+        if (frame.streamId !== streamId) return;
+        if (frame.type === "error") throw new Error(`session/follow failed: ${JSON.stringify(frame.error)}`);
+        if (frame.type === "end") throw new Error("session/follow ended without a snapshot");
+        if (frame.type !== "item" || frame.value?.type !== "snapshot") return;
+        const { cursor, header } = frame.value;
+        if (!Number.isSafeInteger(cursor) || cursor < -1 || header?.id !== sessionId) throw new Error("session/follow returned an invalid cursor or session identity");
+        finish(undefined, cursor);
+      } catch (error) { finish(error); }
+    });
+    socket.addEventListener("error", () => finish(new Error("DSH session/follow WebSocket failed")));
+    socket.addEventListener("close", () => finish(new Error("DSH session/follow closed without a snapshot")));
+  });
+}
+
 export async function dshWebRpc(baseUrl, method, payload, cookie) {
+  if (method === "session.history" && payload.throughSeq === undefined) {
+    payload = { ...payload, throughSeq: await sessionCursor(baseUrl, payload.sessionId, cookie) };
+  }
   const remote = remoteMethods[method];
   if (!remote) return await callRpc(baseUrl, method, payload, cookie);
   const value = await callRpc(baseUrl, remote.endpoint, remote.request(payload), cookie);

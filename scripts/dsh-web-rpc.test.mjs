@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
+import { attachFollowFixture } from "./fixtures/fake-dsh-follow.mjs";
 
 async function listen(handler) {
   const server = createServer(handler);
@@ -13,6 +14,7 @@ async function listen(handler) {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test server has no TCP port");
   return {
+    server,
     baseUrl: `http://127.0.0.1:${address.port}`,
     close: async () => await new Promise((accept, reject) => server.close((error) => error ? reject(error) : accept())),
   };
@@ -42,6 +44,22 @@ function rpcResponse(request, response, requiredCookie, validate) {
 
 const runningChild = { exitCode: null };
 
+test("DSH Web RPC preserves prompt identity and bounded history cursors", async () => {
+  const seen = [];
+  const server = await listen((request, response) => rpcResponse(request, response, undefined, (call) => {
+    seen.push(call.payload.args.request);
+    return call.method === "session/page" ? { records: [], hasMore: false } : { accepted: true };
+  }));
+  try {
+    await dshWebRpc(server.baseUrl, "session.prompt", { sessionId: "s", requestId: "stable-request", mode: "queue", content: [{ type: "text", text: "next" }] });
+    await dshWebRpc(server.baseUrl, "session.history", { sessionId: "s", throughSeq: 90, beforeSeq: 30, maxMessages: 10 });
+    assert.equal(seen[0].requestId, "stable-request");
+    assert.deepEqual(seen[1], { address: { kind: "session", sessionId: "s" }, throughSeq: 90, beforeSeq: 30, maxMessages: 10 });
+  } finally {
+    await server.close();
+  }
+});
+
 test("DSH Web RPC exchanges the rc.1 launch token and uses Remote endpoints", async () => {
   const authCookie = "dsh-auth-test=signed";
   const csrfCookie = "dsh-csrf-test=bound";
@@ -68,11 +86,14 @@ test("DSH Web RPC exchanges the rc.1 launch token and uses Remote endpoints", as
         return { sessionId: "session-current", agentPreset: "odai" };
       }
       if (call.method === "session/selectModel") return { selected: call.payload.args.request };
-      if (call.method === "session/prompt") return { accepted: true };
+      if (call.method === "session/prompt") {
+        assert.match(call.payload.args.request.requestId, /^[0-9a-f-]{36}$/u);
+        return { accepted: true };
+      }
       if (call.method === "custom.ping") return { pong: true };
       if (call.method === "session/page") {
         assert.deepEqual(call.payload.args.request.address, { kind: "session", sessionId: "session-current" });
-        assert.equal(call.payload.args.request.throughSeq, Number.MAX_SAFE_INTEGER);
+        assert.equal(call.payload.args.request.throughSeq, 1);
         if (call.payload.args.request.maxMessages === 0) return { records: null, hasMore: false };
         return { records: [{ type: "event", event: { type: "turn/end", seq: 1 } }], hasMore: false };
       }
@@ -80,6 +101,11 @@ test("DSH Web RPC exchanges the rc.1 launch token and uses Remote endpoints", as
     });
   });
   baseUrl = server.baseUrl;
+  let snapshotId = "session-current";
+  attachFollowFixture(server.server, cookieHeader, (request) => {
+    assert.deepEqual(request, { address: { kind: "session", sessionId: "session-current" }, maxMessages: 1 });
+    return { type: "snapshot", header: { id: snapshotId }, cursor: 1, records: [], hasMore: false };
+  });
   try {
     const output = () => `dsh web: ${baseUrl}/?token=launch-secret\n`;
     const exchanged = await waitForDshWeb(baseUrl, runningChild, output);
@@ -115,6 +141,8 @@ test("DSH Web RPC exchanges the rc.1 launch token and uses Remote endpoints", as
       dshWebRpc(baseUrl, "session.history", { sessionId: "session-current", maxMessages: 0 }, exchanged),
       /session\/page response is malformed/u,
     );
+    snapshotId = "another-session";
+    await assert.rejects(dshWebRpc(baseUrl, "session.history", { sessionId: "session-current" }, exchanged), /invalid cursor or session identity/u);
   } finally {
     await server.close();
   }

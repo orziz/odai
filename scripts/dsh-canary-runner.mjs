@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   copyFile,
   cp,
@@ -14,13 +16,15 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { createServer } from "node:net";
-import { delimiter, dirname, extname, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, relative, resolve } from "node:path";
 import { emitCanaryIsolation } from "./canary-isolation.mjs";
 import { observeProviderOutputCeiling } from "./dsh-output-budget-observation.mjs";
 import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
 
 const args = parseArgs(process.argv.slice(2));
-emitCanaryIsolation("dsh");
+emitCanaryIsolation("dsh", args.role);
+const routingSnapshot = args.routingConfigFile ? await loadRoutingSnapshot(args) : undefined;
+args.conversationProtocol = args.turnsFile ? await loadConversationProtocol(args.turnsFile) : undefined;
 const sourceHome = resolve(args.sourceHome);
 const sourceSettings = resolve(sourceHome, "settings.yaml");
 const sourceCredentials = resolve(sourceHome, ".credentials.yaml");
@@ -44,8 +48,8 @@ try {
     provider: args.provider,
     model: args.model,
     reasoningEffort: args.reasoningEffort,
-  });
-  if (args.surface === "agent") settings = selectAgentPreset(settings, args.agentPreset);
+  }, !args.profileHome);
+  if (args.surface === "agent" || !args.profileHome) settings = selectAgentPreset(settings, args.surface === "agent" ? args.agentPreset : "standard");
   await writeFile(resolve(dshHome, "settings.yaml"), settings, "utf8");
   await copyFile(sourceCredentials, resolve(dshHome, ".credentials.yaml"));
 
@@ -56,6 +60,9 @@ try {
   }
   const outputRoot = resolve(dshHome, "odai");
   await mkdir(outputRoot, { recursive: true });
+  if (routingSnapshot) {
+    await writeFile(resolve(outputRoot, "routing.json"), `${JSON.stringify(routingSnapshot, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  }
   await writeFile(resolve(outputRoot, "output.json"), `${JSON.stringify({
     schemaVersion: 1,
     policy: {
@@ -70,7 +77,15 @@ try {
     `    root: ${JSON.stringify(sessionRoot)}`,
     "    compression: none",
     "    packChunks: false",
+    "- id: session-title-llm",
+    "  disabled: true",
   ];
+  if (args.role === "judge") patch.push(
+    "- id: approval", "  config:", "    policy: never",
+    "- id: permission", "  config:", "    defaultPreset: read-only",
+    "    presets:", "      read-only:", "        sandbox: read-only", "        approval: never",
+    "        name: Canary read-only judge", "        description: Read evidence without file writes or approval escalation.",
+  );
   if (args.surface === "plugin") {
     patch.push(
       "- id: odai-governance",
@@ -84,6 +99,18 @@ try {
       `          model: ${JSON.stringify(args.plannerModel)}`,
       `          reasoningEffort: ${JSON.stringify(args.plannerReasoningEffort)}`,
       `          maxTokens: ${args.plannerMaxTokens}`,
+    );
+  } else if (args.surface === "source-plugin" && routingSnapshot) {
+    patch.push(
+      "- insert:",
+      "    - id: odai-governance-canary-source",
+      `      name: ${JSON.stringify(resolve(args.runtimePluginPath))}`,
+      "      config:",
+      `        skillPath: ${JSON.stringify(resolve(args.runtimeSkillPath))}`,
+      "        routing:",
+      `          mode: ${args.routingMode}`,
+      "          provider: spawn",
+      `          configPath: ${JSON.stringify(resolve(outputRoot, "routing.json"))}`,
     );
   } else if (args.surface === "source-plugin") {
     const roles = [
@@ -130,7 +157,8 @@ try {
   patch.push("");
   await writeFile(patchPath, patch.join("\n"), "utf8");
 
-  let prompt = (await readFile(resolve(args.promptFile), "utf8")).trim();
+  let prompt = (args.promptFile === "-" ? await readStdin() : await readFile(resolve(args.promptFile), "utf8")).trim();
+  if (args.schemaFile) prompt += `\n\nRequired JSON response schema:\n${JSON.stringify(JSON.parse(await readFile(resolve(args.schemaFile), "utf8")), null, 2)}`;
   if (args.controllerEmbedsSkill) {
     const treatment = /^Use the odai skill at `[^`]+` to handle the user request below\. Read that SKILL\.md completely before taking task actions\./u;
     if (!treatment.test(prompt)) throw new Error("embedded-skill runner prompt did not contain the expected treatment preface");
@@ -155,7 +183,10 @@ try {
       code: 0,
       signal: null,
       stdout: JSON.stringify({
-        settings: await readFile(resolve(dshHome, "settings.yaml"), "utf8"),
+        settings: stringifyYaml(Object.fromEntries(Object.entries(parseYaml(settings)).filter(([key]) => ["agent-default-model", "agent-presets"].includes(key)))),
+        settingsKeys: Object.keys(parseYaml(settings)),
+        settingsPolicy: args.profileHome ? "explicit-profile" : "connection-only",
+        conversationProtocol: args.conversationProtocol?.sha256 ?? null,
         patch: await readFile(patchPath, "utf8"),
         hasAgent: existsSync(agentCompositionPath),
         agentComposition: existsSync(agentCompositionPath) ? await readFile(agentCompositionPath, "utf8") : "",
@@ -163,10 +194,12 @@ try {
         outputPolicy: existsSync(resolve(dshHome, "odai", "output.json"))
           ? JSON.parse(await readFile(resolve(dshHome, "odai", "output.json"), "utf8"))
           : null,
+        routingConfig: existsSync(resolve(outputRoot, "routing.json"))
+          ? JSON.parse(await readFile(resolve(outputRoot, "routing.json"), "utf8")) : null,
       }),
       stderr: "",
     }
-    : args.surface === "agent"
+    : (args.surface === "agent" || args.transport === "web")
       ? await runWebAgent(args.dshBin, patchPath, prompt, args, processOptions)
       : await runProcess(args.dshBin, [
         "--profile",
@@ -178,8 +211,8 @@ try {
 
   const sessions = await readSessions(sessionRoot, evidenceRoot);
   const summaries = sessions.map(summarizeSession);
-  const controller = summaries.find((item) => item.origin !== "subagent" && !item.parentSession)
-    ?? summaries[0];
+  const controller = run.sessionId ? summaries.find((item) => item.id === run.sessionId)
+    : summaries.find((item) => item.origin !== "subagent" && !item.parentSession) ?? summaries[0];
   const finalText = controller?.assistantText || run.stdout.trim();
   await writeFile(resolve(args.lastMessage), `${finalText}\n`, "utf8");
 
@@ -209,6 +242,9 @@ try {
   );
   const expectsOutputPolicy = args.outputConcise || args.controllerMaxTokens !== undefined;
   if (!args.preflight) {
+    if (!controllerRoutes.some((route) => route.provider === args.provider && route.model === args.model && route.reasoningEffort === args.reasoningEffort)) {
+      throw new Error("controller request evidence does not verify the selected provider/model/reasoning effort");
+    }
     if (controllerRoutes.length > 0) {
       const observedCount = controller?.outputPolicyPromptCount ?? 0;
       if (expectsOutputPolicy && observedCount !== controllerRoutes.length) {
@@ -308,8 +344,11 @@ try {
   process.stdout.write(`[dsh-runner requested_reasoning_effort ${args.reasoningEffort}]\n`);
   process.stdout.write(`[dsh-runner surface ${args.surface}]\n`);
   process.stdout.write(`[dsh-runner routing_mode ${args.surface === "plain" ? "unmanaged" : args.routingMode}]\n`);
-  process.stdout.write(`[dsh-runner agent_preset ${args.surface === "agent" ? args.agentPreset : "none"}]\n`);
-  process.stdout.write(`[dsh-runner permission_mode ${args.surface === "agent" ? "danger-full-access" : "inherited"}]\n`);
+  const webTransport = args.surface === "agent" || args.transport === "web";
+  process.stdout.write(`[dsh-runner transport ${webTransport ? "web" : "headless"}]\n`);
+  process.stdout.write(`[dsh-runner agent_preset ${args.surface === "agent" ? args.agentPreset : "standard"}]\n`);
+  process.stdout.write(`[dsh-runner permission_mode ${args.role === "judge" ? "read-only" : webTransport ? "danger-full-access" : "inherited"}]\n`);
+  if (args.conversationProtocol) process.stdout.write(`[dsh-runner conversation_protocol ${args.conversationProtocol.sha256}]\n`);
   process.stdout.write(`[dsh-runner actual_providers ${actualProviders.join(",") || "unknown"}]\n`);
   process.stdout.write(`[dsh-runner actual_models ${actualModels.join(",") || "unknown"}]\n`);
   process.stdout.write(`[dsh-runner actual_reasoning_efforts ${actualEfforts.join(",") || "unknown"}]\n`);
@@ -326,6 +365,23 @@ try {
   if (run.code !== 0) {
     throw new Error(`dsh exited with code ${run.code}${run.signal ? ` (${run.signal})` : ""}`);
   }
+} catch (error) {
+  // Keep durable evidence even when a turn times out before normal observation.
+  // Failure remains a failure; do not synthesize a final answer or success receipt.
+  try {
+    const sessions = await readSessions(sessionRoot, evidenceRoot);
+    if (sessions.length) {
+      const records = sessions.flatMap((session) => [
+        ...session.records, ...session.events.slice(session.records.length - 1),
+      ]);
+      const path = `${resolve(args.lastMessage)}.events.jsonl`;
+      await writeFile(path, records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
+      process.stdout.write(`[dsh-runner failure_evidence ${JSON.stringify({ path, sessions: sessions.length })}]\n`);
+    }
+  } catch (evidenceError) {
+    process.stderr.write(`Could not retain failed-session evidence: ${evidenceError.message}\n`);
+  }
+  throw error;
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }
@@ -336,14 +392,19 @@ function parseArgs(argv) {
     cwd: process.cwd(),
     lastMessage: "",
     sourceHome: resolve(process.env.ODAI_CANARY_SOURCE_HOME || homedir(), ".dsh"),
+    role: "runner",
+    schemaFile: "",
     dshBin: "dsh",
     provider: "deepseek-official",
     model: "deepseek-v4-pro",
     reasoningEffort: "max",
     profileHome: "",
     surface: "",
+    transport: "auto",
+    turnsFile: "",
     runtimePluginPath: "",
     runtimeSkillPath: "",
+    routingConfigFile: "",
     routingMode: "off",
     plannerProvider: "openai",
     plannerModel: "gpt-5.6-sol",
@@ -366,8 +427,10 @@ function parseArgs(argv) {
     preflight: false,
     timeoutMs: 900_000,
   };
+  const legacyRoutingFlags = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (/^--(?:planner|researcher|frontend)-/u.test(arg) || arg === "--expect-researcher") legacyRoutingFlags.push(arg);
     if (arg === "--prompt-file") parsed.promptFile = argv[++index];
     else if (arg === "--cwd") parsed.cwd = argv[++index];
     else if (arg === "--last-message") parsed.lastMessage = argv[++index];
@@ -377,9 +440,19 @@ function parseArgs(argv) {
     else if (arg === "--model") parsed.model = argv[++index];
     else if (arg === "--reasoning-effort") parsed.reasoningEffort = argv[++index];
     else if (arg === "--profile-home") parsed.profileHome = argv[++index];
+    else if (arg === "--role") parsed.role = argv[++index];
+    else if (arg === "--schema-file") parsed.schemaFile = argv[++index];
     else if (arg === "--surface") parsed.surface = argv[++index];
+    else if (arg === "--transport") parsed.transport = argv[++index];
+    else if (arg === "--turns-file") parsed.turnsFile = argv[++index];
     else if (arg === "--runtime-plugin-path") parsed.runtimePluginPath = argv[++index];
     else if (arg === "--runtime-skill-path") parsed.runtimeSkillPath = argv[++index];
+    else if (arg === "--routing-config-file") {
+      if (parsed.routingConfigFile) throw new Error("--routing-config-file may only be supplied once");
+      const value = argv[++index];
+      if (typeof value !== "string" || value.trim() === "" || value.startsWith("--")) throw new Error("--routing-config-file requires a JSON file path");
+      parsed.routingConfigFile = value.trim();
+    }
     else if (arg === "--routing-mode") parsed.routingMode = argv[++index];
     else if (arg === "--planner-provider") parsed.plannerProvider = argv[++index];
     else if (arg === "--planner-model") parsed.plannerModel = argv[++index];
@@ -409,10 +482,26 @@ function parseArgs(argv) {
     }
     parsed[field] = parsed[field].trim();
   }
+  if (!["auto", "web", "headless"].includes(parsed.transport)) throw new Error("transport must be auto, web, or headless");
+  if (typeof parsed.turnsFile !== "string" || parsed.turnsFile.startsWith("--")) throw new Error("--turns-file requires a protocol file");
+  if (parsed.turnsFile) {
+    if (parsed.transport === "headless") throw new Error("multi-turn protocols require Web transport");
+    parsed.transport = "web";
+  }
   parsed.profileHome = parsed.profileHome.trim();
   parsed.runtimePluginPath = parsed.runtimePluginPath.trim();
   parsed.runtimeSkillPath = parsed.runtimeSkillPath.trim();
   parsed.surface = parsed.surface.trim() || (parsed.profileHome ? "plugin" : "plain");
+  if (!["runner", "judge"].includes(parsed.role)) throw new Error("role must be runner or judge");
+  if (typeof parsed.schemaFile !== "string" || parsed.schemaFile.startsWith("--")) throw new Error("--schema-file requires a JSON schema path");
+  if (parsed.role === "judge") {
+    if (parsed.surface !== "plain" || parsed.profileHome || parsed.turnsFile || parsed.routingConfigFile
+      || process.env.ODAI_CANARY_SKILL_MODE !== "off" || parsed.transport === "headless" || !parsed.schemaFile) {
+      throw new Error("judge requires isolated skill-off plain Web surface and a response schema");
+    }
+    parsed.transport = "web";
+  } else if (parsed.schemaFile) throw new Error("--schema-file is reserved for the judge role");
+  if (parsed.surface === "plugin" && parsed.transport === "web") throw new Error("legacy plugin profile is headless-only; use source-plugin for Web");
   if (!["plain", "plugin", "agent", "source-plugin"].includes(parsed.surface)) {
     throw new Error("surface must be plain, plugin, agent, or source-plugin");
   }
@@ -434,6 +523,10 @@ function parseArgs(argv) {
   }
   if (!["off", "observe", "auto", "execute"].includes(parsed.routingMode)) {
     throw new Error("routing mode must be off, observe, auto, or execute");
+  }
+  if (parsed.routingConfigFile) {
+    if (parsed.surface !== "source-plugin") throw new Error("--routing-config-file requires --surface source-plugin");
+    if (legacyRoutingFlags.length) throw new Error(`--routing-config-file cannot be mixed with legacy routing flags: ${legacyRoutingFlags.join(", ")}`);
   }
   for (const field of ["plannerProvider", "plannerModel", "plannerReasoningEffort", "agentPreset"]) {
     if (typeof parsed[field] !== "string" || parsed[field].trim() === "") throw new Error(`${field} is required`);
@@ -514,7 +607,50 @@ function parseArgs(argv) {
   return parsed;
 }
 
-function selectController(settings, selection) {
+async function readStdin() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function loadConversationProtocol(path) {
+  const raw = await readFile(resolve(path), "utf8");
+  const protocol = JSON.parse(raw);
+  if (protocol?.schemaVersion !== 1 || typeof protocol.name !== "string" || !protocol.name.trim()
+    || !Number.isSafeInteger(protocol.caseId) || protocol.caseId < 1
+    || !Array.isArray(protocol.turns) || protocol.turns.length < 2 || protocol.turns.length > 10
+    || !Array.isArray(protocol.acceptance) || !protocol.acceptance.length
+    || protocol.acceptance.some((item) => typeof item !== "string" || !item.trim())) throw new Error("invalid conversation protocol");
+  for (const [index, turn] of protocol.turns.entries()) {
+    if (!turn || typeof turn !== "object" || Array.isArray(turn)
+      || Object.keys(turn).some((key) => !["prompt", "useCasePrompt", "restartBefore"].includes(key))
+      || (turn.useCasePrompt !== undefined && turn.useCasePrompt !== true)
+      || (turn.restartBefore !== undefined && typeof turn.restartBefore !== "boolean")
+      || (turn.restartBefore && index === 0)
+      || (turn.useCasePrompt === true ? turn.prompt !== undefined : typeof turn.prompt !== "string" || !turn.prompt.trim())) {
+      throw new Error(`invalid conversation protocol turn ${index + 1}`);
+    }
+  }
+  return { ...protocol, sha256: createHash("sha256").update(raw).digest("hex") };
+}
+
+async function loadRoutingSnapshot(options) {
+  const configPath = resolve(options.routingConfigFile);
+  if (!existsSync(configPath)) throw new Error(`routing config file not found: ${configPath}`);
+  const { pathToFileURL } = await import("node:url");
+  const runtimeModule = resolve(dirname(resolve(options.runtimePluginPath)), "routing-config.mjs");
+  const { readRoutingStore } = await import(pathToFileURL(runtimeModule).href);
+  const store = readRoutingStore(configPath);
+  return { schemaVersion: 2, roles: store.roles, dispatch: store.dispatch };
+}
+
+function selectController(settings, selection, connectionOnly = false) {
+  if (connectionOnly) {
+    const source = parseYaml(settings);
+    if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("settings.yaml must be a mapping");
+    const connection = Object.fromEntries(Object.entries(source).filter(([key]) => key.startsWith("llm-")));
+    return stringifyYaml({ ...connection, "agent-default-model": selection });
+  }
   const lines = settings.split(/\r?\n/u);
   const start = lines.findIndex((line) => line === "agent-default-model:");
   if (start < 0) throw new Error("settings.yaml has no agent-default-model section");
@@ -565,7 +701,7 @@ function configureAgentRouting(composition, options) {
 }
 
 function locateCommand(command, env) {
-  if (existsSync(command)) return resolve(command);
+  if (existsSync(command) && statSync(command).isFile()) return resolve(command);
   if (command.includes("/") || command.includes("\\")) return command;
   const extensions = process.platform === "win32"
     ? (extname(command) ? [""] : (env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";").map((value) => value.toLowerCase()))
@@ -573,7 +709,7 @@ function locateCommand(command, env) {
   for (const directory of String(env.PATH || "").split(delimiter).filter(Boolean)) {
     for (const extension of extensions) {
       const candidate = resolve(directory.replace(/^"|"$/gu, ""), `${command}${extension}`);
-      if (existsSync(candidate)) return candidate;
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
     }
   }
   return command;
@@ -614,68 +750,85 @@ function spawnDsh(command, args, options) {
 }
 
 async function runWebAgent(command, patchPath, prompt, args, options) {
-  const port = await freePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const child = spawnDsh(command, [
-    "--profile", "web",
-    "--patch", patchPath,
-    "--no-open",
-    "--host", "127.0.0.1",
-    "--port", String(port),
-  ], {
-    cwd: options.cwd,
-    env: {
-      ...options.env,
-      DSH_PERMISSION_MODE: "danger-full-access",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
-  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
   const deadline = Date.now() + options.timeoutMs;
-
-  try {
-    const browserCookie = await waitForDshWeb(baseUrl, child, () => output, Math.max(1, deadline - Date.now()));
-    const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
-    if (!roster.presets?.some((preset) => preset.id === args.agentPreset)) {
-      throw new Error(`Agent preset ${args.agentPreset} was not discovered`);
-    }
-    const created = await dshWebRpc(baseUrl, "session.create", {
+  const presetId = args.surface === "agent" ? args.agentPreset : "standard";
+  const protocol = args.conversationProtocol;
+  const turns = protocol?.turns ?? [{ useCasePrompt: true }];
+  const report = { schemaVersion: 1, protocol: protocol ?? null, completed: false, turns: [] };
+  const snapshots = protocol ? await mkdtemp(resolve(dirname(options.cwd), `${basename(options.cwd)}-conversation-`)) : undefined;
+  let child, baseUrl, browserCookie, sessionId;
+  let output = "", finalText = "", reason;
+  async function boot() {
+    const port = await freePort();
+    baseUrl = `http://127.0.0.1:${port}`;
+    child = spawnDsh(command, ["--profile", "web", "--patch", patchPath, "--no-open", "--host", "127.0.0.1", "--port", String(port)], {
       cwd: options.cwd,
-      agentPreset: args.agentPreset,
+      env: { ...options.env, DSH_PERMISSION_MODE: args.role === "judge" ? "read-only" : "danger-full-access" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let bootOutput = "";
+    const receive = (chunk) => { const text = chunk.toString(); output += text; bootOutput += text; };
+    child.stdout.on("data", receive);
+    child.stderr.on("data", receive);
+    browserCookie = await waitForDshWeb(baseUrl, child, () => bootOutput, Math.max(1, deadline - Date.now()));
+    const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
+    if (!roster.presets?.some((preset) => preset.id === presetId)) throw new Error(`Agent preset ${presetId} was not discovered`);
+    const created = await dshWebRpc(baseUrl, "session.create", {
+      cwd: options.cwd, agentPreset: presetId, ...(sessionId ? { sessionId } : {}),
     }, browserCookie);
-    if (created.agentPreset !== args.agentPreset) {
-      throw new Error(`session mounted ${created.agentPreset ?? "<none>"}, expected ${args.agentPreset}`);
+    if (created.agentPreset !== presetId || (sessionId && created.sessionId !== sessionId)) throw new Error("session adoption changed its identity or preset");
+    sessionId = created.sessionId;
+    await dshWebRpc(baseUrl, "session.selectModel", { sessionId, provider: args.provider, model: args.model, reasoningEffort: args.reasoningEffort }, browserCookie);
+  }
+  try {
+    for (const [index, turn] of turns.entries()) {
+      if (!child || turn.restartBefore) {
+        if (child) await stopProcess(child);
+        await boot();
+      }
+      const before = await readCompleteHistory(baseUrl, sessionId, browserCookie);
+      for (const prior of report.turns) {
+        if (!before.some((event) => event.type === "user/message" && event.data?.source?.rpcId === prior.requestId && event.seq === prior.messageSeq)
+          || !before.some((event) => event.type === "turn/end" && event.seq === prior.endSeq && event.data?.turn === prior.turn)) {
+          throw new Error("session resume lost the preceding durable turn");
+        }
+      }
+      const afterSeq = before.at(-1)?.seq ?? -1;
+      const requestId = randomUUID();
+      const text = turn.useCasePrompt ? prompt : turn.prompt;
+      const started = Date.now();
+      await dshWebRpc(baseUrl, "session.prompt", { requestId, sessionId, mode: "queue", content: [{ type: "text", text }] }, browserCookie);
+      const settled = await waitForTurnEnd(baseUrl, sessionId, child, () => output, deadline, browserCookie, afterSeq, requestId);
+      const { events, message, start, end } = settled;
+      const acceptedText = message.data?.content?.filter((block) => block.type === "text").map((block) => block.text).join("");
+      if (acceptedText !== text) throw new Error("durable user prompt differs from the submitted protocol turn");
+      finalText = [...events].reverse().find((event) => event.type === "assistant/message" && event.seq > message.seq && event.seq < end.seq)
+        ?.data?.message?.content?.filter((block) => block.type === "text").map((block) => block.text).join("") ?? "";
+      reason = end.data?.reason;
+      const workspaceSnapshot = snapshots ? resolve(snapshots, `turn-${index + 1}`) : undefined;
+      const eventsFile = snapshots ? resolve(snapshots, `turn-${index + 1}.events.jsonl`) : undefined;
+      if (eventsFile) await writeFile(eventsFile, events.filter((event) => event.seq <= end.seq).map((event) => JSON.stringify(event)).join("\n") + "\n", "utf8");
+      if (workspaceSnapshot) {
+        const generated = new Set([".git", "node_modules", "prompt.md", "runner.log", "runner.compact.log", "judge.log", "judge.json", "diff.patch", "status.txt", "last_message.txt", "last_message.txt.turns.json", "routing.json", "planner-plan.txt"]);
+        await cp(options.cwd, workspaceSnapshot, { recursive: true, filter: (path) => !generated.has(relative(options.cwd, path).split(/[\\/]/u)[0]) });
+      }
+      report.turns.push({ requestId, sessionId, turn: start.data.turn, messageSeq: message.seq,
+        messageId: message.data?.id ?? null, startSeq: start.seq, endSeq: end.seq,
+        prompt: acceptedText, assistant: finalText, reason, restarted: turn.restartBefore === true,
+        durationMs: Date.now() - started, ...(workspaceSnapshot ? { workspaceSnapshot, eventsFile } : {}) });
+      if (reason?.kind !== "completed") break;
     }
-    await dshWebRpc(baseUrl, "session.selectModel", {
-      sessionId: created.sessionId,
-      provider: args.provider,
-      model: args.model,
-      reasoningEffort: args.reasoningEffort,
-    }, browserCookie);
-    await dshWebRpc(baseUrl, "session.prompt", {
-      sessionId: created.sessionId,
-      mode: "queue",
-      content: [{ type: "text", text: prompt }],
-    }, browserCookie);
-    const events = await waitForTurnEnd(baseUrl, created.sessionId, child, () => output, deadline, browserCookie);
-    const finalText = [...events].reverse().find((event) => event.type === "assistant/message")
-      ?.data?.message?.content
-      ?.filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("") ?? "";
-    const reason = [...events].reverse().find((event) => event.type === "turn/end")?.data?.reason;
-    return {
-      code: reason?.kind === "completed" ? 0 : 1,
-      signal: null,
-      stdout: finalText,
-      stderr: reason?.kind === "error"
-        ? `${output}\ndsh: ${reason.error?.code ?? "error"}: ${reason.error?.message ?? "unknown error"}`
-        : output,
-    };
+    report.completed = report.turns.length === turns.length && reason?.kind === "completed";
+    const history = await readCompleteHistory(baseUrl, sessionId, browserCookie);
+    await writeFile(`${resolve(args.lastMessage)}.events.jsonl`, history.map((event) => JSON.stringify(event)).join("\n") + "\n", "utf8");
+    return { code: report.completed ? 0 : 1, signal: null, stdout: finalText, sessionId,
+      stderr: reason?.kind === "error" ? `${output}\ndsh: ${reason.error?.code ?? "error"}: ${reason.error?.message ?? "unknown error"}` : output };
   } finally {
-    await stopProcess(child);
+    try {
+      await writeFile(`${resolve(args.lastMessage)}.turns.json`, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    } finally {
+      if (child) await stopProcess(child);
+    }
   }
 }
 
@@ -691,19 +844,50 @@ async function freePort() {
   });
 }
 
-async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, browserCookie) {
+async function readCompleteHistory(baseUrl, sessionId, browserCookie) {
+  const found = new Map();
+  let beforeSeq, throughSeq;
+  for (;;) {
+    const page = await dshWebRpc(baseUrl, "session.history", { sessionId, maxMessages: 2_000, beforeSeq, throughSeq }, browserCookie);
+    const events = page.events.map((entry) => entry.event);
+    if (events.some((event) => !Number.isSafeInteger(event.seq) || event.seq < 0)) throw new Error("history event has no durable sequence");
+    for (const event of events) found.set(event.seq, event);
+    if (!page.hasMore) break;
+    const earliest = Math.min(...events.map((event) => event.seq));
+    if (!Number.isSafeInteger(earliest) || (beforeSeq !== undefined && earliest >= beforeSeq)) throw new Error("history pagination made no progress");
+    throughSeq ??= Math.max(...events.map((event) => event.seq));
+    beforeSeq = earliest;
+  }
+  return [...found.values()].sort((a, b) => a.seq - b.seq);
+}
+
+async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, browserCookie, afterSeq, requestId) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`dsh web exited during the turn (${child.exitCode})\n${output()}`);
-    const history = await dshWebRpc(baseUrl, "session.history", { sessionId, maxMessages: 2_000 }, browserCookie);
-    const events = history.events.map((entry) => entry.event);
-    if (events.some((event) => event.type === "turn/end")) return events;
+    const history = await readCompleteHistory(baseUrl, sessionId, browserCookie);
+    const message = history.find((event) => event.seq > afterSeq && event.type === "user/message" && event.data?.source?.kind === "user" && event.data.source.rpcId === requestId);
+    if (message) {
+      // Pinned DSH persists user/message inside its claimed step, not at RPC admission.
+      const preceding = history.filter((event) => event.seq < message.seq).reverse();
+      const step = preceding.find((event) => ["step/start", "step/end", "turn/start", "turn/end"].includes(event.type));
+      const start = preceding.find((event) => ["turn/start", "turn/end"].includes(event.type));
+      const turn = start?.data?.turn;
+      if (step?.type !== "step/start" || step.seq <= afterSeq || start?.type !== "turn/start"
+        || !Number.isSafeInteger(turn) || step.data?.turn !== turn || !Number.isSafeInteger(step.data?.step)) {
+        throw new Error("accepted user message is outside an open native claimed step");
+      }
+      const stepEnd = history.find((event) => event.type === "step/end" && event.data?.turn === turn && event.data?.step === step.data.step && event.seq > message.seq);
+      const end = history.find((event) => event.type === "turn/end" && event.data?.turn === turn && event.seq > message.seq);
+      if (end && (!stepEnd || stepEnd.seq >= end.seq)) throw new Error("native turn ended without closing the accepted message step");
+      if (end) return { events: history.filter((event) => event.seq >= start.seq && event.seq <= end.seq), message, start, end };
+    }
     await delay(100);
   }
-  throw new Error(`timed out waiting for Agent turn\n${output()}`);
+  throw new Error(`timed out waiting for accepted request ${requestId}\n${output()}`);
 }
 
 async function stopProcess(child) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   child.kill("SIGTERM");
   await new Promise((accept) => {
     const timeout = setTimeout(() => {
@@ -758,7 +942,7 @@ async function readSessions(root, evidenceRoot) {
   const evidence = await readEvidence(evidenceRoot);
   const files = await listFiles(root);
   const sessions = [];
-  for (const file of files.filter((candidate) => candidate.endsWith("session.jsonl"))) {
+  for (const file of files.filter((candidate) => /^session(?:\.v[1-9]\d*)?\.jsonl$/u.test(basename(candidate)))) {
     const lines = (await readFile(file, "utf8")).trim().split("\n").filter(Boolean);
     if (lines.length === 0) continue;
     const records = lines.map((line) => JSON.parse(line));
@@ -805,13 +989,18 @@ function summarizeSession(session) {
   const routeEvents = [];
   let assistantText = "";
   let outputPolicyPromptCount = 0;
+  let header;
+  let system;
   for (const event of session.events) {
-    if (event.type === "request/header") {
-      const config = event.data?.header?.config;
-      const system = event.data?.header?.system;
-      if (typeof system === "string" && system.includes("## Odai controller output policy")) {
-        outputPolicyPromptCount += 1;
-      }
+    if (event.type === "system/message") {
+      system = event.data?.message?.content?.filter(block => block.type === "text").map(block => block.text).join("\n") ?? "";
+    }
+    if (event.type === "request/header") header = event.data?.header;
+    // Native headers are sparse configuration changes; each durable assistant
+    // settlement uses the active header and separately committed system message.
+    if (header && (event.type === "assistant/message" || event.type === "assistant/attempt")) {
+      const config = header.config;
+      if ((system ?? header.system ?? "").includes("## Odai controller output policy")) outputPolicyPromptCount += 1;
       requestRoutes.push({
         provider: config?.provider,
         model: config?.model,

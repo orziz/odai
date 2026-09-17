@@ -4,9 +4,9 @@
 
 ## 当前状态
 
-- 当前未发布候选为 DSH `0.2.31` / canonical `0.3.15`，仅面向 DSH `0.1.5-rc.1`；双包 `0.2.30` 已发布，新修复不复用该版本。`0.2.27` 的 Sol/high C19 冻结定向结果为 4/4，完整交付及相邻修订的 C12/C32 保持项见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。当前候选尚无独立模型计分、全量或配对 A/B；`0.3.9` 的历史 18/19、142/144 及 C19 的 3/4 均按原指纹保留，不迁移为当前源码成绩。
-- 既有全量与配对结果覆盖 canonical `0.3.8` 的 GPT-6 Astra / xhigh，以及历史 GPT-5.6 Sol、Claude Opus 5、Grok 4.6 / 4.5、Gemini 3.7 / 3.6 Flash High、DeepSeek V4 Pro / Flash 与 Kimi K3 的全量 on 和配对 A/B，见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。GPT-6 Astra（Codex 0.153.1）、Gemini 3.7 与 DeepSeek V4 Pro（DSH）已按 `odai-canary-isolation/v1` 逐题取得 runner / judge 隔离回执，其余记录保留为历史能力与成本证据。
-- 可选宿主能力路由单列在 [`docs/routing-results.md`](docs/routing-results.md)，不迁移为普通模型成绩。试跑、复跑、失败管线和临时模型故障仍只由 Git 历史与本地证据承担。
+- 当前未发布候选为 DSH `0.2.32` / canonical `0.3.15`，仅面向 DSH `0.1.5-rc.1`。双包 `0.2.31` 已发布，不能复用其版本号。
+- 当前定向评估及限制统一在 [`docs/evaluation-results.md`](docs/evaluation-results.md)，实际职责调用和宿主保护边界统一在 [`docs/routing-results.md`](docs/routing-results.md)。不复制旧版本分数作为当前结论，也不把有限样本当作全量验收。
+- 结果文档保持当前状态，用户要求重试时以最新完整结果更新对应项，简要说明重试；淘汰的试跑、重复快照与已结束执行计划及时清理。已发布版本事实保留在 CHANGELOG 与兼容表，旧实现和旧文档由 Git 历史承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
 
 ## 单一事实源

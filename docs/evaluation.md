@@ -50,9 +50,23 @@ runner 只看到自然用户请求和独立 fixture，不看到验收、失败�
 
 ## A/B 与路由
 
-同模型 on / off 使用相同题面、fixture、推理档和评分契约。runner token 只在同一模型、宿主和 usage 口径内比较；cached token 按 adapter 的真实事件契约解释：Codex 的 cached input 是 input 子集，不重复相加，当前 DSH 的 `inputTokens` 与 `cacheReadTokens` 不重叠，总量为两者与 `outputTokens` 之和。完整 `full` 运行若在相同契约下覆盖 `ab`，可直接抽取同题证据，不为形式重复运行。能力表也可按题从等价的有效运行中采用完成度最高的一份完整证据包，但同一 case 的输出、diff、status、评分、读取轨迹和 token 必须来自同一 runner 样本，不得跨轮拼成虚构样本。若另行评估稳定性，须预先定义独立重复次数并报告分布，不能把单次首跑或 adopted 能力表冒充稳定性结论。
+同模型 on / off 使用相同题面、fixture、推理档和评分契约。runner token 只在同一模型、宿主和 usage 口径内比较；Codex cached input 是 input 子集，不重复相加；当前 DSH 的 `inputTokens` 与 `cacheReadTokens` 不重叠，总量为两者与 `outputTokens` 之和。同契约 full 已覆盖 ab 时直接复用同题证据。用户要求或基础设施修复需要重试时，用最新完整结果更新对应项并简要说明重试；不得按高分挑样本，也不得跨轮拼接输出、diff、status、评分与token。稳定性评估须预先定义独立重复次数并报告分布，不能从当前结果表推导。
 
 Codex 路由观测使用 `--codex-routing-telemetry`。安装映射不等于真实调用；配置、请求和角色自报都不能替代实际 thread、provider/model、reasoning effort、usage 与 route receipt。当前实现只有 controller 持续拥有任务和实施；researcher、planner、reviewer、frontend 仅在独立工作能改变结果时启动。C20 与历史路由样本单列在 [`routing-results.md`](routing-results.md)，不混入普通模型 A/B 成绩。
+
+## DSH 原生对话与独立裁判
+
+`scripts/dsh-canary-runner.mjs` 的 `--transport web` 可让 plain 与 source-plugin 两臂使用同一 Web/standard 宿主面。只有连接配置与凭据进入新的隔离 HOME，个人 preset、memory 等行为配置不继承；预检只显示模型/preset 和配置键名，不输出连接值。评测关闭无关的会话标题 LLM。指定 provider/model/推理档必须有实际 controller request/header 证据；配置声明不能代替该证据。
+
+source-plugin 可用 `--routing-config-file <冻结快照>` 复用编译 runtime 的 store parser，保留各职责显式字段与 dispatch，不混用旧角色 flags、不改用户 store；入口旁须有 `routing-config.mjs`。`--preflight` 只验证生成的隔离配置，不调用模型，不能作为实际路由或宿主端到端证明。
+
+多轮使用同一题本末尾的协议，冻结后传 `--turns-file <协议文件>`。adapter 分别发送真实用户消息，核对 requestId、turn 和原生结束回执，完整读取分页。原生 `user/message` 必须位于快照之后新开的 claimed step 中，匹配 `source.rpcId`，且同一 step/turn 的结束事件随后出现；历史终态不能完成新请求。history 先从认证的 `session/follow` 获取同一 session 的真实 cursor，再以固定 `throughSeq`、递减 `beforeSeq` 分页，拒绝无进展页，不使用最大整数冒充游标。恢复时重启自己创建的进程并校验同一 session 的既有消息和终态。中间 workspace 快照与完整逐轮事件放在 fixture 外，`last_message.txt.turns.json` 持有对应回执和指针。裁判输入完整保留所有用户修订，并提供完整日志、diff 和中间快照的位置；不能用最终状态或截断的转录证明中间轮没有越界。单轮与扩展协议分别报告。
+
+DSH 裁判复用同一个 adapter，使用 `--role judge --surface plain --prompt-file - --schema-file {schema} --cwd {workdir} --last-message {judge_output}`，由 harness 通过 stdin 提交裁判请求；provider/model/推理档仍须显式传入已选择值。harness 的 `--judge-cmd` 识别此入口。judge 始终 skill-off、独立 HOME/session、只读文件权限且禁止提权审批；这些配置与真实宿主捕获证据须分开描述。runner/judge 的模型选项在 harness 中同时记录，实际 adapter 命令也必须传入相同值。隔离 patch 显式定义 `defaultPreset: read-only` 及其 `sandbox: read-only / approval: never`，不能假定宿主内置该组合；原生 `permission/preset`、`sandbox/mode`、`approval/policy` 是实际启动状态的依据。
+
+观察器接受 `session.jsonl` 和 `session.vN.jsonl`，跟踪单独提交的 `system/message` 与稀疏 `request/header`，在 assistant 结算事件上观察实际配置。只数 header 变化次数或只查 `header.system` 会漏掉真实请求/策略证据。成功路径保留完整 API 事件；失败路径在清理隔离 store 前另存带 session header 的原生记录到同名 `.events.jsonl`，仍保留非零退出，不伪造最终答案或成功回执。历史冻结版本没有失败归档时，缺失证据须如实记为未判定，不能靠重跑挑选成功结果。
+
+先收 runner 使用 `--no-judge`；`--defer-judge` 仍会在后续自动评分。有效 runner 可通过 `--rejudge-from <原始运行目录>` 配合显式 DSH `--judge-cmd` 独立评分，避免无必要的模型重跑。超时、接入失败与有效行为失败分别记录；没有有效评分的尝试不能填成通过或悄悄移出样本分母。
 
 ## 记录与变更
 

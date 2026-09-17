@@ -88,7 +88,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The current `0.2.29` Plugin and Agent release targets exactly `dsh@0.1.5-rc.1`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
+The current `0.2.31` Plugin and Agent release targets exactly `dsh@0.1.5-rc.1`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
@@ -298,11 +298,11 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current development candidate is DSH `0.2.31` / canonical `0.3.15`; it has no newly adopted model score or measured token savings. The published `0.3.11` release has no new model score or measured token savings. The frozen `0.3.10` snapshot scored 4/4 on the targeted C19 capability handoff with GPT-5.6 Sol/high; that result does not certify `0.3.11`. See [`docs/evaluation-results.md`](docs/evaluation-results.md) for the complete output, scope, preservation checks, and fingerprints. The frozen `0.3.9` result remains 18/19 and 142/144, including its historical C19 score of 3/4. That result and the older scores below do not certify current sources.
+The current source candidate is DSH `0.2.32` / canonical `0.3.15`; the published DSH release is `0.2.31`. Current evaluation covers focused tasks, multi-turn decisions, session restart, and configured routing with GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge.
 
-The historical full/A-B results below cover 19 realistic full-plan tasks and a 13-task paired A/B subset. Only two cases are explicit low-risk controls. The rest present natural symptoms, opinions, or broad requests; the decisive facts live in project code, logs, briefs, diffs, task state, and runbooks. Fingerprints preserve exact reproducibility; unrelated routing assets or maintenance edits do not invalidate an entire result table when the prompt, fixture, model configuration, scoring semantics, and case-relevant skill behavior remain equivalent. GPT-6 Astra, Gemini 3.7, and DeepSeek V4 Pro (DSH) ran under the cross-platform `odai-canary-isolation/v1` contract; the other published rows predate that contract and are retained as historical capability evidence.
+See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 
-Each result first receives a 0-4 completion score, then the predefined case weight is applied. The full plan is worth 144 points and the A/B subset 96. Direct, judgment, complex, and boundary work are reported separately, while severe scope, production-risk, and false-verification violations have hard score caps. A perfect treatment score alone is not evidence of value; it must be read against the same model's control result and cost.
+The table below preserves historical frozen full-suite and paired evaluations: 19 realistic tasks and a 13-task A/B subset. Each task receives a 0–4 completion score multiplied by its predefined weight; the full and paired maxima are 144 and 96. Interpret each row under its original version, host, and sampling method; it does not certify current sources.
 
 | Runner | full on | A/B on | A/B off | gain | A/B runner tokens on / off |
 |---|---:|---:|---:|---:|---:|
@@ -317,8 +317,6 @@ Each result first receives a 0-4 completion score, then the predefined case weig
 | DeepSeek V4 Pro / max (DSH) | **144/144** | **96/96** | 63/96 | **+33** | 2,131,373 / 1,652,030 (+29.0%) |
 | DeepSeek V4 Flash | **144/144** | **96/96** | 61/96 | **+35** | 5,341,138 / 3,975,731 (+34.3%) |
 
-GPT-6 Astra's adopted capability evidence is perfect on all 19 treatment cases and scores 10 points above its control while using 41.6% more runner tokens. The adopted row uses complete C06 and C10 rerun evidence and rejudges the unchanged C05 runner after aligning that rubric with the user-decision contract. All ten published runners have positive paired gains, while nine used more tokens with odai and Gemini 3.6 used fewer. Quality gains and cost changes therefore remain model- and host-dependent, not unconditional improvement or token savings.
-
-See [`docs/evaluation.md`](docs/evaluation.md) for the current contract, [`docs/evaluation-results.md`](docs/evaluation-results.md) for model full-suite/A-B scores and token details, and [`docs/routing-results.md`](docs/routing-results.md) for optional host-routing quality, role usage, latency, and cost experiments.
+GPT-6 Astra's historical adopted results use complete C06/C10 reruns and a rejudgment of the unchanged C05 runner after rubric alignment; they are not first-run or stability statistics. GPT-6 Astra, Gemini 3.7, and DeepSeek V4 Pro (DSH) have per-case isolation receipts; the other rows predate that contract. All ten historical paired gains are positive, but nine runners used more tokens. This does not establish unconditional improvement or savings. The evaluation report retains the original versions, scope, and sampling details.
 
 Stars and PRs are welcome.

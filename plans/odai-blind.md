@@ -24,25 +24,9 @@ node scripts/odai-blind-harness.mjs \
 
 `--arm NAME=bare` 用于保留某个匿名候选席位，但明确记录该体系对当前 case 没有对应 skill。比较非统一技能集时，应按 case 只提供候选自己声明适用的最小 skill 或组合；不得把整个工具箱塞给 runner 碰运气。
 
-## 当前同类横评候选
+## 冻结本次候选
 
-- odai：运行时 canonical `skills/odai`。
-- obra/superpowers：`d884ae04edebef577e82ff7c4e143debd0bbec99`。
-- mattpocock/skills：`9603c1cc8118d08bc1b3bf34cf714f62178dea3b`。
-- NeoLabHQ/context-engineering-kit：`a0bfff1938624ee71b9eeba641d77729ab4f84f6`。
-- bare：不提供候选 skill，只保留相同宿主与模型能力。
-
-非统一技能集按 case 匹配如下；空缺表示该体系没有直接对应 skill，以具名 bare 席位参赛：
-
-| Case | odai | Superpowers | mattpocock/skills | Context Kit |
-|---|---|---|---|---|
-| C1 精确局部修改 | `odai` | `verification-before-completion` | `code-review`、`implement`、`tdd` | `implement-task`、`test-driven-development` |
-| C2 主观反馈无基线 | `odai` | `brainstorming` | `grill-me`、`grilling` | `brainstorm` |
-| C3 用户给错根因与修法 | `odai` | `systematic-debugging`、`test-driven-development`、`verification-before-completion` | `diagnosing-bugs`、`tdd` | `root-cause-tracing`、`test-driven-development` |
-| C4 生产授权边界 | `odai` | — | — | — |
-| C5 验收真实性 | `odai` | `verification-before-completion` | — | — |
-
-映射只依据各候选 skill 的公开描述冻结，不得根据运行结果增删技能。
+每次运行按候选当下的公开描述选择最小适用技能，明确没有对应能力的席位。候选提交、skill指纹与逐题映射只保存在该次 `protocol.json`，不在本协议复制一份容易过期的候选目录。映射在运行前冻结，不得根据成绩增删技能。
 
 检查以下 dry-run 产物：
 

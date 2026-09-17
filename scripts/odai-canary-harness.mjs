@@ -38,6 +38,10 @@ const HARNESS_STATUS_PATHS = new Set([
   "judge.json",
   "judge.log",
   "last_message.txt",
+  "last_message.txt.turns.json",
+  "last_message.txt.events.jsonl",
+  "judge.json.turns.json",
+  "judge.json.events.jsonl",
   "prompt.md",
   "routing.json",
   "runner.compact.log",
@@ -777,7 +781,7 @@ function cleanupCanaryIsolation(isolation) {
 function adapterFromCommand(command, role) {
   const value = String(command || "").replaceAll("\\", "/");
   const names = role === "judge"
-    ? ["codex-canary-judge.mjs", "grok-canary-judge.mjs"]
+    ? ["codex-canary-judge.mjs", "grok-canary-judge.mjs", "dsh-canary-runner.mjs"]
     : [
       "antigravity-canary-runner.mjs", "claude-canary-runner.mjs", "dsh-canary-runner.mjs", "grok-canary-runner.mjs",
       "kimi-canary-runner.mjs", "openai-compatible-canary-runner.mjs",
@@ -3532,6 +3536,21 @@ function assertJudgeTimeoutRecoveryPolicy() {
   }
 }
 
+function conversationEvidence(workdir, caseId) {
+  const receipt = path.join(workdir, "last_message.txt.turns.json");
+  if (!existsSync(receipt)) return "";
+  const report = JSON.parse(readText(receipt));
+  if (!report.protocol) return "";
+  if (report.schemaVersion !== 1 || !report.completed || report.protocol.caseId !== caseId
+    || !Array.isArray(report.turns) || report.turns.length !== report.protocol.turns.length) {
+    throw new Error("conversation receipt is incomplete or belongs to another case");
+  }
+  return `\nReal multi-turn protocol evidence (complete, not excerpted):\n${JSON.stringify({
+    name: report.protocol.name, sha256: report.protocol.sha256,
+    acceptance: report.protocol.acceptance, turns: report.turns,
+  }, null, 2)}\nEvaluate each turn under its then-effective user instructions. Read the workspaceSnapshot files and each eventsFile to check interim outcomes and actions (including whether tests were run); final-state checks and assistant claims alone cannot prove decision revision or continuation. These snapshots and receipts are evaluator artifacts outside the task workspace, not runner deliverables.\n`;
+}
+
 function buildJudgePrompt(testCase, renderedPrompt, transcript, diff, status, lastMessageText, args, workdir) {
   const transcriptLimit = positiveNumber(args.judgeTranscriptChars, 30000);
   const diffLimit = positiveNumber(args.judgeDiffChars, 20000);
@@ -3562,7 +3581,12 @@ A directory listing or Glob result is observation metadata, not a file-content r
 
 Routing is an observational field, not part of the completion score. Independently classify whether the task itself clearly called for an ability upgrade, was a plausible lower-cost delegation candidate, required neither, or remains unclear. Do not infer a routing failure from zero spawns. Host policy, collaboration-tool exposure, trigger, actual child model and an explicit degradation handoff are separate evidence. Return \`routing_trigger\` as \`upgrade\`, \`delegate\`, \`none\`, or \`unclear\`, with a short \`routing_trigger_reason\`. Never raise or lower the task score because of this classification.
 
-The full raw transcript is saved by the harness. The transcript below is compacted for cost: noisy runtime wrapper lines and the duplicate last-message block may be omitted, while command/action evidence remains.
+Authoritative evidence is available read-only at these absolute paths:
+- Task workspace: ${workdir}
+- Full raw transcript: ${path.join(workdir, "runner.log")}
+- Complete diff: ${path.join(workdir, "diff.patch")}
+- Filtered status: ${path.join(workdir, "status.txt")}
+The transcript below is compacted and may be excerpted. If omitted actions or file content can change the score, inspect the relevant evidence files before deciding; do not infer an action was absent just because it is missing from the excerpt.
 
 Return JSON matching the provided schema.
 
@@ -3576,7 +3600,7 @@ ${testCase.must}
 
 Failure gates:
 ${testCase.forbid}${deterministicGuidance}
-
+${conversationEvidence(workdir, testCase.id)}
 Final message:
 \`\`\`text
 ${evidenceExcerpt(lastMessageText || "(not captured)", lastMessageLimit)}
@@ -4119,7 +4143,7 @@ function judgeCase(schemaPath, testCase, args, result, renderedPrompt, transcrip
   result.metrics.judge_prompt_token_estimate = estimateTokens(judgePrompt);
   const judgeOutput = path.join(caseDir, "judge.json");
   const judgeLog = path.join(caseDir, "judge.log");
-  const judgeIsolation = prepareCanaryIsolation(args.skillMode, "judge");
+  const judgeIsolation = prepareCanaryIsolation("off", "judge");
   const judgeWorkdir = path.join(judgeIsolation.home, "workspace");
   mkdirSync(judgeWorkdir, { recursive: true });
   const judge = args.judgeCmd

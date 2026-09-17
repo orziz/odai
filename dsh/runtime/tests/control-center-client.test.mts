@@ -135,7 +135,7 @@ test("timeline orders groups by recent evidence without defaulting to out-of-tur
     { seq: 4, type: "odai/routing-configured", data: {} },
   ]);
   assert.deepEqual(Array.from(trace.turns, (turn) => turn.key), ["session", "turn-2", "turn-1"]);
-  assert.equal(trace.turns[0]?.title, "轮次外事件");
+  assert.equal(trace.turns[0]?.title, "未标注轮次的会话事件");
   assert.equal(trace.currentTurn?.key, "turn-2");
   assert.equal(client.defaultTraceItem(trace)?.key, "3:odai/route-result");
 

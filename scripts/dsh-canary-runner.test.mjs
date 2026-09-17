@@ -293,8 +293,64 @@ test("DSH canary runner isolates Plugin and Agent routing surfaces", async () =>
       policy: { concise: false, maxTokens: 500 },
     });
 
+    const routingConfigFile = resolve(root, "routing snapshot.json");
+    const parserReceipt = resolve(root, "runtime-parser-receipt.txt");
+    await writeFile(resolve(dirname(sourcePlugin), "routing-config.mjs"), `
+import { readFileSync, writeFileSync } from "node:fs";
+export function readRoutingStore(path) {
+  writeFileSync(${JSON.stringify(parserReceipt)}, path, "utf8");
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  if (parsed.rejectByRuntime) throw new Error("runtime parser rejected snapshot");
+  return { roles: parsed.roles, dispatch: parsed.dispatch ?? {} };
+}
+`, "utf8");
+    const snapshotOptions = { root, sourceHome, isolationHome, workdir, promptFile,
+      surface: "source-plugin", routingMode: "auto", runtimePluginPath: sourcePlugin,
+      runtimeSkillPath: sourceSkill, routingConfigFile, dshBin: resolve(root, "must-not-run") };
+    const snapshot = { schemaVersion: 2, roles: {
+      researcher: { provider: "research-provider", model: "research-model" },
+      planner: { provider: "plan-provider", model: "plan-model" },
+      reviewer: { provider: "review-provider", model: "review-model", reasoningEffort: "high" },
+      frontend: { provider: "front-provider", model: "front-model", maxTokens: 8192 },
+    }, dispatch: { researcher: "same-turn", planner: "child", reviewer: "child", frontend: "same-turn" } };
+    await writeFile(resolve(sourceHome, "settings.yaml"), "agent-default-model:\n  provider: old\n  model: old\nagent-presets:\n  default: personal\nagent-memory:\n  text: private-behavior\nllm-pi-ai:\n  fixtureSecret: never-print-this\n", "utf8");
+    const snapshotText = `${JSON.stringify(snapshot, null, 2)}\n`;
+    await writeFile(routingConfigFile, snapshotText, "utf8");
+    await mkdir(resolve(sourceHome, "odai"), { recursive: true });
+    const sourceRouting = '{"schemaVersion":2,"roles":{"planner":{"provider":"unrelated","model":"private"}}}\n';
+    await writeFile(resolve(sourceHome, "odai/routing.json"), sourceRouting, "utf8");
+    const configured = await runSurface(snapshotOptions);
+    assert.equal(await readFile(parserReceipt, "utf8"), routingConfigFile);
+    assert.deepEqual(configured.routingConfig, snapshot);
+    assert.equal(configured.settingsPolicy, "connection-only");
+    assert.deepEqual(configured.settingsKeys.sort(), ["agent-default-model", "agent-presets", "llm-pi-ai"]);
+    assert.match(configured.settings, /default: standard/u);
+    assert.doesNotMatch(JSON.stringify(configured), /private-behavior|never-print-this/u);
+    assert.doesNotMatch(configured.patch, /gpt-5\.6-sol|reasoningEffort:|maxTokens:|roles:/u);
+    const isolatedConfigPath = JSON.parse(/^\s+configPath: (.+)$/mu.exec(configured.patch)[1]);
+    const isolatedSessionRoot = JSON.parse(/^    root: (.+)$/mu.exec(configured.patch)[1]);
+    assert.equal(isolatedConfigPath, resolve(dirname(isolatedSessionRoot), "home/odai/routing.json"));
+    assert.equal(await readFile(routingConfigFile, "utf8"), snapshotText);
+    assert.equal(await readFile(resolve(sourceHome, "odai/routing.json"), "utf8"), sourceRouting);
+    assert.deepEqual(configured.outputPolicy, { schemaVersion: 1, policy: { concise: false } });
+    for (const flag of ["--planner-model", "--researcher-max-tokens", "--frontend-provider", "--expect-researcher"]) {
+      await assert.rejects(() => runSurface({ ...snapshotOptions, extraArgs: [flag, "1"] }), /cannot be mixed with legacy routing flags/u);
+    }
+    await assert.rejects(() => runSurface({ ...snapshotOptions, surface: "plain", runtimePluginPath: "", runtimeSkillPath: "", controllerEmbedsSkill: false }), /requires --surface source-plugin/u);
+    await assert.rejects(() => runSurface({ ...snapshotOptions, extraArgs: ["--routing-config-file", routingConfigFile] }), /may only be supplied once/u);
+    await assert.rejects(() => runSurface({ ...snapshotOptions, routingConfigFile: resolve(root, "missing.json") }), /routing config file not found/u);
+    await writeFile(routingConfigFile, '{"rejectByRuntime":true}', "utf8");
+    await assert.rejects(() => runSurface(snapshotOptions), /runtime parser rejected snapshot/u);
+    for (const valid of [{ schemaVersion: 1, roles: { planner: { provider: "p", model: "m" } } }, { schemaVersion: 2, roles: {}, dispatch: { reviewer: "same-turn" } }]) {
+      await writeFile(routingConfigFile, JSON.stringify(valid), "utf8");
+      const result = await runSurface(snapshotOptions);
+      assert.deepEqual(result.routingConfig, { schemaVersion: 2, roles: valid.roles, dispatch: valid.dispatch ?? {} });
+      assert.doesNotMatch(result.patch, /gpt-5\.6-sol|reasoningEffort:|maxTokens:|roles:/u);
+    }
+
     const fakeDsh = resolve(root, "fake-dsh-web.mjs");
     await copyFile(fakeDshWebFixture, fakeDsh);
+    await copyFile(resolve(repoRoot, "scripts/fixtures/fake-dsh-follow.mjs"), resolve(root, "fake-dsh-follow.mjs"));
     await chmod(fakeDsh, 0o700);
     let dshCommand = fakeDsh;
     if (process.platform === "win32") {
@@ -304,6 +360,7 @@ test("DSH canary runner isolates Plugin and Agent routing surfaces", async () =>
       await mkdir(resolve(packageRoot, "lib"), { recursive: true });
       await Promise.all([
         copyFile(fakeDsh, shimEntry),
+        copyFile(resolve(root, "fake-dsh-follow.mjs"), resolve(packageRoot, "lib/fake-dsh-follow.mjs")),
         writeFile(resolve(packageRoot, "package.json"), "{\"type\":\"module\"}\n", "utf8"),
         writeFile(resolve(shimRoot, "dsh.cmd"), "@ECHO off\r\nnode \"%dp0%\\custom modules\\@deepseek-ai\\dsh\\lib\\bin.js\" %*\r\n", "utf8"),
       ]);
@@ -320,12 +377,62 @@ test("DSH canary runner isolates Plugin and Agent routing surfaces", async () =>
       routingMode: "execute",
       dshBin: dshCommand,
       preflight: false,
+      outputConcise: true,
+      expectedPolicyObservation: "1/1",
     });
     assert.deepEqual(webAgent, {
       preset: "odai",
       model: "gpt-5.6-luna",
       permissionMode: "danger-full-access",
     });
+    const turnsFile = resolve(root, "conversation.json");
+    await writeFile(turnsFile, JSON.stringify({ schemaVersion: 1, name: "test-continuation", caseId: 5,
+      acceptance: ["Retain real messages and state across restart"],
+      turns: [{ useCasePrompt: true }, { prompt: "revise the decision" }, { prompt: "continue after restart", restartBefore: true }] }));
+    const continued = await runSurface({ root, sourceHome, isolationHome, workdir, promptFile,
+      surface: "plain", routingMode: "off", dshBin: dshCommand, preflight: false,
+      transport: "web", turnsFile, controllerEmbedsSkill: false, expectedPolicyObservation: "0/3" });
+    assert.equal(continued.preset, "standard");
+    const report = JSON.parse(await readFile(resolve(root, "plain-web.json.turns.json"), "utf8"));
+    assert.equal(report.completed, true);
+    assert.equal(report.turns.length, 3);
+    assert.equal(new Set(report.turns.map(turn => turn.requestId)).size, 3);
+    assert.equal(new Set(report.turns.map(turn => turn.sessionId)).size, 1);
+    assert.deepEqual(report.turns.map(turn => turn.turn), [1, 3, 5]);
+    assert.deepEqual(report.turns.map(turn => turn.restarted), [false, false, true]);
+    for (const [index, turn] of report.turns.entries()) {
+      assert.ok(turn.endSeq > turn.messageSeq);
+      if (index) assert.ok(turn.messageSeq > report.turns[index - 1].endSeq);
+      assert.equal(await readFile(resolve(turn.workspaceSnapshot, "turn-state.txt"), "utf8"), turn.prompt);
+      const events = (await readFile(turn.eventsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+      assert.equal(events.at(-1).seq, turn.endSeq);
+      assert.ok(events.some(event => event.type === "user/message" && event.data.source.rpcId === turn.requestId));
+      if (index) assert.ok(events.every(event => event.seq > report.turns[index - 1].endSeq));
+    }
+    assert.match(report.protocol.sha256, /^[a-f0-9]{64}$/u);
+    await rm(resolve(root, "plain-web.json.events.jsonl"));
+    await assert.rejects(() => runSurface({ root, sourceHome, isolationHome, workdir, promptFile,
+      surface: "plain", routingMode: "off", dshBin: dshCommand, preflight: false,
+      transport: "web", controllerEmbedsSkill: false, unclaimedMessage: true }), /outside an open native claimed step/u);
+    const failedEvents = (await readFile(resolve(root, "plain-web.json.events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.ok(failedEvents.some(event => event.type === "user/message" && event.data.source.rpcId));
+    assert.equal(JSON.parse(await readFile(resolve(root, "plain-web.json.turns.json"), "utf8")).completed, false);
+    await assert.rejects(() => runSurface({ root, sourceHome, isolationHome, workdir, promptFile,
+      surface: "plain", routingMode: "off", dshBin: dshCommand, preflight: false,
+      transport: "web", controllerEmbedsSkill: false, historyStall: true }), /history pagination made no progress/u);
+    const schemaFile = resolve(root, "judge-schema.json");
+    await writeFile(schemaFile, '{"type":"object"}', "utf8");
+    const judgeOptions = { root, sourceHome, isolationHome, workdir, promptFile, surface: "plain", routingMode: "off",
+      dshBin: dshCommand, preflight: false, controllerEmbedsSkill: false, skillMode: "off",
+      promptFile: "-", input: "Judge this isolated task result.", expectedRole: "judge",
+      extraArgs: ["--role", "judge", "--schema-file", schemaFile] };
+    const judged = await runSurface(judgeOptions);
+    assert.equal(judged.permissionMode, "read-only");
+    const judgePreflight = await runSurface({ ...judgeOptions, preflight: true });
+    assert.match(judgePreflight.patch, /- id: approval\n  config:\n    policy: never/u);
+    assert.match(judgePreflight.patch, /defaultPreset: read-only\n    presets:\n      read-only:\n        sandbox: read-only\n        approval: never/u);
+    assert.match(judgePreflight.patch, /- id: session-title-llm\n  disabled: true/u);
+    await assert.rejects(() => runSurface({ ...judgeOptions, skillMode: "on" }), /judge requires isolated skill-off/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -344,11 +451,10 @@ async function runSurface(options) {
     "--reasoning-effort", "max",
     "--surface", options.surface,
     "--routing-mode", options.routingMode,
-    "--planner-provider", "openai",
-    "--planner-model", "gpt-5.6-sol",
-    "--planner-reasoning-effort", "high",
     "--timeout", "30",
   ];
+  if (options.routingConfigFile) commandArgs.push("--routing-config-file", options.routingConfigFile);
+  else commandArgs.push("--planner-provider", "openai", "--planner-model", "gpt-5.6-sol", "--planner-reasoning-effort", "high");
   if (options.profileHome) commandArgs.push("--profile-home", options.profileHome);
   if (options.controllerEmbedsSkill !== false) commandArgs.push("--controller-embeds-skill");
   if (options.runtimePluginPath) commandArgs.push("--runtime-plugin-path", options.runtimePluginPath);
@@ -371,16 +477,25 @@ async function runSurface(options) {
     commandArgs.push("--controller-max-tokens", String(options.controllerMaxTokens));
   }
   if (options.dshBin) commandArgs.push("--dsh-bin", options.dshBin);
+  if (options.transport) commandArgs.push("--transport", options.transport);
+  if (options.turnsFile) commandArgs.push("--turns-file", options.turnsFile);
   if (options.preflight !== false) commandArgs.push("--preflight");
-  await execFileAsync(process.execPath, commandArgs, {
+  commandArgs.push(...(options.extraArgs ?? []));
+  const execution = execFileAsync(process.execPath, commandArgs, {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: options.isolationHome,
       ODAI_CANARY_HOME: options.isolationHome,
       ODAI_CANARY_ISOLATION: "odai-canary-isolation/v1",
-      ODAI_CANARY_SKILL_MODE: "on",
+      ODAI_CANARY_SKILL_MODE: options.skillMode ?? "on",
+      ODAI_TEST_UNCLAIMED_MESSAGE: options.unclaimedMessage ? "1" : "",
+      ODAI_TEST_HISTORY_STALL: options.historyStall ? "1" : "",
     },
   });
+  if (options.input !== undefined) execution.child.stdin.end(options.input);
+  const { stdout } = await execution;
+  if (options.expectedRole) assert.ok(stdout.includes(`adapter=dsh role=${options.expectedRole} skill_mode=${options.skillMode} home=isolated`));
+  if (options.expectedPolicyObservation) assert.ok(stdout.includes(`[dsh-runner output_policy_prompt_observed ${options.expectedPolicyObservation}]`), stdout);
   return JSON.parse(await readFile(lastMessage, "utf8"));
 }
