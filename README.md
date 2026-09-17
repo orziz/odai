@@ -298,7 +298,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.2.32` / canonical `0.3.15`; the published DSH release is `0.2.31`. Current evaluation covers focused tasks, multi-turn decisions, session restart, and configured routing with GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge.
+The current source candidate is DSH `0.2.32` / canonical `0.3.16`; the published DSH release is `0.2.31`. The latest directed model evaluation used frozen canonical `0.3.15`, GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge. The subsequent review-evidence paging fix is verified separately through capture replay and isolated host checks; it does not inherit those scores.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

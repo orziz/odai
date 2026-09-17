@@ -40,6 +40,7 @@ export const DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS = Object.freeze([
 ] as const);
 
 export const DEFAULT_CHILD_ALLOWED_TOOLS = Object.freeze([
+  "odai_review_evidence",
   "read",
   "read_image",
   "glob",

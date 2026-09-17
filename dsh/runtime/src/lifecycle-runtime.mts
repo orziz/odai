@@ -31,7 +31,7 @@ import {
 } from "./responsibility-scope.mjs";
 import type { InPlaceResponsibility, ResponsibilityScopeOwner } from "./responsibility-scope.mjs";
 export type { ResponsibilityScope } from "./responsibility-scope.mjs";
-import { buildRoleContextPacket, renderRoleContextPacket } from "./routing-context.mjs";
+import { buildRoleContextPacket, renderRoleContextPacket, reviewEvidenceSnapshot } from "./routing-context.mjs";
 import {
   parseResearchPacket,
   renderResearchPacket,
@@ -1277,6 +1277,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         mode: contextMode,
         digest: roleContext.digest,
         evidenceDigest: roleContext.evidenceDigest,
+        ...(roleContext.reviewEvidenceDigest ? { reviewEvidenceDigest: roleContext.reviewEvidenceDigest } : {}),
         taskBoundary: roleContext.task,
         evidenceCount: roleContext.evidenceCount,
         toolEvidenceCount: roleContext.toolEvidenceCount,
@@ -1399,6 +1400,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             provider: config.routing.provider,
             decision: delegationDecision,
             taskText: renderRoleContextPacket(roleContext),
+            reviewEvidence: reviewEvidenceSnapshot(roleContext),
             roleContract,
             agent,
             signal,

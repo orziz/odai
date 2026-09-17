@@ -215,7 +215,12 @@ export function routeMismatch(expected?: ModelRoute, actual?: ModelRoute): strin
   return routeMismatchFor(expected, actual, "child");
 }
 
-interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession }
+interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession; reviewReader?: import("./review-evidence.mjs").ReviewEvidenceReader }
+export function managedReviewEvidenceReader(agent: DshAgent): import("./review-evidence.mjs").ReviewEvidenceReader | undefined {
+  if (!isManagedRoleChild(agent) || routedRoleOf(agent) !== "reviewer") return undefined;
+  const descriptor = sessionEvents(agent.session).findLast(event => event.type === "subagent/descriptor");
+  return typeof descriptor?.data.label === "string" ? managedChildLabels.get(descriptor.data.label)?.reviewReader : undefined;
+}
 const managedChildState = globalThis as typeof globalThis & { __odaiManagedChildBindings?: Map<string, ManagedChildBinding> };
 const managedChildLabels = managedChildState.__odaiManagedChildBindings ??= new Map<string, ManagedChildBinding>();
 export function isManagedRoleChild(agent: DshAgent): boolean {
@@ -237,6 +242,7 @@ export async function runRoutedRole({
   agent,
   signal,
   roleRoute,
+  reviewEvidence,
 }: {
   subagents: SubagentsService;
   provider: string;
@@ -246,13 +252,17 @@ export async function runRoutedRole({
   agent: unknown;
   signal: AbortSignal;
   roleRoute?: ModelRoute;
+  reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   let run: RoutedRun | undefined;
   let outcome: Readonly<RoutedRoleOutcome>;
   const label = `odai-${decision.role}: managed-${randomUUID()}`;
   const parentSessionId = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
     ? agent.session.header.id : undefined;
-  if (typeof parentSessionId === "string" && parentSessionId) managedChildLabels.set(label, { parentSessionId, role: decision.role });
+  if (typeof parentSessionId === "string" && parentSessionId) managedChildLabels.set(label, {
+    parentSessionId, role: decision.role,
+    ...(decision.role === "reviewer" && reviewEvidence ? { reviewReader: reviewEvidence.createReader() } : {}),
+  });
   try {
   try {
     signal.throwIfAborted();

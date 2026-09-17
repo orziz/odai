@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import { createReviewEvidenceSnapshot } from "./review-evidence.mjs";
+import type { ReviewEvidenceSnapshot } from "./review-evidence.mjs";
+
+const reviewSnapshots = new WeakMap<RoleContextPacket, ReviewEvidenceSnapshot>();
+export function reviewEvidenceSnapshot(packet: RoleContextPacket): ReviewEvidenceSnapshot | undefined {
+  return reviewSnapshots.get(packet);
+}
 
 import { classifyResponsibilityInterruptionText } from "./router.mjs";
 import type { RequirementDecision } from "./responsibility-gap.mjs";
@@ -228,6 +235,7 @@ export interface RoleContextPacket {
   readonly truncated: boolean;
   readonly digest: string;
   readonly evidenceDigest: string;
+  readonly reviewEvidenceDigest?: string;
   readonly evidenceCount: number;
   readonly toolEvidenceCount: number;
   readonly sufficient: boolean;
@@ -657,10 +665,13 @@ export function buildRoleContextPacket(
     if (bounded.truncated) preTruncatedIndices.add(entry.index);
     allEvidence.push(Object.freeze({ ...entry, kinds: Object.freeze([...new Set(entry.kinds)]), text: bounded.text }));
   };
+  const capturedTools: RoleContextEntry[] = [];
   for (let index = taskBoundary.startEventIndex; index < events.length; index += 1) {
     const event = events[index];
     if (!event) continue;
-    addEntry(eventEvidence(event, index, calls, mutableDiagnostics));
+    const entry = eventEvidence(event, index, calls, mutableDiagnostics);
+    if (role === "reviewer" && event.type === "tool/result" && entry?.source === "tool") capturedTools.push(entry);
+    addEntry(entry);
     const handbacks = typeof event.seq === "number" ? handbacksByAnchor.get(event.seq) ?? [] : [];
     for (const [offset, handback] of handbacks.entries()) {
       // Supplemental planning is ordered after its native anchor. It cannot
@@ -761,6 +772,7 @@ export function buildRoleContextPacket(
       hostEvidenceAvailable: diagnostics.hostEvidenceAvailable,
     },
   });
+  const snapshot = role === "reviewer" && capturedTools.length > 0 ? createReviewEvidenceSnapshot(capturedTools) : undefined;
   const packetBody = Object.freeze({
     schemaVersion: 3 as const,
     role,
@@ -772,23 +784,28 @@ export function buildRoleContextPacket(
     diagnostics,
     truncated,
     evidenceDigest,
+    ...(snapshot ? { reviewEvidenceDigest: snapshot.digest } : {}),
   });
   const digest = digestPacket(packetBody);
   const reviewerSufficient = coverage.requirements && coverage.acceptanceCount > 0
     && coverage.diffCount > 0 && coverage.testCount + coverage.checkCount > 0
     && coverage.toolEvidenceCount > 0 && coverage.currentEvidence;
-  return Object.freeze({
+  const packet = Object.freeze({
     ...packetBody, digest, evidenceCount: entries.length, toolEvidenceCount: coverage.toolEvidenceCount,
     sufficient: taskBoundary.source !== "unresolved"
       && (role === "reviewer" ? reviewerSufficient : Boolean(taskTextBound.text)),
   });
+  if (snapshot) reviewSnapshots.set(packet, snapshot);
+  return packet;
 }
 
 export function renderRoleContextPacket(packet: RoleContextPacket): string {
+  const snapshot = reviewSnapshots.get(packet);
   const evidence = packet.entries.length
     ? packet.entries.map((entry, index) => [
         `### E${index + 1}: ${entry.label}`,
         `kinds: ${entry.kinds.join(", ")}`,
+        ...(snapshot && entry.label.startsWith("tool ") ? [`snapshotSourceId: tool-event-${entry.index}`] : []),
         entry.text,
       ].join("\n")).join("\n\n")
     : "(no prior evidence entries)";
@@ -796,6 +813,10 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
     ? JSON.stringify(packet.requirements, undefined, 2)
     : "(no source-verified requirement ledger; do not make coverage findings)";
   return [
+    ...(snapshot ? [
+      `Immutable tool evidence snapshot: ${snapshot.digest}; entries=${snapshot.count}; omitted=${snapshot.omitted}; retainedChars=${snapshot.retainedChars}.`,
+      "Managed reviewer child only: use odai_review_evidence with this digest to list captured sources or read needed pages by snapshotSourceId and offset. Retrieve missing/truncated implementation evidence before making a finding based on its absence. This restores packet clipping only, not content missing from the original tool capture. Stay within the delegated review; do not dump all sources, rerun checks, or infer complete validation from page availability. Exhausted or missing evidence remains unjudged and returns to the controller.",
+    ] : []),
     "# Odai bounded role context packet",
     `role: ${packet.role}`,
     `digest: sha256:${packet.digest}`,

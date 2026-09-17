@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：2026-09-17，DSH `0.2.32` 候选 / canonical `0.3.15` 的22项当前定向结果中，20项有独立评分，2项按用户要求重试后仍超时。C20另有评分路径争议，见下节。已发布版本仍是DSH `0.2.31`，候选未发布；有限样本不构成全量或稳定性验收。下述历史成绩按原冻结身份保留，不迁移到当前源码。
+状态：DSH `0.2.32` 候选已更新至canonical `0.3.16`，修复托管reviewer证据补读；系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17在冻结canonical `0.3.15`上的22项模型结果保持原样：20项有评分，2项重试后仍超时，C20另有评分路径争议。本次未重跑这些任务或改分。已发布版本仍是DSH `0.2.31`；历史分数不迁移为当前源码的全量或稳定性验收。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 

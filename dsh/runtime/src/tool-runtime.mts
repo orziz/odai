@@ -23,7 +23,8 @@ import { createSemanticMemoryTool, latestDirectUserMessage } from "./semantic-me
 import { readSkillBundleFile } from "./skill-bundle.mjs";
 import type { SkillBundle } from "./skill-bundle.mjs";
 import { currentAgentTurn, sharedSkillSelection } from "./skill-selection-state.mjs";
-import { currentAgentStep, isSubagentSession, latestRouteReceipt, pluginMessage } from "./runtime-support.mjs";
+import { currentAgentStep, isSubagentSession, latestRouteReceipt, pluginMessage, managedReviewEvidenceReader } from "./runtime-support.mjs";
+import { createReviewEvidenceTool } from "./review-evidence.mjs";
 import type { SkillSelection } from "./runtime-support.mjs";
 import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
@@ -101,6 +102,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     return proposal;
   };
   const bundleFor = (agent: DshAgent): SkillBundle => sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
+  ctx.tools.register(createReviewEvidenceTool(managedReviewEvidenceReader));
   ctx.tools.register(createContextCapabilityTool({
     isChild: isSubagent,
     onRequested(agent: DshAgent, capability: string) {
@@ -248,7 +250,14 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       agent.inject?.(pluginMessage(notice, "Repeated command outcomes: review whether another retry is useful"));
     },
   });
-  ctx.tools.guard?.((execution: ToolExecution) => childGuard(execution) ?? routeProtectionGuard(execution) ?? repeatedFailure.start(execution));
+  ctx.tools.guard?.((execution: ToolExecution) => {
+    if (execution.agent && managedReviewEvidenceReader(execution.agent) && execution.name !== "odai_review_evidence") {
+      const reason = "ODAI_REVIEW_EVIDENCE_ONLY: managed snapshot review may only page its captured evidence";
+      onDenied({ ...execution, agent: execution.agent }, reason);
+      return reason;
+    }
+    return childGuard(execution) ?? routeProtectionGuard(execution) ?? repeatedFailure.start(execution);
+  });
 
   const toolExposureStates = new WeakMap<DshAgent, { readonly key: string; readonly dispose?: () => void }>();
   const syncToolExposure = (
@@ -260,6 +269,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     const activeNames = activeOdaiToolNames(activation, {
       child,
       responsibilityReturn: options.responsibilityReturn === true,
+      reviewEvidence: child && Boolean(managedReviewEvidenceReader(agent)),
     });
     const deniedNames = [
       ...inactiveOdaiToolNames(activeNames),
@@ -278,7 +288,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     }
     try {
       const restriction = deniedNames.length > 0 || child
-        ? restrict.call(agentTools, { deny: deniedNames, ...(child ? { allow: DEFAULT_CHILD_ALLOWED_TOOLS } : {}) })
+        ? restrict.call(agentTools, { deny: deniedNames, ...(child ? { allow: activeNames.includes("odai_review_evidence") ? ["odai_review_evidence"] : DEFAULT_CHILD_ALLOWED_TOOLS } : {}) })
         : undefined;
       const dispose = typeof restriction === "function" ? restriction : undefined;
       toolExposureStates.set(agent, Object.freeze({ key, dispose }));

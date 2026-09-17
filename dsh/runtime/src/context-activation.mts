@@ -5,6 +5,7 @@ export const ODAI_CONTEXTUAL_TOOL_NAMES = Object.freeze([
   "odai_human_care",
   "odai_human_safety",
   "odai_responsibility_return",
+  "odai_review_evidence",
   "odai_skill_source_config",
   "odai_skill_evolution",
   "odai_output_config",
@@ -36,6 +37,7 @@ export interface ContextActivation {
 export interface ActivationOptions {
   child?: boolean;
   responsibilityReturn?: boolean;
+  reviewEvidence?: boolean;
 }
 
 interface ToolSchemaSummary {
@@ -74,7 +76,7 @@ export function activeOdaiToolNames(
   activation: ContextActivation,
   options: ActivationOptions = {},
 ): readonly OdaiToolName[] {
-  if (options.child) return Object.freeze([]);
+  if (options.child) return Object.freeze(options.reviewEvidence ? ["odai_review_evidence"] : []);
   const names = new Set<OdaiToolName>(ODAI_CORE_TOOL_NAMES);
   if (options.responsibilityReturn) names.delete("odai_reference");
   if (activation.routingConfig) names.add("odai_routing_config");

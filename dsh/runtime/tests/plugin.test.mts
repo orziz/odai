@@ -17,6 +17,7 @@ import {
 } from "../build/session-evidence.mjs";
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
 import { isManagedRoleChild } from "../build/runtime-support.mjs";
+import { createReviewEvidenceSnapshot } from "../build/review-evidence.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
 import { resolveRoutingConfigPath } from "../build/routing-config.mjs";
 import { buildRoleContextPacket } from "../build/routing-context.mjs";
@@ -1302,9 +1303,10 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
   for (const role of ["reviewer", "researcher"] as const) {
     const parent: DshAgent = { session: { header: { id: `managed-parent-${role}` }, snapshotEvents: () => [], append() {} } };
     let child: DshAgent | undefined;
+    const reviewEvidence = createReviewEvidenceSnapshot([{ index: 1, source: "tool", kinds: ["tool"], label: "captured source", text: "complete source" }]);
     const outcome = await runRoutedRole({
       provider: "spawn", decision: { role }, roleContract: "SUPPLIED_OWNER", taskText: "bounded verified evidence", agent: parent,
-      signal: new AbortController().signal, roleRoute: route,
+      signal: new AbortController().signal, roleRoute: route, reviewEvidence,
       subagents: { async start(_provider, request) {
         const label = String(request.label);
         const makeChild = (parentId: string, id: string): DshAgent => ({ session: {
@@ -1318,15 +1320,24 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
         assert.equal(isManagedRoleChild(makeChild(String(parent.session.header.id), "copied-label")), false);
         const requested = await ctx.captured.handlers.get("agent/request")({ agent: child, turn: 1, step: 1 }, async () => ({ provider: "openai", model: "base" }));
         assert.equal(requested.model, route.model);
-        const assembly = { sections: [...ctx.captured.sections], tools: [] };
+        const assembly = { sections: [...ctx.captured.sections], tools: ctx.captured.tools.map(({ name }: TestToolSchema) => ({ name })) };
         const assembled = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent: child }, async () => assembly);
+        assert.deepEqual(Array.from(assembled.tools, (tool: TestToolSchema) => tool.name), role === "reviewer" ? ["odai_review_evidence"] : []);
+        if (role === "reviewer") {
+          for (const name of ["read", "bash", "write", "web_fetch", "subagent"]) assert.match(String(ctx.captured.guards[0]({ agent: child, name })), /ODAI_REVIEW_EVIDENCE_ONLY/);
+          assert.equal(ctx.captured.guards[0]({ agent: child, name: "odai_review_evidence" }), undefined);
+          const reader = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_review_evidence");
+          assert.ok(reader);
+          const page = await reader.execute({ digest: reviewEvidence.digest, action: "read", id: "tool-event-1" }, { agent: child, callId: "page", name: reader.name });
+          assert.equal(page.text, "complete source");
+        }
         assert.equal(assembled.sections.some((section: TestPromptSection) => section.name === "odai:child-responsibility-contract"), false);
         assert.ok(JSON.stringify(request.prompt).includes("SUPPLIED_OWNER"));
         return { localAgent: child, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "result" }] }),
           async dispose() { assert.ok(child && isManagedRoleChild(child)); } };
       } },
     });
-    assert.equal(outcome.status, "completed");
+    assert.equal(outcome.status, "completed", JSON.stringify(outcome));
     assert.ok(child);
     assert.equal(isManagedRoleChild(child), false);
     await assert.rejects(ctx.captured.handlers.get("agent/request")({ agent: child, turn: 2, step: 1 }, async () => route), /ODAI_MANAGED_RESPONSIBILITY_REQUIRED/);
@@ -2487,6 +2498,7 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   assert.match(ctx.captured.sections[8].text, /no hidden provider, model, embedding, subagent, or compaction call/u);
   const tools = new RequiredMap(ctx.captured.tools.map((tool: TestTool) => [tool.name, tool] as const));
   assert.deepEqual([...tools.keys()], [
+    "odai_review_evidence",
     "odai_context_capability",
     "odai_reference",
     "odai_routing_config",

@@ -137,7 +137,28 @@ const wrapper = [
   "    () => { throw new Error('human safety continuity allowed child inspection'); },",
   "    (error) => { if (!/child agents may not inspect or change/u.test(String(error?.message ?? error))) throw error; },",
   "  );",
-  "  Promise.all([guardsReady, configProbe, sourceProbe, evolutionProbe, outputProbe, compactionProbe, memoryProbe, safetyProbe, continuityProbe]).then(() => {",
+  `  const reviewProbe = Promise.all([import(${JSON.stringify(pathToFileURL(resolve(dirname(pluginPath), "runtime-support.mjs")).href)}), import(${JSON.stringify(pathToFileURL(resolve(dirname(pluginPath), "review-evidence.mjs")).href)})]).then(async ([support, evidence]) => {`,
+  "    const snapshot = evidence.createReviewEvidenceSnapshot([{ index: 1, source: 'tool', label: 'native capture', kinds: ['tool'], text: 'x'.repeat(9000) + 'UNTRUNCATED_TAIL' }]);",
+  "    const parentSession = ctx.sessions.create(undefined, { meta: { cwd: process.cwd() } });",
+  "    const parent = { id: parentSession.id, session: parentSession };",
+  "    let reviewer;",
+  "    const outcome = await support.runRoutedRole({ provider: 'probe', decision: { role: 'reviewer' }, taskText: 'review captured source', roleContract: 'snapshot only', agent: parent, signal: new AbortController().signal, reviewEvidence: snapshot,",
+  "      subagents: { async start(_provider, request) {",
+  "        const session = ctx.sessions.create(undefined, { meta: { cwd: process.cwd(), origin: 'subagent', parentSession: parent.id, delegationDepth: 1 } });",
+  "        session.append('subagent/descriptor', { version: 3, mode: 'one-shot', provider: 'probe', label: request.label });",
+  "        reviewer = { id: session.id, session, options: {} };",
+  "        const page = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-page', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
+  "        if (page.isError || !JSON.stringify(page).includes('UNTRUNCATED_TAIL')) throw new Error(`native evidence paging failed: ${JSON.stringify(page)}`);",
+  `        const denied = await ctx.tools.execute({ name: 'read', callId: 'review-file-denied', arguments: { file_path: ${JSON.stringify(skillPath)} }, agent: reviewer, signal: new AbortController().signal });`,
+  "        if (!denied.isError || !JSON.stringify(denied).includes('ODAI_REVIEW_EVIDENCE_ONLY')) throw new Error('reviewer escaped the snapshot boundary');",
+  "        return { result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'verified' }] }), async dispose() {} };",
+  "      } },",
+  "    });",
+  "    if (outcome.status !== 'completed') throw new Error(`managed evidence probe failed: ${JSON.stringify(outcome)}`);",
+  "    const late = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-late', arguments: { digest: snapshot.digest, action: 'list' }, agent: reviewer, signal: new AbortController().signal });",
+  "    if (!late.isError) throw new Error('disposed review retained evidence access');",
+  "  });",
+  "  Promise.all([guardsReady, configProbe, sourceProbe, evolutionProbe, outputProbe, compactionProbe, memoryProbe, safetyProbe, continuityProbe, reviewProbe]).then(() => {",
   `    writeFileSync(${JSON.stringify(markerPath)}, 'loaded-guarded-and-configured\\n', 'utf8');`,
   "  }).catch((error) => process.stderr.write(`odai load probe: ${error.stack ?? error}\\n`));",
   "}",
@@ -217,5 +238,5 @@ try {
 
   process.stdout.write(`dsh plugin load verified with ${dsh}\n`);
 } finally {
-  await rm(scratch, { recursive: true, force: true });
+  await rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 });
 }

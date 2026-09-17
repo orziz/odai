@@ -298,7 +298,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前源码候选为 DSH `0.2.32` / canonical `0.3.15`，已发布 DSH 为 `0.2.31`。当前定向评估使用 GPT-6 Astra / xhigh 总控和 GPT-5.6 Terra / xhigh 独立裁判，覆盖实际任务、多轮讨论、会话重启和配置路由。
+当前源码候选为 DSH `0.2.32` / canonical `0.3.16`，已发布 DSH 为 `0.2.31`。最近一组定向模型评估使用冻结的 canonical `0.3.15`、GPT-6 Astra / xhigh 总控和 GPT-5.6 Terra / xhigh 独立裁判；后续审查证据分页修复由原生记录回放和隔离宿主检查单独验证，不继承旧分数。
 
 当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 
