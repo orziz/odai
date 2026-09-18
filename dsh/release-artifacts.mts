@@ -12,7 +12,8 @@ interface PublicationOperations {
   lookup: (artifact: ReleaseArtifact) => unknown | Promise<unknown>;
   publish: (artifact: ReleaseArtifact) => void | Promise<void>;
   report?: (artifact: ReleaseArtifact, alreadyPublished: boolean) => void;
-  wait?: () => Promise<void>;
+  wait?: (milliseconds: number) => Promise<void>;
+  pending?: (artifact: ReleaseArtifact, waitedMs: number) => void;
 }
 
 function integrityOf(tarball: string): string {
@@ -63,7 +64,11 @@ export async function publishVerifiedArtifacts(
     if (metadata !== undefined) assertPublishedArtifact(artifact, metadata);
   }
 
-  const wait = operations.wait ?? (() => new Promise<void>((done) => setTimeout(done, 1_500)));
+  const wait = operations.wait ?? ((milliseconds: number) => new Promise<void>((done) => setTimeout(done, milliseconds)));
+  const pollIntervalMs = 5_000;
+  const visibilityWaitMs = 300_000;
+  const spec = (artifact: ReleaseArtifact): string => `${artifact.name}@${artifact.version}`;
+  const verifiedPackages = artifacts.filter((_, index) => existing[index]).map(spec);
   for (const [index, artifact] of artifacts.entries()) {
     assertReleaseArtifactUnchanged(artifact);
     if (existing[index]) {
@@ -72,18 +77,31 @@ export async function publishVerifiedArtifacts(
     }
     await operations.publish(artifact);
     let verified = false;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const metadata = await operations.lookup(artifact);
-      if (metadata !== undefined) {
-        assertPublishedArtifact(artifact, metadata);
-        verified = true;
-        break;
+    try {
+      for (let waitedMs = 0; waitedMs <= visibilityWaitMs; waitedMs += pollIntervalMs) {
+        const metadata = await operations.lookup(artifact);
+        if (metadata !== undefined) {
+          assertPublishedArtifact(artifact, metadata);
+          verified = true;
+          break;
+        }
+        if (waitedMs < visibilityWaitMs) {
+          if (waitedMs % 30_000 === 0) operations.pending?.(artifact, waitedMs);
+          await wait(pollIntervalMs);
+        }
       }
-      if (attempt < 4) await wait();
+      if (!verified) throw new Error("Registry visibility is still pending after 5 minutes of polling waits.");
+    } catch (error) {
+      const unattempted = artifacts.slice(index + 1).filter((_, offset) => !existing[index + 1 + offset]);
+      throw new Error([
+        `npm publish returned success for ${spec(artifact)}, but registry verification has not completed.`,
+        `Verified: ${verifiedPackages.join(", ") || "none"}.`,
+        `Not yet submitted: ${unattempted.map(spec).join(", ") || "none"}.`,
+        "No automatic republish was attempted. Once the version is visible, rerun this script with unchanged package contents; matching published tarballs will be verified and skipped.",
+        error instanceof Error ? error.message : String(error),
+      ].join("\n"), { cause: error });
     }
-    if (!verified) {
-      throw new Error(`Publication returned success, but ${artifact.name}@${artifact.version} could not be verified on the registry.`);
-    }
+    verifiedPackages.push(spec(artifact));
     operations.report?.(artifact, false);
   }
 }

@@ -13,6 +13,7 @@ test("DSH publication verifies the pinned release matrix instead of PATH", async
   const publishSource = await readFile(resolve(repoRoot, "dsh/npm-publish.mts"), "utf8");
   assert.match(publishSource, /scripts\/verify-dsh-release-matrix\.mjs/u);
   assert.doesNotMatch(publishSource, /"run", "verify:dsh"/u);
+  assert.match(publishSource, /npm\(\["view", spec, field,[^\n]+"--prefer-online"/u);
 });
 
 test("DSH publication clean gate covers root build inputs", async () => {
@@ -157,10 +158,59 @@ test("missing publication evidence stops after bounded reads", async (context) =
     lookup: () => { reads += 1; },
     publish: () => { writes += 1; },
     wait: async () => { waits += 1; },
-  }), /could not be verified/u);
+  }), /npm publish returned success[\s\S]*verification has not completed[\s\S]*5 minutes/u);
   assert.equal(writes, 1);
-  assert.equal(reads, 6);
-  assert.equal(waits, 4);
+  assert.equal(reads, 62);
+  assert.equal(waits, 60);
+});
+
+test("a minute of registry processing still completes both packages without republishing", async (context) => {
+  const artifacts = fixture(context);
+  const writes = [];
+  let elapsed = 0;
+  const notices = [];
+  await publishVerifiedArtifacts(artifacts, {
+    lookup: (artifact) => writes.includes(artifact.name) && elapsed >= 60_000 ? published(artifact) : undefined,
+    publish: (artifact) => { writes.push(artifact.name); },
+    wait: async (milliseconds) => { elapsed += milliseconds; },
+    pending: (artifact, waitedMs) => notices.push([artifact.name, waitedMs]),
+  });
+  assert.deepEqual(writes, artifacts.map(({ name }) => name));
+  assert.equal(elapsed, 60_000);
+  assert.deepEqual(notices, [[artifacts[0].name, 0], [artifacts[0].name, 30_000]]);
+});
+
+test("visibility timeout reports partial state and rerunning publishes only the missing package", async (context) => {
+  const [plugin, agent] = fixture(context);
+  const writes = [];
+  let elapsed = 0;
+  await assert.rejects(publishVerifiedArtifacts([plugin, agent], {
+    lookup: () => undefined,
+    publish: (artifact) => { writes.push(artifact.name); },
+    wait: async (milliseconds) => { elapsed += milliseconds; },
+  }), (error) => {
+    assert.match(error.message, /npm publish returned success for odai-dsh-plugin/u);
+    assert.match(error.message, /Not yet submitted: odai-dsh-agent/u);
+    assert.match(error.message, /rerun this script with unchanged package contents/u);
+    return true;
+  });
+  assert.equal(elapsed, 300_000);
+  const registry = new Map([[plugin.name, published(plugin)]]);
+  await publishVerifiedArtifacts([plugin, agent], {
+    lookup: ({ name }) => registry.get(name),
+    publish: (artifact) => { writes.push(artifact.name); registry.set(artifact.name, published(artifact)); },
+  });
+  assert.deepEqual(writes, [plugin.name, agent.name]);
+});
+
+test("post-publish query errors preserve accepted status without publishing the next package", async (context) => {
+  const artifacts = fixture(context);
+  let writes = 0;
+  await assert.rejects(publishVerifiedArtifacts(artifacts, {
+    lookup: () => { if (writes) throw new Error("registry unavailable"); },
+    publish: () => { writes++; },
+  }), /returned success[\s\S]*Not yet submitted: odai-dsh-agent[\s\S]*registry unavailable/u);
+  assert.equal(writes, 1);
 });
 
 test("wrong uploaded bytes stop publication of the second package", async (context) => {

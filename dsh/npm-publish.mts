@@ -96,7 +96,7 @@ function npmWhoami(): string | undefined {
 }
 
 function npmViewField(spec: string, field: string, options: ViewOptions = {}): ViewField {
-  const result = npm(["view", spec, field, `--registry=${REGISTRY}`], { capture: true, allowFailure: true });
+  const result = npm(["view", spec, field, `--registry=${REGISTRY}`, "--prefer-online"], { capture: true, allowFailure: true });
   if (result.status === 0) return Object.freeze({ kind: "found", value: capturedText(result.stdout).trim() });
   const detail = npmFailureText(result);
   if (options.allowMissing === true
@@ -311,6 +311,9 @@ async function main(): Promise<void> {
     ], { label: "Isolated packed DSH release-matrix verification" });
     await publishVerifiedArtifacts(releases, {
       lookup: lookupPublishedArtifact,
+      pending: ({ name, version }, waitedMs) => {
+        console.log(`${name}@${version}: npm accepted publication; waiting for registry visibility (${waitedMs / 1000}s of polling waits, up to 300s). Do not republish while processing.`);
+      },
       publish: ({ name, version, tarball }) => {
         npm(["publish", tarball, "--access=public", `--registry=${REGISTRY}`], {
           label: `publish ${name}@${version}`,
