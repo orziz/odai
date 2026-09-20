@@ -1,5 +1,5 @@
 import { decideRoute, extractLatestUserText } from "./router.mjs";
-import { DEFAULT_CHILD_ALLOWED_TOOLS } from "./governance.mjs";
+import type { ToolRestriction } from "./runtime-types.mjs";
 import { DSH_CHILD_EXECUTION_PROMPT, DSH_NATIVE_DELEGATION_GUIDANCE, dshRoleContract } from "./role-overlays.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import {
@@ -41,6 +41,7 @@ import {
   isSubagentSession,
   routedRoleOf,
   isManagedRoleChild,
+  managedRoleBundle,
   reconcileAdaptiveToolSchemas,
   renderEffectiveRoutingContext,
 } from "./runtime-support.mjs";
@@ -64,6 +65,22 @@ interface PromptContext {
   scope?: unknown;
   signal?: AbortSignal;
 }
+
+interface PendingExecutionSurface {
+  assembly: PromptAssembly;
+  context: PromptContext;
+  key: string;
+  needsReassembly: boolean;
+  keyFor(): string;
+  prepare(): void;
+}
+interface SurfaceOwner { active: boolean }
+// Agent and Plugin may load separate module copies. Refresh every captured layer
+// together; an inner reassembly must not strand the outer layer's old sections.
+const sharedSurfaces = globalThis as typeof globalThis & {
+  __odaiPendingExecutionSurfaces?: WeakMap<DshAgent, Map<SurfaceOwner, PendingExecutionSurface>>;
+};
+const executionSurfaces = sharedSurfaces.__odaiPendingExecutionSurfaces ??= new WeakMap();
 
 interface OutputSelection {
   policy: OutputPolicy;
@@ -97,6 +114,7 @@ function isSkillRegistry(value: unknown): value is SkillRegistry {
 }
 
 interface PromptInstallDependencies {
+  executionRestrictionFor(agent: DshAgent): ToolRestriction;
   pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
   syncToolExposure(
     agent: DshAgent,
@@ -269,7 +287,48 @@ export function createPromptRuntime(deps: PromptDependencies) {
     routingSnapshots.set(agent, { turn, state });
     return state;
   };
-  const install = ({ pendingResponsibilityGap, syncToolExposure }: PromptInstallDependencies): void => {
+  const surfaceOwner: SurfaceOwner = { active: true };
+  ctx.effect?.(() => () => { surfaceOwner.active = false; }, "odai: execution surface owner");
+  const surfacesFor = (agent: DshAgent): Map<SurfaceOwner, PendingExecutionSurface> => {
+    let surfaces = executionSurfaces.get(agent);
+    if (!surfaces) executionSurfaces.set(agent, surfaces = new Map());
+    for (const owner of surfaces.keys()) if (!owner.active) surfaces.delete(owner);
+    return surfaces;
+  };
+  let installedDependencies: PromptInstallDependencies | undefined;
+  const refreshExecutionSurface = async (agent: DshAgent): Promise<void> => {
+    const surfaces = surfacesFor(agent);
+    const pending = surfaces.get(surfaceOwner);
+    if (!pending || !installedDependencies) return;
+    const captured = [...surfaces.values()];
+    if (!captured.some((surface) => surface.needsReassembly || surface.key !== surface.keyFor())) return;
+    for (const surface of captured) {
+      surface.prepare();
+      surface.key = surface.keyFor();
+      surface.needsReassembly = false;
+    }
+    // rc.2 snapshots tools before agent/pre-step. Reassemble only across an
+    // effective permission transition, after replacing all our restrictions.
+    // Preserve array identities through the host's shallow assembly copies.
+    const refreshed = typeof ctx.systemPrompt.assemble === "function"
+      ? await ctx.systemPrompt.assemble(pending.context)
+      : reconcileAdaptiveToolSchemas(pending.assembly,
+        syncNamesFor(agent, pending.context), ctx.tools.schemas?.(agent) ?? [], installedDependencies.executionRestrictionFor(agent));
+    for (const surface of captured) {
+      surface.assembly.tools.splice(0, surface.assembly.tools.length, ...refreshed.tools);
+      surface.assembly.sections.splice(0, surface.assembly.sections.length, ...refreshed.sections);
+    }
+  };
+  const syncNamesFor = (agent: DshAgent, context: PromptContext): readonly string[] => {
+    const turn = currentAgentTurn(agent);
+    const input = currentDirectInput(agent, { turn, signal: context.signal, minimum: "claimed" });
+    return installedDependencies?.syncToolExposure(agent,
+      contextActivationFor(agent, input?.message ? extractLatestUserText([input.message]) : "", turn),
+      { turn, step: (currentAgentStep(agent) ?? 0) + 1, responsibilityReturn: false }) ?? [];
+  };
+  const install = (dependencies: PromptInstallDependencies): void => {
+  installedDependencies = dependencies;
+  const { pendingResponsibilityGap, syncToolExposure, executionRestrictionFor } = dependencies;
   ctx.on("system-prompt/assemble", async (
     assembly: PromptAssembly,
     context: PromptContext,
@@ -312,11 +371,9 @@ export function createPromptRuntime(deps: PromptDependencies) {
       step: proposedStep,
       responsibilityReturn: responsibilityReturnNeeded,
     });
-    const childRestriction = childSession
-      ? { allow: DEFAULT_CHILD_ALLOWED_TOOLS, deny: config.governance.additionalDeniedTools }
-      : {};
+    const executionRestriction = executionRestrictionFor(agent);
     const executableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
-    const visibleAssembly = reconcileAdaptiveToolSchemas(assembly, activeToolNames, executableSchemas, childRestriction);
+    const visibleAssembly = reconcileAdaptiveToolSchemas(assembly, activeToolNames, executableSchemas, executionRestriction);
     if (visibleAssembly !== assembly) {
       assembly.tools = visibleAssembly.tools;
       assembly.sections = visibleAssembly.sections;
@@ -324,8 +381,12 @@ export function createPromptRuntime(deps: PromptDependencies) {
 
     const downstream = await next();
     const finalExecutableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
-    const reconciledDownstream = reconcileAdaptiveToolSchemas(downstream, activeToolNames, finalExecutableSchemas, childRestriction);
-    const selection: SkillSelection = await selectSharedSkillForTurn(agent, () => selectForAgent(agent, context));
+    const reconciledDownstream = reconcileAdaptiveToolSchemas(downstream, activeToolNames, finalExecutableSchemas, executionRestriction);
+    const selected: SkillSelection = await selectSharedSkillForTurn(agent, () => selectForAgent(agent, context));
+    const boundBundle = childSession ? managedRoleBundle(agent) : undefined;
+    const selection: SkillSelection = boundBundle
+      ? { mode: selected.mode, rejections: [], bundle: boundBundle, status: "selected", reasonCode: "managed-parent-snapshot" }
+      : selected;
     const outputSelection: OutputSelection = childSession
       ? Object.freeze({ policy: DEFAULT_OUTPUT_POLICY, source: "default" })
       : previewSessionOutputControl(
@@ -359,7 +420,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     if (selection.status === "fallback") {
       logger.warn(`Odai skill source ${selection.mode} fell back to bundled governance (${selection.reasonCode})`);
     }
-    const outputPrompt = [
+    const outputPrompt = childSession ? "" : [
       renderOutputPolicyPrompt(outputSelection.policy),
       renderSessionOutputControlPrompt(outputSelection),
     ].filter(Boolean).join("\n\n");
@@ -395,14 +456,14 @@ export function createPromptRuntime(deps: PromptDependencies) {
     const childRole = childSession ? routedRoleOf(agent) : undefined;
     const childRoleSections = childRole && !isManagedRoleChild(agent) ? [{
       name: "odai:child-responsibility-contract",
-      text: dshRoleContract(childRole, selection.bundle.roleContracts[childRole], selection.bundle.referenceContracts),
+      text: dshRoleContract(childRole, selection.bundle.roleContracts[childRole]),
     }] : [];
-    return {
+    const result = {
       ...reconciledDownstream,
       sections: reconciledDownstream.sections.filter(
         (section) => !["odai:child-execution-boundary", "odai:child-responsibility-contract", "odai:native-delegation"].includes(section.name),
       ).map((section) => {
-        if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection) };
+        if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection, childSession, Boolean(boundBundle)) };
         if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
         if (section.name === "odai:human-safety-continuity") return { ...section, text: continuityPrompt };
@@ -414,9 +475,19 @@ export function createPromptRuntime(deps: PromptDependencies) {
         return section;
       }).concat(childSession ? [{
         name: "odai:child-execution-boundary",
-        text: DSH_CHILD_EXECUTION_PROMPT,
+        text: [!childRole ? selection.bundle.delegationContract : "", DSH_CHILD_EXECUTION_PROMPT].filter(Boolean).join("\n\n"),
       }] : [{ name: "odai:native-delegation", text: DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
     };
+    const key = JSON.stringify(executionRestriction);
+    const surfaces = surfacesFor(agent);
+    const previous = surfaces.get(surfaceOwner);
+    surfaces.set(surfaceOwner, {
+      assembly: result, context, key,
+      needsReassembly: Boolean(previous && previous.key !== key),
+      keyFor: () => JSON.stringify(executionRestrictionFor(agent)),
+      prepare: () => { syncNamesFor(agent, context); },
+    });
+    return result;
   });
 
   };
@@ -427,6 +498,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     evolutionDisabled,
     explicitSkillPath,
     install,
+    refreshExecutionSurface,
     memorySettingsFor,
     routingSnapshotFor,
     selectForAgent,

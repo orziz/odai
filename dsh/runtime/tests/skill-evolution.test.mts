@@ -527,7 +527,7 @@ test("core and destructive changes require a generation-bound BREAKING confirmat
     const skill = await tool.execute({ action: "inspect", path: "SKILL.md" }, { name: tool.name, agent: owner });
     const dao = await tool.execute({ action: "inspect", path: "references/dao.md" }, { name: tool.name, agent: owner });
     const support = await tool.execute({ action: "inspect", path: "references/support.md" }, { name: tool.name, agent: owner });
-    const core = "不曲事实、不越权、不造事";
+    const core = "只做授权内必要、安全、有益的动作";
     const daoHeading = required(resultContent(dao).split(/\r?\n/u)[0], "dao heading");
     const supportHeading = required(resultContent(support).split(/\r?\n/u)[0], "support heading");
     const proposed = await authorizedProposal(tool, owner, {
@@ -605,35 +605,27 @@ test("core and destructive changes require a generation-bound BREAKING confirmat
   }
 });
 
-test("every SKILL.md surface is conservatively classified as BREAKING", async () => {
+test("entry, core, and delegation additions all require BREAKING authorization", async () => {
   const scratch = scratchRoot("breaking-skill-surfaces");
   try {
     const root = resolve(scratch, "skill-evolution");
     const current = upstreamSelection();
     const tool: TestEvolutionTool = createSkillEvolutionTool(root, { currentSelectionFor: () => current });
     const owner = execution().agent;
-    const skill = await tool.execute({ action: "inspect", path: "SKILL.md" }, { name: tool.name, agent: owner });
-    const anchors = [
-      "description: 以“成事而不妄为”为入口处理通用任务。用户点名 odai，或任务模糊、复杂、高风险、前提可疑、易漏项或需跨能力协作时使用；简单任务直做。",
-      "## 精神内核",
-      "## 当前判断",
-      "## 按表现分配支撑",
-      "## 共同行动边界",
-      "## 完成",
-    ];
-    for (const [index, anchor] of anchors.entries()) {
-      const proposed = await authorizedProposal(tool, owner, {
-        action: "propose",
-        objective: `Classify SKILL surface ${index}`,
-        expectedBundleDigest: current.bundle.digest,
-        changes: [{
-          path: "SKILL.md",
-          expectedSha256: resultSha256(skill),
-          replacements: [{ oldString: anchor, newString: `${anchor}\nSKILL_SURFACE_${index}` }],
-        }],
-      });
-      assert.equal(proposed.generation.authorizationLevel, "breaking");
-      assert.deepEqual(proposed.generation.breakingReasons, ["protected-file:SKILL.md"]);
+    for (const path of Object.values(current.bundle.manifest.moduleFiles)) {
+      const source = await tool.execute({ action: "inspect", path }, { name: tool.name, agent: owner });
+      const anchors = resultContent(source).split(/\r?\n/u).filter(line => /^(?:## |description:)/u.test(line));
+      assert.ok(anchors.length > 0);
+      for (const [index, anchor] of anchors.entries()) {
+        const proposed = await authorizedProposal(tool, owner, {
+          action: "propose", objective: `Classify ${path} surface ${index}`,
+          expectedBundleDigest: current.bundle.digest,
+          changes: [{ path, expectedSha256: resultSha256(source),
+            replacements: [{ oldString: anchor, newString: `${anchor}\nMODULE_SURFACE_${index}` }] }],
+        });
+        assert.equal(proposed.generation.authorizationLevel, "breaking");
+        assert.deepEqual(proposed.generation.breakingReasons, [`protected-file:${path}`]);
+      }
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -1013,6 +1005,35 @@ function storeFingerprint(root: string): string {
   visit(root, ".");
   return JSON.stringify(entries);
 }
+
+test("an incompatible active snapshot falls back without rewriting stored generations", async () => {
+  const scratch = scratchRoot("obsolete-active");
+  try {
+    const root = resolve(scratch, "skill-evolution");
+    const upstream = upstreamSelection();
+    const tool: TestEvolutionTool = createSkillEvolutionTool(root, { currentSelectionFor: () => upstream });
+    const owner = execution().agent;
+    const proposed = await proposeMarker(tool, owner, upstream, "references/verification.md", "OBSOLETE_ACTIVE");
+    const generationId = proposed.generation.generationId;
+    authorize(owner, proposed.generation.activationPhrase);
+    await tool.execute({ action: "activate", generationId, expectedUpstreamDigest: upstream.bundle.digest }, { name: tool.name, agent: owner });
+    const manifestPath = resolve(root, "generations", generationId, "bundle/manifest.json");
+    const manifest = parseRecord(readFileSync(manifestPath, "utf8"), "old snapshot manifest");
+    manifest.schemaVersion = 2;
+    manifest.runtimeContract = 6;
+    delete manifest.moduleFiles;
+    delete manifest.rolePresets;
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    const before = storeFingerprint(root);
+    const selected = applySkillEvolutionSelection(upstream, root);
+    assert.equal(selected.status, "fallback");
+    assert.equal(selected.reasonCode, "evolution-generation-invalid");
+    assert.equal(selected.bundle, upstream.bundle);
+    assert.equal(storeFingerprint(root), before);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 test("invalid state falls back visibly and host bypass keeps upstream", async () => {
   const scratch = scratchRoot("fallback");

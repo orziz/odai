@@ -215,7 +215,12 @@ export function routeMismatch(expected?: ModelRoute, actual?: ModelRoute): strin
   return routeMismatchFor(expected, actual, "child");
 }
 
-interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession; reviewReader?: import("./review-evidence.mjs").ReviewEvidenceReader }
+interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession; bundle?: SkillBundle; reviewReader?: import("./review-evidence.mjs").ReviewEvidenceReader }
+export function managedRoleBundle(agent: DshAgent): SkillBundle | undefined {
+  if (!isManagedRoleChild(agent)) return undefined;
+  const descriptor = sessionEvents(agent.session).findLast(event => event.type === "subagent/descriptor");
+  return typeof descriptor?.data.label === "string" ? managedChildLabels.get(descriptor.data.label)?.bundle : undefined;
+}
 export function managedReviewEvidenceReader(agent: DshAgent): import("./review-evidence.mjs").ReviewEvidenceReader | undefined {
   if (!isManagedRoleChild(agent) || routedRoleOf(agent) !== "reviewer") return undefined;
   const descriptor = sessionEvents(agent.session).findLast(event => event.type === "subagent/descriptor");
@@ -242,6 +247,7 @@ export async function runRoutedRole({
   agent,
   signal,
   roleRoute,
+  roleBundle,
   reviewEvidence,
 }: {
   subagents: SubagentsService;
@@ -252,6 +258,7 @@ export async function runRoutedRole({
   agent: unknown;
   signal: AbortSignal;
   roleRoute?: ModelRoute;
+  roleBundle?: SkillBundle;
   reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   let run: RoutedRun | undefined;
@@ -260,7 +267,7 @@ export async function runRoutedRole({
   const parentSessionId = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
     ? agent.session.header.id : undefined;
   if (typeof parentSessionId === "string" && parentSessionId) managedChildLabels.set(label, {
-    parentSessionId, role: decision.role,
+    parentSessionId, role: decision.role, ...(roleBundle ? { bundle: roleBundle } : {}),
     ...(decision.role === "reviewer" && reviewEvidence ? { reviewReader: reviewEvidence.createReader() } : {}),
   });
   try {
@@ -268,7 +275,8 @@ export async function runRoutedRole({
     signal.throwIfAborted();
     run = await subagents.start(provider, {
       label,
-      prompt: [{ type: "text", text: renderDelegationPrompt(decision, taskText, roleContract) }],
+      prompt: [{ type: "text", text: renderDelegationPrompt(decision, taskText,
+        roleBundle ? `${roleBundle.coreContract}\n\n${roleContract}` : roleContract) }],
       parent: agent,
       signal,
       maxDepth: 1,
@@ -365,7 +373,7 @@ export async function runRoutedRole({
   }
 }
 
-export function canonicalPrompt(selection: SkillSelection): string {
+export function canonicalPrompt(selection: SkillSelection, child = false, coreInDelegation = false): string {
   const { bundle } = selection;
   const fallback = selection.status === "fallback"
     ? `Selection fallback: ${selection.reasonCode}${selection.detail ? ` (${selection.detail})` : ""}.`
@@ -379,10 +387,12 @@ export function canonicalPrompt(selection: SkillSelection): string {
     `Canonical skill: ${bundle.manifest.skillVersion}; runtime contract: ${bundle.manifest.runtimeContract}; digest: ${bundle.digest}.`,
     ...(evolution ? [evolution] : []),
     ...(fallback ? [fallback] : []),
-    "This governance is active for every request and already loaded by this runtime; do not call the skill tool or read SKILL.md to load it again.",
-    "The controller owns final delivery; delegate only for a real independent gap with observable net benefit.",
+    child
+      ? "The shared core is loaded from the responsibility's canonical snapshot. Follow the supplied delegation contract, not the controller's entry workflow."
+      : "The canonical core and controller entry are already loaded by this runtime; do not call the skill tool or read SKILL.md to load them again.",
+    ...(!child ? ["The controller owns final delivery; delegate only for a real independent gap with observable net benefit."] : []),
     "",
-    bundle.skillBody,
+    coreInDelegation ? "The same-snapshot core is included once in the authenticated parent's responsibility contract below." : child ? bundle.coreContract : bundle.skillBody,
   ].join("\n");
 }
 

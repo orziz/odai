@@ -165,7 +165,10 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
   assert.equal(bundled.manifest.runtimeContract, manifest.runtimeContract);
   assert.deepEqual(bundled.manifest.requiredFiles, manifest.requiredFiles);
   assert.match(bundled.roleContracts.researcher, /来源账本只是检索索引/u);
-  assert.match(bundled.roleContracts.reviewer, /来源绑定本身不证明语义冲突/u);
+  assert.match(bundled.roleContracts.reviewer, /来源绑定(?:本身)?不证明语义冲突/u);
+  assert.match(bundled.roleContracts.reviewer, /局部审查不以重建全任务需求/u);
+  assert.match(bundled.roleContracts.planner, /只在明确委托正式计划时/u);
+  assert.match(bundled.roleContracts.controller, /完整需求覆盖和最终验收责任不能随委派转移/u);
   assert.ok(bundled.manifest.requiredFiles.includes("references/care.md"));
   assert.deepEqual(Object.keys(bundled.referenceContracts), [
     "dao",
@@ -220,11 +223,11 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
     assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /referenceFiles/u);
     topologyManifest.referenceFiles.support = topologyManifest.referenceFiles.dao;
     writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /unique file/u);
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /distinct paths/u);
     topologyManifest.referenceFiles.support = supportPath;
     topologyManifest.referenceFiles.unknown = "references/dao.md";
     writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /unknown owners/u);
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /invalid owners/u);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -276,7 +279,7 @@ test("auto source keeps project pins scoped and selects newer user installs else
     mkdirSync(resolve(projectA, ".git"), { recursive: true });
     mkdirSync(resolve(projectB, ".git"), { recursive: true });
     installBundle(resolve(projectA, ".dsh/skills/odai"), "0.0.9", "PROJECT_A");
-    installBundle(resolve(dshHome, "skills/odai"), "0.4.0", "USER_DSH");
+    installBundle(resolve(dshHome, "skills/odai"), "9.0.0", "USER_DSH");
     const env = { DSH_HOME: dshHome, DSH_AGENTS_HOME: agentsHome };
 
     const projectSelection = await resolveSkillSelection({
@@ -296,7 +299,7 @@ test("auto source keeps project pins scoped and selects newer user installs else
       env,
     });
     assert.equal(userSelection.bundle.source, "user-dsh");
-    assert.equal(userSelection.bundle.manifest.skillVersion, "0.4.0");
+    assert.equal(userSelection.bundle.manifest.skillVersion, "9.0.0");
     assert.doesNotMatch(userSelection.bundle.skillText, /PROJECT_A/u);
 
     const forcedUser = await resolveSkillSelection({
@@ -322,7 +325,7 @@ test("invalid and conflicting candidates continue to the next compatible source"
     installBundle(resolve(project, ".dsh/skills/odai"), "0.5.0", "BROKEN_PROJECT");
     rmSync(resolve(project, ".dsh/skills/odai/assets/routing-roles/reviewer.md"));
     installBundle(resolve(dshHome, "skills/odai"), bundled.manifest.skillVersion, "SAME_VERSION_CONFLICT");
-    installBundle(resolve(agentsHome, "skills/odai"), "0.4.0", "USER_AGENTS");
+    installBundle(resolve(agentsHome, "skills/odai"), "9.0.0", "USER_AGENTS");
 
     const selection = await resolveSkillSelection({
       mode: "auto",
@@ -331,7 +334,7 @@ test("invalid and conflicting candidates continue to the next compatible source"
       env: { DSH_HOME: dshHome, DSH_AGENTS_HOME: agentsHome },
     });
     assert.equal(selection.bundle.source, "user-agents");
-    assert.equal(selection.bundle.manifest.skillVersion, "0.4.0");
+    assert.equal(selection.bundle.manifest.skillVersion, "9.0.0");
     assert.deepEqual(selection.rejections.map(({ source, reasonCode }) => [source, reasonCode]), [
       ["project-dsh", "external-invalid"],
       ["user-dsh", "same-version-content-conflict"],
@@ -344,7 +347,7 @@ test("invalid and conflicting candidates continue to the next compatible source"
 test("custom registry candidates participate without making bundled mode depend on skills", async () => {
   const scratch = fixtureRoot("custom-source");
   try {
-    const customPath = installBundle(resolve(scratch, "custom/odai"), "0.4.0", "CUSTOM_SOURCE");
+    const customPath = installBundle(resolve(scratch, "custom/odai"), "9.0.0", "CUSTOM_SOURCE");
     let lookups = 0;
     const skills = {
       async get(...arguments_: unknown[]) {

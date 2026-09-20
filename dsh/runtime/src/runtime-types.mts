@@ -219,6 +219,7 @@ export interface DshRuntimeContext {
   tools: DshToolsService;
   systemPrompt: {
     section(section: PromptSection): void;
+    assemble?(context: { agent?: DshAgent; scope?: unknown; signal?: AbortSignal }): Promise<PromptAssembly>;
   };
   llm: DshLlmService;
   sessions?: DshSessionsService;

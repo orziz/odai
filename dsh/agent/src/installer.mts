@@ -95,8 +95,8 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const EXPECTED_DSH_RANGE = "0.1.5-rc.1";
-const SOURCE_DSH_VERSION = "0.1.5-rc.1";
+const EXPECTED_DSH_RANGE = "0.1.5-rc.2";
+const SOURCE_DSH_VERSION = "0.1.5-rc.2";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
 if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
   throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
@@ -111,6 +111,9 @@ export function supportsDshVersion(version: string): boolean {
 }
 export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 const requiredFiles = Object.freeze([
+  "package.json",
+  "skills/odai/contracts/delegation.md",
+  "skills/odai/scripts/compose-contracts.mjs",
   "agent.cordis.yml",
   "preset.yml",
   "odai-governance.mjs",

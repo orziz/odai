@@ -292,6 +292,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   });
 
   installLifecycleRuntime({
+    refreshExecutionSurface: promptRuntime.refreshExecutionSurface,
     appendEvent, bundled, config, configuredRole, ctx, evidence, hasSessionEvent, invalidateFailedRoleRoute,
     logger, memorySettingsFor, pendingResponsibilityGap, responsibilityScopes, routeProtections,
     selectOutputForAgent,

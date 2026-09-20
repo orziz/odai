@@ -17,7 +17,7 @@ test("canonical validation rejects removal of the core, five judgments, and inte
   try {
     const policy = JSON.parse(readFileSync(resolve(repoRoot, "version-policy.json"), "utf8"));
     const sources = new Set([
-      "skills/odai", "skills/ribao", "version-policy.json",
+      "skills/odai", "skills/ribao", "version-policy.json", "package.json",
       "scripts/validate-odai-skill.mjs", "scripts/version-policy.mjs",
       "scripts/canary-isolation.mjs", "scripts/odai-canary-harness.mjs",
       "scripts/claude-canary-runner.mjs", "scripts/grok-canary-runner.mjs",
@@ -34,19 +34,19 @@ test("canonical validation rejects removal of the core, five judgments, and inte
     }
 
     function validate(text, relativePath = entryPath) {
-      const target = resolve(scratch, relativePath);
-      const original = readFileSync(target, "utf8");
-      writeFileSync(target, text);
+      const parts = [text];
+      const paths = [relativePath];
+      assert.equal(parts.length, paths.length);
+      const originals = paths.map(file => readFileSync(resolve(scratch, file), "utf8"));
+      paths.forEach((file, index) => writeFileSync(resolve(scratch, file), parts[index]));
       try {
         const result = spawnSync(process.execPath, [resolve(scratch, "scripts/validate-odai-skill.mjs")], {
-          cwd: scratch,
-          encoding: "utf8",
-          timeout: 15_000,
+          cwd: scratch, encoding: "utf8", timeout: 15_000,
         });
         assert.ifError(result.error);
         return { status: result.status, output: result.stdout + result.stderr };
       } finally {
-        writeFileSync(target, original);
+        paths.forEach((file, index) => writeFileSync(resolve(scratch, file), originals[index]));
       }
     }
 
@@ -203,7 +203,10 @@ test("canonical validation rejects removal of the core, five judgments, and inte
       ["uncertainty is not proof of missing capability", "做法尚未想清楚不等于能力不足"],
       ["autonomy does not require repeated failed attempts", "不为证明自主而反复硬试"],
       ["delegation retains controller integration", "总控仍负责整合与验证"],
-      ["mapped roles are not a capability ceiling", "不是能力上限"],
+      ["mapped roles are not a capability ceiling", "不是必经阶段或能力上限"],
+      ["role labels cannot grant new authority", "不能靠改名绕过职责的只读、证据或授权边界"],
+      ["bounded packets retain consequential evidence", "不裁掉会改变该判断的要求、安全边界或原始证据"],
+      ["reuse requires matching evidence identity", "复用须能核对同一基线、属性与来源"],
       ["proposed patches are not executed results", "不是已经落盘、执行或通过验证的结果"],
       ["integration must validate the combined state", "应用后验证组合状态"],
       ["narrow responsibilities do not become patch authors", "不因工具只读就自动变成补丁制作责任"],
@@ -230,8 +233,9 @@ test("canonical validation rejects removal of the core, five judgments, and inte
     });
 
     for (const [role, boundaries] of [
-      ["planner", ["不预做实施", "不是面向用户的最终交付", "用户原文来源", "验收与停止条件"]],
-      ["reviewer", ["不调用工具", "完整验收", "通过、失败和仍未判定", "不自行调度"]],
+      ["controller", ["完整需求覆盖和最终验收责任不能随委派转移", "回交只证明其实际覆盖", "不能为收口忽略真实失败"]],
+      ["planner", ["不预做实施", "不是面向用户的最终交付", "用户原文来源", "验收与停止条件", "只在明确委托正式计划时", "局部判断仍须覆盖所有会改变该决定的有效要求", "也不产生实施授权"]],
+      ["reviewer", ["不调用工具", "完整验收", "通过、失败和仍未判定", "不自行调度", "仅当明确委托需求覆盖核查时", "局部审查不以重建全任务需求", "不能以局部范围为由忽略关联安全风险", "偏好与范围外建议单列，不能作为阻断条件", "新增阻断须由新变更、新证据或尚未检查的必要依赖支持", "总控不能因此忽略已证实的失败"]],
     ]) {
       const rolePath = `skills/odai/assets/routing-roles/${role}.md`;
       const roleText = readFileSync(resolve(repoRoot, rolePath), "utf8");

@@ -107,6 +107,7 @@ function hasReviewerDeferral(events: readonly DshEvent[], stateDigest: string): 
 }
 
 interface LifecycleDependencies {
+  refreshExecutionSurface(agent: DshAgent): Promise<void>;
   appendEvent(agent: DshAgent, type: string, data: object): void;
   bundled: SkillBundle;
   config: RuntimeConfig;
@@ -745,7 +746,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
   {
     const routedSteps = new WeakMap<DshAgent, Set<string>>();
-    ctx.on("agent/pre-step", async (
+    const routePreStep = async (
       { agent, turn, step, signal }: AgentRequestEvent,
       next: () => Promise<StepResult>,
     ) => {
@@ -958,7 +959,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             const researchContract = dshRoleContract(
               "researcher",
               researchBundle.roleContracts.researcher,
-              researchBundle.referenceContracts,
             );
             const subagents = isSubagentsService(ctx.subagents) ? ctx.subagents : undefined;
             const result: Readonly<RoutedRoleOutcome> = subagents
@@ -968,6 +968,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
                   decision: researchDecision,
                   taskText: renderResearchTaskContract(responsibilityTaskFor("researcher")),
                   roleContract: researchContract,
+                  roleBundle: researchBundle,
                   agent,
                   signal,
                   roleRoute: researchRoute,
@@ -1061,7 +1062,11 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       const reviewerCanAwaitEvidence = config.routing.mode === "auto"
         || (config.routing.mode === "execute"
           && Boolean(routeRole === "reviewer" ? configuredRole(agent, routeRole, turn).route : undefined));
+      // A child needs a frozen packet before dispatch. An in-place check uses
+      // its existing context: keeping that proposal pending would restart the
+      // same reviewer after handback, even though it already ran.
       const reviewerEvidenceIncomplete = routeRole === "reviewer" && roleContext !== undefined
+        && effectiveRoleDispatch("reviewer", configuredRole(agent, "reviewer", turn).dispatch, config.routing.mode) === "child"
         && !roleContext.sufficient && reviewerCanAwaitEvidence;
       const reviewerDeferralAlreadyReported = reviewerEvidenceIncomplete && reviewerAlreadyDeferred;
       appendEvent(agent, "odai/route-decided", {
@@ -1212,7 +1217,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
       const roleBundle = sharedSkillSelection<SkillSelection>(agent, turn)?.bundle ?? bundled;
       const canonicalRoleContract = roleBundle.roleContracts[routeRole];
-      const roleContract = dshRoleContract(routeRole, canonicalRoleContract, roleBundle.referenceContracts);
+      const roleContract = dshRoleContract(routeRole, canonicalRoleContract);
       let rolePreflightVerified = false;
       if (routeRole === "frontend" && decision.action === "upgrade") {
         const health = await probeModelRoute(
@@ -1402,6 +1407,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             taskText: renderRoleContextPacket(roleContext),
             reviewEvidence: reviewEvidenceSnapshot(roleContext),
             roleContract,
+            roleBundle,
             agent,
             signal,
             roleRoute,
@@ -1461,6 +1467,13 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           ),
         ],
       };
+    };
+    ctx.on("agent/pre-step", async (event: AgentRequestEvent, next: () => Promise<StepResult>) => {
+      try {
+        return await routePreStep(event, next);
+      } finally {
+        if (!event.signal.aborted) await deps.refreshExecutionSurface(event.agent);
+      }
     }, { prepend: true });
   }
 

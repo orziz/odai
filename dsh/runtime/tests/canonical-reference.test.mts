@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createCanonicalReferenceTool } from "../build/canonical-reference.mjs";
 import { loadSkillBundle } from "../build/skill-bundle.mjs";
 import { dshRoleContract } from "../build/role-overlays.mjs";
+import { composeRoleContract } from "#odai-contracts";
 import type { DshAgent } from "../src/runtime-types.mjs";
 
 const bundle = loadSkillBundle(resolve(import.meta.dirname, "../../../skills/odai/SKILL.md"));
@@ -26,16 +27,18 @@ test("canonical references use one selected snapshot and fail closed outside the
   );
 });
 
-test("responsibilities receive their owner and reject missing or invalid owner content", () => {
+test("responsibilities receive their owner through the shared compiler and reject invalid content", () => {
+  const contents = Object.fromEntries(Object.entries(bundle.fileContents).map(([file, bytes]) => [file, Buffer.from(bytes, "base64").toString("utf8")]));
   const references = { planning: "PLANNING_OWNER", verification: "VERIFICATION_OWNER", craft: "CRAFT_OWNER" };
+  for (const [name, text] of Object.entries(references)) contents[bundle.manifest.referenceFiles[name as keyof typeof references]] = text;
   for (const [role, owner] of [["planner", "planning"], ["reviewer", "verification"], ["frontend", "craft"]] as const) {
-    const contract = dshRoleContract(role, bundle.roleContracts[role], references);
+    const contract = dshRoleContract(role, composeRoleContract(role, bundle.manifest, contents, { embedded: true }));
     for (const [name, text] of Object.entries(references)) {
       assert.equal(contract.includes(text), name === owner, "each responsibility receives only its direct owner");
     }
     for (const invalid of [undefined, "", 42]) {
-      assert.throws(() => dshRoleContract(role, bundle.roleContracts[role], { ...references, [owner]: invalid }),
-        new RegExp(`canonical ${owner} reference is unavailable for ${role}`));
+      assert.throws(() => Reflect.apply(composeRoleContract, undefined, [role, bundle.manifest,
+        { ...contents, [bundle.manifest.referenceFiles[owner]]: invalid }]), /contract body is unavailable/u);
     }
   }
 });

@@ -52,7 +52,8 @@ test("body extraction preserves LF, CRLF, and Markdown separators and rejects in
   cpSync(root, scratch, { recursive: true });
   const entry = resolve(scratch, "SKILL.md");
   for (const newline of ["\n", "\r\n"]) {
-    const body = ["Governance body", "", "---", "", "Keep all body content."].join(newline);
+    const core = loadSkillBundle(resolve(root, "SKILL.md")).coreContract.replace(/\n/gu, newline);
+    const body = [core, "", "## Extra contract", "", "Governance body", "", "---", "", "Keep all body content."].join(newline);
     const source = ["---", "name: odai", "---", "", body, ""].join(newline);
     writeFileSync(entry, source);
     const bundle = loadSkillBundle(entry);

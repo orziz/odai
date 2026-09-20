@@ -31,6 +31,8 @@ interface ManifestSnapshot {
   name: string;
   skillVersion: string;
   runtimeContract: number;
+  moduleFiles: Record<string, string>;
+  rolePresets: Record<string, { modules: readonly string[]; references: readonly string[] }>;
   roleFiles: Record<string, string>;
   referenceFiles: Record<string, string>;
   requiredFiles: string[];
@@ -181,7 +183,7 @@ const STORE_SCHEMA_VERSION = 1;
 const STATE_FILE = "state.json";
 const METADATA_FILE = "metadata.json";
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/u;
-const EVOLVABLE_PATH = /^(?:SKILL\.md|assets\/task-state\.md|assets\/routing-roles\/[a-z0-9-]+\.md|references\/[a-z0-9-]+\.md)$/u;
+const EVOLVABLE_PATH = /^(?:SKILL\.md|assets\/task-state\.md|assets\/routing-roles\/[a-z0-9-]+\.md|references\/[a-z0-9-]+\.md|contracts\/delegation\.md)$/u;
 const MAX_STATE_BYTES = 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
 const MAX_FILE_BYTES = 128 * 1024;
@@ -441,6 +443,8 @@ function manifestValue(bundle: SkillBundle): ManifestSnapshot {
     name: bundle.manifest.name,
     skillVersion: bundle.manifest.skillVersion,
     runtimeContract: bundle.manifest.runtimeContract,
+    moduleFiles: { ...bundle.manifest.moduleFiles },
+    rolePresets: structuredClone(bundle.manifest.rolePresets),
     roleFiles: { ...bundle.manifest.roleFiles },
     referenceFiles: { ...bundle.manifest.referenceFiles },
     requiredFiles: [...bundle.manifest.requiredFiles],
@@ -461,6 +465,8 @@ function cloneSnapshot(snapshot: Readonly<BundleSnapshot>): BundleSnapshot {
   return {
     manifest: {
       ...snapshot.manifest,
+      moduleFiles: { ...snapshot.manifest.moduleFiles },
+      rolePresets: structuredClone(snapshot.manifest.rolePresets),
       roleFiles: { ...snapshot.manifest.roleFiles },
       referenceFiles: { ...snapshot.manifest.referenceFiles },
       requiredFiles: [...snapshot.manifest.requiredFiles],
@@ -761,10 +767,17 @@ function generationAuthorizationProfile(
 ): Readonly<GenerationAuthorizationProfile> {
   const reasons = new Set<string>();
   const protectedGovernanceFiles = new Set([
-    "SKILL.md",
+    ...Object.values(baseSnapshot.manifest.moduleFiles),
+    ...Object.values(resultSnapshot.manifest.moduleFiles),
+    "scripts/compose-contracts.mjs",
+    "scripts/compose-contracts.d.mts",
     baseSnapshot.manifest.referenceFiles.dao,
     resultSnapshot.manifest.referenceFiles.dao,
   ]);
+  if (JSON.stringify(baseSnapshot.manifest.rolePresets) !== JSON.stringify(resultSnapshot.manifest.rolePresets)
+    || JSON.stringify(baseSnapshot.manifest.moduleFiles) !== JSON.stringify(resultSnapshot.manifest.moduleFiles)) {
+    reasons.add("protected-composition-topology");
+  }
   for (const path of protectedGovernanceFiles) {
     const base = baseSnapshot.files.get(path);
     const result = resultSnapshot.files.get(path);

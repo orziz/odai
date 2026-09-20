@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { assertRepositoryVersionPolicy } from "./version-policy.mjs";
+import { composeEntry, composeRoleContract, validateCompositionManifest } from "../skills/odai/scripts/compose-contracts.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 assertRepositoryVersionPolicy({ repoRoot });
@@ -23,42 +24,45 @@ try {
 }
 const ownerFiles = canonicalManifest && typeof canonicalManifest === "object" && !Array.isArray(canonicalManifest)
   ? [
+      ...Object.values(canonicalManifest.moduleFiles ?? {}),
       ...Object.values(canonicalManifest.roleFiles ?? {}),
       ...Object.values(canonicalManifest.referenceFiles ?? {}),
     ].filter((file) => typeof file === "string")
   : [];
 const allowedFiles = new Set([
-  "SKILL.md",
-  "manifest.json",
-  "agents/openai.yaml",
-  "assets/codex-agents/config.toml",
-  "assets/codex-agents/role.toml",
-  "assets/claude-agents/agent.md",
-  "assets/copilot-agents/agent.md",
-  "assets/hooks-policy.example.json",
-  "assets/task-state.md",
-  "scripts/build-hooks.mjs",
-  "scripts/build-routing.mjs",
-  "scripts/install-routing.mjs",
-  "scripts/run-role.mjs",
-  "scripts/verify-routing.mjs",
-  "scripts/odai-hook.mjs",
-  ...ownerFiles,
+  "SKILL.md", "manifest.json", "agents/openai.yaml",
+  "assets/codex-agents/config.toml", "assets/codex-agents/role.toml",
+  "assets/claude-agents/agent.md", "assets/copilot-agents/agent.md",
+  "assets/hooks-policy.example.json", "assets/task-state.md",
+  "scripts/build-hooks.mjs", "scripts/build-routing.mjs",
+  "scripts/compose-contracts.mjs", "scripts/compose-contracts.d.mts",
+  "scripts/install-routing.mjs", "scripts/run-role.mjs",
+  "scripts/verify-routing.mjs", "scripts/odai-hook.mjs", ...ownerFiles,
 ]);
-
 for (const relativePath of allowedFiles) {
   if (!files.includes(relativePath)) fail(`${relativePath}: required resource is missing`);
 }
 for (const relativePath of files) {
   if (!allowedFiles.has(relativePath)) fail(`${relativePath}: resource has no owner in the current architecture`);
 }
-
+const contractContents = Object.fromEntries(files.map(file => [file, readFileSync(path.join(skillRoot, file), "utf8")]));
+let effectiveEntry = "";
+const effectiveRoles = {};
+try {
+  effectiveEntry = composeEntry(canonicalManifest, contractContents);
+  for (const role of Object.keys(canonicalManifest.roleFiles)) effectiveRoles[role] = composeRoleContract(role, canonicalManifest, contractContents);
+} catch (error) { fail(`manifest.json: invalid composition: ${error.message}`); }
+function effectiveContract(file) {
+  if (file === "SKILL.md") return effectiveEntry;
+  const role = Object.keys(canonicalManifest?.roleFiles ?? {}).find(role => canonicalManifest.roleFiles[role] === file);
+  return role ? effectiveRoles[role] ?? "" : contractContents[file] ?? "";
+}
 const skillFile = path.join(skillRoot, "SKILL.md");
 if (!existsSync(skillFile)) fail("SKILL.md: missing");
-const skillText = existsSync(skillFile) ? readFileSync(skillFile, "utf8") : "";
+const skillText = contractContents["SKILL.md"] ?? "";
 validateFrontmatter(skillText);
-validateConstitution(skillText);
-validateCurrentJudgment(skillText);
+validateConstitution(effectiveEntry);
+validateCurrentJudgment(effectiveEntry);
 validateStructure();
 validateTextualContracts();
 validateOpenaiMetadata();
@@ -78,9 +82,11 @@ const roleContractTokenEstimate = files
   .filter((file) => /^assets\/routing-roles\/.*\.md$/u.test(file))
   .reduce((total, file) => total + estimateTokens(readFileSync(path.join(skillRoot, file), "utf8")), 0);
 const entryReviewTarget = 2700;
-// Reviewed at b6d54e5. Change only after an explicit capability-preserving review,
-// in either direction; never derive this baseline from the current entry size.
-const entryReviewedBaseline = 3002;
+// Reviewed for canonical 0.5.0: retain the +12 over b6d54e5 for explicit
+// controller acceptance ownership and separate responsibility/capability/permission.
+// Contract mutation checks preserve those boundaries. Future changes still need
+// explicit review; never derive this baseline from the current entry size.
+const entryReviewedBaseline = 3014;
 const entryGrowth = entryTokenEstimate - entryReviewedBaseline;
 console.log(`Entry size: estimate ${entryTokenEstimate}; review target ${entryReviewTarget}; ` +
   `reviewed baseline ${entryReviewedBaseline}; delta ${entryGrowth >= 0 ? "+" : ""}${entryGrowth}.`);
@@ -245,7 +251,7 @@ function validateStructure() {
   for (const check of checks) {
     const fullPath = path.join(skillRoot, check.path);
     if (!existsSync(fullPath)) continue;
-    const text = readFileSync(fullPath, "utf8");
+    const text = effectiveContract(check.path);
     for (const heading of check.headings || []) {
       if (!new RegExp(`^#{1,3}\\s+${escapeRegExp(heading)}\\s*$`, "m").test(text)) {
         fail(`${check.path}: missing required section: ${heading}`);
@@ -266,8 +272,9 @@ function validateTextualContracts() {
         /宿主已证能力[^。\n]*实际表现[^。\n]*最低充分支撑/,
         /完整结果、判断质量和可靠性为前提[^。\n]*最低充分支撑/,
         /已暴露不再问，未暴露不猜/,
-        /总控持有目标、状态、实施、修正与交付/,
-        /独立责任只补缺口[^。\n]*调用前有收益依据[^。\n]*回交后验贡献/,
+        /总控持有完整目标与最终验收/,
+        /职责限定受托问题[^。\n]*能力、上下文与权限分别核实/,
+        /调用前有收益依据[^。\n]*回交只证明实际覆盖/,
         /自主完成[\s\S]{0,220}直接闭环[^。\n]*不造计划、清单或状态/,
         /询问命令、入口或做法[^。\n]*只授权回答[^。\n]*先查最可能作答的权威来源[^。\n]*不预先捆绑广泛盘点或旁证[^。\n]*答案充分即停/,
         /结构化支撑[\s\S]{0,180}缺口闭合后只撤去已无作用的部分/,
@@ -441,7 +448,11 @@ function validateTextualContracts() {
       patterns: [
         /odai 是唯一用户入口和最终交付 owner/,
         /总控仍负责整合与验证/,
-        /现有命名责任的适用范围[^。\n]*不是能力上限/,
+        /命名责任是可复用的默认合同[^。\n]*不是必经阶段或能力上限/,
+        /职责限定本次要补的问题与回交[^。\n]*不代表模型的全部能力/,
+        /不能靠改名绕过职责的只读、证据或授权边界/,
+        /裁剪无关材料[^。\n]*不裁掉会改变该判断的要求、安全边界或原始证据/,
+        /复用须能核对同一基线、属性与来源/,
         /补丁是建议产物[^。\n]*不是已经落盘、执行或通过验证的结果/,
         /总控核对基线、范围与语义[^。\n]*应用后验证组合状态/,
         /研究、规划和审查责任[^。\n]*不.*自动变成补丁制作责任/,
@@ -492,7 +503,7 @@ function validateTextualContracts() {
   for (const check of checks) {
     const fullPath = path.join(skillRoot, check.path);
     if (!existsSync(fullPath)) continue;
-    const text = readFileSync(fullPath, "utf8");
+    const text = effectiveContract(check.path);
     for (const pattern of check.patterns) {
       if (!pattern.test(text)) fail(`${check.path}: missing ${check.label}: ${pattern}`);
     }
@@ -585,13 +596,21 @@ function validateRoutingSources() {
   }
   const roleSources = [
     ["controller", readFileSync(roleFiles[0], "utf8"), ["唯一总控", "任务列表、计划、状态更新、委派说明与回交", "路线、实施整合、修正回路与最终交付", "接回产物、核对范围和验证组合结果", "直接谋定、行动、验证和交付", "不为展示路由", "独立判断能改变路线", "独立判断能改变放行结果", "定位偏差并组织修正", "新鲜独立上下文与有界任务包", "不复制完整总控会话", "路线或验收设计失效", "已有决定性证据闭合所有要求时立即收口", "__ODAI_RESEARCHER_ROLE__", "__ODAI_RUNTIME_VERIFICATION__"]],
-    ["researcher", readFileSync(roleFiles[1], "utf8"), ["researcher 证据获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "相互冲突", "仍未知事项", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", referenceFile("leverage")]],
+    ["researcher", readFileSync(roleFiles[1], "utf8"), ["多源事实获取责任", "会改变后续决定的具体事实问题", "单一权威来源", "只读", "精确来源指针", "报告冲突", "事实、推断与未知分开", "停止依据", "不得编辑、实施、选方案", "来源账本只是检索索引", referenceFile("leverage")]],
     ["planner", readFileSync(roleFiles[2], "utf8"), ["独立规划责任", "不预做实施", "当前上下文能可靠闭环", "交回总控", referenceFile("planning"), "完整目标", "事实与未知", "允许与禁止范围", "验收与停止条件", "不强制模式首行", "不是面向用户的最终交付", "用户原文来源", "增量重规划", "researcher 来源账本"]],
     ["reviewer", readFileSync(roleFiles[3], "utf8"), ["独立验收责任", "按验收缺口裁剪", "不得包含完整会话转储", "不调用工具", "不扫描工作目录", "不重跑已成功的确定性检查", "完整验收", "通过、失败和仍未判定", "实施偏差回总控", "验收设计失效回总控", "用户取舍或不可取得的外部条件", "不强制状态首行", "不自行调度", "不得制造额外流程"]],
     ["frontend", readFileSync(roleFiles[4], "utf8"), ["frontend 专业责任", "不是第二个总控", "允许与禁止范围", "总控或 planner", "当前任务线程", "有界独立上下文", referenceFile("craft"), "局部修复保持最小", "不写入本通用责任合同"]],
   ];
+  // Protect who owns coverage and when a full plan/review is required, not
+  // merely the words "完整目标" or "完整验收". These are source-contract checks.
+  const scopedContracts = {
+    controller: ["完整需求覆盖和最终验收责任不能随委派转移", "回交只证明其实际覆盖", "不能为收口忽略真实失败"],
+    planner: ["只在明确委托正式计划时", "局部判断仍须覆盖所有会改变该决定的有效要求", "回交不是面向用户的最终交付，也不产生实施授权"],
+    reviewer: ["仅当明确委托需求覆盖核查时", "局部审查不以重建全任务需求", "不能以局部范围为由忽略关联安全风险", "偏好与范围外建议单列，不能作为阻断条件", "新增阻断须由新变更、新证据或尚未检查的必要依赖支持", "总控不能因此忽略已证实的失败"],
+  };
   for (const [label, text, fragments] of roleSources) {
-    if (!text.includes("跟随用户当前的主要语言")) {
+    fragments.push(...(scopedContracts[label] ?? []));
+    if (!(effectiveRoles[label] ?? "").includes("跟随用户当前的主要语言")) {
       fail(`assets/routing-roles/${label}.md: missing user-language contract`);
     }
     for (const fragment of fragments) {
@@ -615,7 +634,7 @@ function validateRoutingSources() {
   const builder = readFileSync(builderFile, "utf8");
   for (const fragment of [
     "--host", "--out", "--controller-model", "--researcher-model", "--planner-model", "--reviewer-model", "--frontend-model",
-    "--verifier-command", "single-controller-conditional-routing", "controller_owns_implementation", "Canonical 制作工艺",
+    "--verifier-command", "single-controller-conditional-routing", "controller_owns_implementation", "composeRoleContract", "validateCompositionManifest",
     "ownerFilePath", "requiredFiles", "realpathSync", "roleBody", "codexAgentSections", "odai-researcher", "odai-planner", "odai-reviewer", "odai-frontend", "ADAPTER.json", '"codex"', '"claude"', '"copilot"',
   ]) {
     if (!builder.includes(fragment)) fail(`scripts/build-routing.mjs: missing adapter behavior: ${fragment}`);
@@ -648,29 +667,15 @@ async function validateSkillManifest() {
     return fail("manifest.json: root must be an object");
   }
   const fields = new Set([
-    "schemaVersion",
-    "name",
-    "skillVersion",
-    "runtimeContract",
-    "roleFiles",
-    "referenceFiles",
-    "requiredFiles",
+    "schemaVersion", "name", "skillVersion", "runtimeContract",
+    "moduleFiles", "roleFiles", "rolePresets", "referenceFiles", "requiredFiles",
   ]);
   for (const field of Object.keys(manifest)) {
     if (!fields.has(field)) fail(`manifest.json: unexpected field ${field}`);
   }
-  if (manifest.schemaVersion !== 2) fail("manifest.json: schemaVersion must be 2");
   if (manifest.name !== "odai") fail("manifest.json: name must be odai");
-  if (manifest.runtimeContract !== 6) fail("manifest.json: runtimeContract must be 6");
-  validateOwnerMap(manifest, "roleFiles", ["controller", "researcher", "planner", "reviewer", "frontend"]);
-  validateOwnerMap(manifest, "referenceFiles", ["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety"]);
-  const ownedPaths = [
-    ...Object.values(manifest.roleFiles ?? {}),
-    ...Object.values(manifest.referenceFiles ?? {}),
-  ];
-  if (new Set(ownedPaths).size !== ownedPaths.length) {
-    fail("manifest.json: roleFiles and referenceFiles must not share an owner path");
-  }
+  try { validateCompositionManifest(manifest); }
+  catch (error) { fail(`manifest.json: ${error.message}`); }
   if (!Array.isArray(manifest.requiredFiles)) {
     fail("manifest.json: requiredFiles must be an array");
   } else {
@@ -701,28 +706,6 @@ async function validateSkillManifest() {
     }
   } catch (error) {
     fail(`manifest.json: runtime bundle validation failed: ${error.message}`);
-  }
-}
-
-function validateOwnerMap(manifest, field, expectedNames) {
-  const value = manifest[field];
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    fail(`manifest.json: ${field} must be an object`);
-    return;
-  }
-  const names = Object.keys(value);
-  if (JSON.stringify(names.sort()) !== JSON.stringify([...expectedNames].sort())) {
-    fail(`manifest.json: ${field} must declare exactly ${expectedNames.join(", ")}`);
-  }
-  const paths = Object.values(value);
-  if (paths.some((file) => typeof file !== "string" || file.length === 0)) {
-    fail(`manifest.json: ${field} values must be non-empty paths`);
-  }
-  if (new Set(paths).size !== paths.length) fail(`manifest.json: ${field} paths must be unique`);
-  if (Array.isArray(manifest.requiredFiles)) {
-    for (const file of paths) {
-      if (!manifest.requiredFiles.includes(file)) fail(`manifest.json: ${field} path ${String(file)} must appear in requiredFiles`);
-    }
   }
 }
 

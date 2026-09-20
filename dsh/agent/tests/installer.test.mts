@@ -29,17 +29,17 @@ function jsonRecord(text: string): Record<string, unknown> {
   return value;
 }
 
-test("Agent composition follows the exact rc.1 support contract", async () => {
-  assert.equal(SUPPORTED_DSH_RANGE, "0.1.5-rc.1");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.5-rc.1"]);
-  assert.equal(supportsDshVersion("0.1.5-rc.1"), true);
-  for (const unsupported of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2-rc.2", "0.1.2", "0.1.3-alpha.1", "0.1.3"]) {
+test("Agent composition follows the exact rc.2 support contract", async () => {
+  assert.equal(SUPPORTED_DSH_RANGE, "0.1.5-rc.2");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.5-rc.2"]);
+  assert.equal(supportsDshVersion("0.1.5-rc.2"), true);
+  for (const unsupported of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2-rc.2", "0.1.2", "0.1.3-alpha.1", "0.1.3", "0.1.5-rc.1", "0.1.5", "0.1.6-alpha.2"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
 
   const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
   const normalizedSource = source.replace(/\r\n/gu, "\n");
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.5-rc.1"), normalizedSource);
+  assert.equal(renderAgentCompositionForDsh(source, "0.1.5-rc.2"), normalizedSource);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.2"), /unsupported DSH version/u);
   assert.throws(() => renderAgentCompositionForDsh(source, "0.1.3-alpha.1"), /unsupported DSH version/u);
 });
@@ -357,12 +357,36 @@ test("installer shares one canonical home through a DSH_HOME parent alias", asyn
   }
 });
 
+test("incomplete composition prerequisites are rejected before preset installation", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-composition-prerequisites-"));
+  const sourceRoot = resolve(scratch, "source");
+  const dshHome = resolve(scratch, "home");
+  try {
+    for (const file of ["package.json", "skills/odai/contracts/delegation.md", "skills/odai/scripts/compose-contracts.mjs"]) {
+      await writeFixture(sourceRoot, "runtime");
+      await rm(resolve(sourceRoot, file));
+      await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), error => {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes(`agent package is incomplete: missing ${file}`));
+        return true;
+      });
+      await assert.rejects(stat(resolve(dshHome, ".agent-presets/odai")), /ENOENT/u);
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 async function writeFixture(root: string, runtimeText: string): Promise<void> {
   await Promise.all([
     mkdir(resolve(root, "runtime"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai"), { recursive: true }),
+    mkdir(resolve(root, "skills/odai/contracts"), { recursive: true }),
+    mkdir(resolve(root, "skills/odai/scripts"), { recursive: true }),
   ]);
   await Promise.all([
+    writeFile(resolve(root, "package.json"), '{"private":true,"type":"module"}\n', "utf8"),
+    writeFile(resolve(root, "skills/odai/contracts/delegation.md"), "Fixture delegation contract.\n", "utf8"),
+    writeFile(resolve(root, "skills/odai/scripts/compose-contracts.mjs"), "export const fixture = true;\n", "utf8"),
     writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./odai-governance.mjs\n", "utf8"),
     writeFile(resolve(root, "preset.yml"), "name: Odai\n", "utf8"),
     writeFile(resolve(root, "odai-governance.mjs"), "export * from \"./runtime/index.mjs\";\n", "utf8"),

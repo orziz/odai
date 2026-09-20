@@ -4,28 +4,14 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { composeRoleContract, validateCompositionManifest, MODULE_FILE_NAMES, ROLE_NAMES, REFERENCE_NAMES } from "./compose-contracts.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
 const manifest = JSON.parse(readFileSync(path.join(skillRoot, "manifest.json"), "utf8"));
-if (manifest?.schemaVersion !== 2 || !manifest.roleFiles || !manifest.referenceFiles || !Array.isArray(manifest.requiredFiles)) {
-  throw new Error("Odai manifest owner topology is unavailable");
-}
-const ownerNames = Object.freeze({
-  roleFiles: ["controller", "researcher", "planner", "reviewer", "frontend"],
-  referenceFiles: ["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety"],
-});
-for (const [group, expectedNames] of Object.entries(ownerNames)) {
-  const entries = manifest[group];
-  if (entries === null || typeof entries !== "object" || Array.isArray(entries)
-    || JSON.stringify(Object.keys(entries).sort()) !== JSON.stringify([...expectedNames].sort())) {
-    throw new Error(`Invalid manifest owner set: ${group}`);
-  }
-  const paths = Object.values(entries);
-  if (new Set(paths).size !== paths.length) throw new Error(`Duplicate manifest owner path: ${group}`);
-}
-const ownedPaths = [...Object.values(manifest.roleFiles), ...Object.values(manifest.referenceFiles)];
-if (new Set(ownedPaths).size !== ownedPaths.length) throw new Error("Role and reference owners must use distinct paths");
+validateCompositionManifest(manifest);
+const ownerNames = Object.freeze({ moduleFiles: MODULE_FILE_NAMES, roleFiles: ROLE_NAMES, referenceFiles: REFERENCE_NAMES });
+const contractContents = {};
 
 const canonicalRoot = realpathSync(skillRoot);
 const requiredFiles = new Set(manifest.requiredFiles);
@@ -46,7 +32,7 @@ function ownerFilePath(group, name) {
   return source;
 }
 for (const [group, names] of Object.entries(ownerNames)) {
-  for (const name of names) ownerFilePath(group, name);
+  for (const name of names) contractContents[manifest[group][name]] = readFileSync(ownerFilePath(group, name), "utf8");
 }
 
 const argv = process.argv.slice(2);
@@ -218,7 +204,7 @@ function roleBody(role, hostName) {
   const names = hostName === "codex"
     ? { researcher: "odai_researcher", planner: "odai_planner", reviewer: "odai_reviewer", frontend: "odai_frontend" }
     : { researcher: "odai-researcher", planner: "odai-planner", reviewer: "odai-reviewer", frontend: "odai-frontend" };
-  const rendered = renderText(readFileSync(source, "utf8"), {
+  const rendered = renderText(composeRoleContract(role, manifest, contractContents), {
     __ODAI_POLICY__: policy,
     __ODAI_RESEARCHER_ROLE__: models.researcher ? names.researcher : "researcher（当前适配器未配置映射，不能调用）",
     __ODAI_PLANNER_ROLE__: names.planner,
@@ -229,24 +215,7 @@ function roleBody(role, hostName) {
       : "只有宿主原生运行证据能识别实际角色与模型时，路由才算已核实。",
     __ODAI_HOST_NOTE__: hostName === "copilot" ? "Copilot Auto 会覆盖角色模型选择；需要区分角色时不使用 Auto。" : "",
   }, source);
-  const craft = role === "frontend"
-    ? readFileSync(ownerFilePath("referenceFiles", "craft"), "utf8").trim()
-    : "";
-  if (hostName !== "codex") {
-    return [rendered, ...(craft ? ["## Canonical 制作工艺", craft] : [])].join("\n\n");
-  }
-  const canonical = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8")
-    .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
-  const responsibility = role === "controller"
-    ? "你是唯一总控，持有完整目标、全局状态、修正回路与最终交付。"
-    : `你只承担 ${role} 责任，不是第二个总控。`;
-  return [
-    `以下 canonical odai 是所有责任共享的内核；宿主角色契约只限制本责任，不得另建流程。${responsibility}`,
-    canonical,
-    ...(craft ? ["## Canonical 制作工艺", craft] : []),
-    "## 宿主角色契约",
-    rendered,
-  ].join("\n\n");
+  return rendered;
 }
 
 function codexAgentSections() {

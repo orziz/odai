@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前未发布候选为 DSH `0.2.32` / canonical `0.3.16`，仅面向 DSH `0.1.5-rc.1`。双包 `0.2.31` 已发布，不能复用其版本号。
+- 当前未发布候选为 DSH `0.2.33` / canonical `0.5.0`，仅面向 DSH `0.1.5-rc.2`。双包 `0.2.32` 已发布且保留 rc.1 合同，不能复用其版本号。
 - 当前定向评估及限制统一在 [`docs/evaluation-results.md`](docs/evaluation-results.md)，实际职责调用和宿主保护边界统一在 [`docs/routing-results.md`](docs/routing-results.md)。不复制旧版本分数作为当前结论，也不把有限样本当作全量验收。
 - 结果文档保持当前状态，用户要求重试时以最新完整结果更新对应项，简要说明重试；淘汰的试跑、重复快照与已结束执行计划及时清理。已发布版本事实保留在 CHANGELOG 与兼容表，旧实现和旧文档由 Git 历史承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -14,7 +14,10 @@
 ```text
 AGENTS.md                         仓库级维护约束
 skills/odai/                      odai canonical source
-  SKILL.md                        自适应内核、底线与加载地图
+  SKILL.md                        完整治理入口与共享核心的唯一正文
+  manifest.json                  模块、职责、reference owner 与声明式预设
+  contracts/delegation.md         共用受托边界，不授予工具或权限
+  scripts/compose-contracts.mjs   各宿主共享的可信组合器与核心投影
   agents/openai.yaml              宿主 UI 元数据
   references/dao.md               事的所有权、事实校准、授权与边界
   references/planning.md          正式计划、可执行合同与跨轮续作

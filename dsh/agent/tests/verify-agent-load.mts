@@ -178,6 +178,8 @@ import { randomUUID } from "node:crypto";
 import { createScope, scopeOf } from ${JSON.stringify(pathToFileURL(scopeModule).href)};
 import { renderPrompt } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-system-prompt")).href)};
 import { DEFAULT_CHILD_ALLOWED_TOOLS } from ${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/governance.mjs")).href)};
+import { createResponsibilityScopeOwner } from ${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/responsibility-scope.mjs")).href)};
+import { agentEvents } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-agent")).href)};
 
 export const name = "odai-agent-scope-probe";
 export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {
@@ -331,6 +333,30 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           && /NO_ADAPTER/u.test(routingResult.error?.message ?? "")
           && !existsSync(config.routingConfigPath);
       }\n
+      if (preset === "odai") {
+        // Exercise rc.2's actual order: the host snapshots before pre-step,
+        // whereas scope ownership is settled inside pre-step.
+        const scopes = createResponsibilityScopeOwner({ appendEvent() {}, events() { return []; }, routeProtections: new WeakMap() });
+        const dispatch = agentEvents(agent.ctx, agent);
+        const signal = new AbortController().signal;
+        const enter = () => Promise.resolve({ kind: "enter", messages: [] });
+        const before = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
+        assert.ok(before.tools.some((tool) => tool.name === "write"));
+        scopes.start(agent, { turn: 1, startStep: 2, role: "planner", route: { provider: "probe", model: "unchanged" } });
+        await dispatch.waterfall("agent/pre-step", { turn: 1, step: 2, signal, messages: [] }, enter);
+        assert.equal(before.tools.some((tool) => tool.name === "write"), false, "first role request refreshes its captured tools");
+        assert.equal(ctx.tools.schemas(agent).some((tool) => tool.name === "write"), false);
+        assert.ok(before.tools.some((tool) => tool.name === "odai_responsibility_return"));
+        const blocked = await ctx.tools.execute({ name: "write", callId: "in-place-readonly", arguments: { file_path: writePath, content: "must not write" }, agent, signal });
+        assert.equal(blocked.isError, true);
+        assert.equal(existsSync(writePath), false);
+        scopes.stop(agent, "probe-handback");
+        const restored = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
+        await dispatch.waterfall("agent/pre-step", { turn: 1, step: 3, signal, messages: [] }, enter);
+        assert.ok(restored.tools.some((tool) => tool.name === "write"), "first controller request restores native tools");
+        assert.ok(ctx.tools.schemas(agent).some((tool) => tool.name === "write"));
+        scopes.dispose();
+      }
       results[preset] = {
         canonicalSectionCount: canonicalSections.length,
         toolIsError: toolResult.isError === true,

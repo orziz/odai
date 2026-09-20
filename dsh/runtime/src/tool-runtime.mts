@@ -1,6 +1,6 @@
 import { extractLatestUserText } from "./router.mjs";
 import { createRepeatedFailureMonitor } from "./repeated-failure.mjs";
-import { DEFAULT_CHILD_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
+import { DEFAULT_CHILD_ALLOWED_TOOLS, DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
 import { createRoutingConfigTool, effectiveRoutingSnapshot } from "./routing-config.mjs";
 import { createOutputConfigTool } from "./output-config.mjs";
 import type { OutputPolicy } from "./output-config.mjs";
@@ -31,7 +31,8 @@ import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 interface RouteProtection extends UnknownRecord { scopeId?: string }
 interface ExposureOptions { turn?: number; step?: number; responsibilityReturn?: boolean }
-interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
+type ExecutionRestriction = import("./runtime-types.mjs").ToolRestriction;
+interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; executionRestrictionFor: (agent: DshAgent) => ExecutionRestriction; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
 interface ToolRuntimeDependencies {
   appendEvent(agent: DshAgent, type: string, data: object): void;
   baseSelection: SkillSelection;
@@ -65,17 +66,25 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     additionalDeniedTools: config.governance.additionalDeniedTools,
     onDenied,
   });
+  // Scope policy, model mapping and dispatch are separate inputs. Only the
+  // authenticated scope owner can restrict an in-place responsibility; a pending
+  // gap or a matching word in the user's request cannot change permissions.
+  const isReadOnlyResponsibility = (agent: DshAgent | undefined): boolean => Boolean(agent
+    && responsibilityScopes.get(agent)?.continuationPolicy === "read-only-tool-chain");
+  const protectionFor = (agent: DshAgent) => config.routing.mode === "off"
+    ? undefined
+    : routeProtections.get(agent) ?? activeRouteProtection(agent, evidence.events(agent));
+  const executionRestrictionFor = (agent: DshAgent): ExecutionRestriction => {
+    const allow = isSubagentSession(agent)
+      ? managedReviewEvidenceReader(agent) ? ["odai_review_evidence"] : DEFAULT_CHILD_ALLOWED_TOOLS
+      : isReadOnlyResponsibility(agent) || protectionFor(agent) ? DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS : undefined;
+    return allow ? { allow, deny: config.governance.additionalDeniedTools } : {};
+  };
   const routeProtectionGuard = createRouteProtectionGuard({
     additionalDeniedTools: config.governance.additionalDeniedTools,
     onDenied,
-    isReadOnlyResponsibility(agent) {
-      const role = agent ? responsibilityScopes.get(agent)?.role : undefined;
-      return role === "researcher" || role === "planner" || role === "reviewer";
-    },
-    protectionFor(agent: DshAgent) {
-      if (config.routing.mode === "off") return undefined;
-      return routeProtections.get(agent) ?? activeRouteProtection(agent, evidence.events(agent));
-    },
+    isReadOnlyResponsibility,
+    protectionFor,
   });
   const requirementSourcesFor = (agent: DshAgent): readonly RequirementSourceCandidate[] => {
     const sources: RequirementSourceCandidate[] = [];
@@ -266,29 +275,32 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     options: ExposureOptions = {},
   ): readonly string[] => {
     const child = isSubagentSession(agent);
+    const policy = executionRestrictionFor(agent);
     const activeNames = activeOdaiToolNames(activation, {
       child,
-      responsibilityReturn: options.responsibilityReturn === true,
+      responsibilityReturn: options.responsibilityReturn === true || isReadOnlyResponsibility(agent),
       reviewEvidence: child && Boolean(managedReviewEvidenceReader(agent)),
-    });
+    }).filter((name) => (!policy.allow || policy.allow.includes(name)) && !policy.deny?.includes(name));
     const deniedNames = [
       ...inactiveOdaiToolNames(activeNames),
       ...ODAI_CORE_TOOL_NAMES.filter((name) => !activeNames.includes(name)),
-      ...(child ? config.governance.additionalDeniedTools : []),
+      ...(policy.deny ?? []),
     ];
-    const key = `${child ? "child" : "controller"}\u0000${deniedNames.join("\u0000")}`;
+    // Include effective permissions: ending a scope must restore the controller
+    // even when its contextual capabilities have not changed.
+    const key = JSON.stringify([policy.allow ?? null, deniedNames]);
     const previous = toolExposureStates.get(agent);
-    if (previous?.key === key || previous?.key === "unsupported" || previous?.key === "fallback") return activeNames;
+    if (previous?.key === key) return activeNames;
     previous?.dispose?.();
     const agentTools = agent.ctx?.tools;
     const restrict = agentTools?.restrict;
     if (typeof restrict !== "function") {
-      toolExposureStates.set(agent, Object.freeze({ key: "unsupported", dispose: undefined }));
+      toolExposureStates.set(agent, Object.freeze({ key }));
       return activeNames;
     }
     try {
-      const restriction = deniedNames.length > 0 || child
-        ? restrict.call(agentTools, { deny: deniedNames, ...(child ? { allow: activeNames.includes("odai_review_evidence") ? ["odai_review_evidence"] : DEFAULT_CHILD_ALLOWED_TOOLS } : {}) })
+      const restriction = deniedNames.length > 0 || policy.allow
+        ? restrict.call(agentTools, { ...policy, deny: deniedNames })
         : undefined;
       const dispose = typeof restriction === "function" ? restriction : undefined;
       toolExposureStates.set(agent, Object.freeze({ key, dispose }));
@@ -299,8 +311,8 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
         activeTools: activeNames,
       });
     } catch (error) {
-      logger.warn(`Odai adaptive execution restriction is unavailable; prompt schemas remain limited while the executable catalog stays complete: ${error instanceof Error ? error.message : String(error)}`);
-      toolExposureStates.set(agent, Object.freeze({ key: "fallback", dispose: undefined }));
+      logger.warn(`Odai adaptive registry restriction is unavailable; prompt filtering and execution guards remain active: ${error instanceof Error ? error.message : String(error)}`);
+      toolExposureStates.set(agent, Object.freeze({ key }));
     }
     return activeNames;
   };
@@ -309,13 +321,10 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
   // registry before prompt assembly. Restrict inherited child tools at creation.
   ctx.on("agent/created", ({ agent }: { agent: DshAgent }) => {
     if (!isSubagentSession(agent)) return;
-    agent.ctx?.tools?.restrict?.({
-      allow: DEFAULT_CHILD_ALLOWED_TOOLS,
-      deny: config.governance.additionalDeniedTools,
-    });
+    agent.ctx?.tools?.restrict?.(executionRestrictionFor(agent));
   });
 
-  promptRuntime.install({ pendingResponsibilityGap, syncToolExposure });
+  promptRuntime.install({ pendingResponsibilityGap, syncToolExposure, executionRestrictionFor });
 
   ctx.on("tools/result", (execution: ToolExecution, result: ToolResult) => {
     if (!execution.agent) return;

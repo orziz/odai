@@ -2,6 +2,7 @@
   "name": "odai-workspace",
   "private": true,
   "type": "module",
+  "imports": { "#odai-contracts": "./skills/odai/scripts/compose-contracts.mjs" },
   "scripts": {
     "clean:dsh": "node scripts/clean-dsh-runtime-build.mjs",
     "emit:dsh-runtime": "tsc -p dsh/runtime/tsconfig.json",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { resolve } from "node:path";
@@ -17,6 +17,7 @@ import {
 } from "../build/session-evidence.mjs";
 import { activeOdaiToolNames, classifyContextActivation, estimateContextTokens, estimateToolSchemaTokens } from "../build/context-activation.mjs";
 import { isManagedRoleChild } from "../build/runtime-support.mjs";
+import { loadSkillBundle } from "../build/skill-bundle.mjs";
 import { createReviewEvidenceSnapshot } from "../build/review-evidence.mjs";
 import { readMemoryStore } from "../build/semantic-memory-store.mjs";
 import { resolveRoutingConfigPath } from "../build/routing-config.mjs";
@@ -1299,14 +1300,19 @@ test("persisted handbacks join their native task without replacing tool verifica
 test("managed children bind parent and session, avoid duplicate contracts, and keep evidence gates", async () => {
   const ctx = fakeContext();
   const route = { provider: "openai", model: "verified-role" };
+  const boundRoot = resolve(testDshHome, "parent-contract-snapshot");
+  cpSync(resolve(skillPath, ".."), boundRoot, { recursive: true });
+  const boundEntry = resolve(boundRoot, "SKILL.md");
+  writeFileSync(boundEntry, readFileSync(boundEntry, "utf8").replace("## 精神内核\n", "## 精神内核\n\nPARENT_SNAPSHOT_CORE\n"));
+  const roleBundle = loadSkillBundle(boundEntry);
   apply(ctx, { skillPath, routing: { roles: { reviewer: route, researcher: route } } });
   for (const role of ["reviewer", "researcher"] as const) {
     const parent: DshAgent = { session: { header: { id: `managed-parent-${role}` }, snapshotEvents: () => [], append() {} } };
     let child: DshAgent | undefined;
     const reviewEvidence = createReviewEvidenceSnapshot([{ index: 1, source: "tool", kinds: ["tool"], label: "captured source", text: "complete source" }]);
     const outcome = await runRoutedRole({
-      provider: "spawn", decision: { role }, roleContract: "SUPPLIED_OWNER", taskText: "bounded verified evidence", agent: parent,
-      signal: new AbortController().signal, roleRoute: route, reviewEvidence,
+      provider: "spawn", decision: { role }, roleContract: `${roleBundle.roleContracts[role]}\nSUPPLIED_OWNER`, taskText: "bounded verified evidence", agent: parent,
+      signal: new AbortController().signal, roleRoute: route, roleBundle, reviewEvidence,
       subagents: { async start(_provider, request) {
         const label = String(request.label);
         const makeChild = (parentId: string, id: string): DshAgent => ({ session: {
@@ -1333,6 +1339,12 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
         }
         assert.equal(assembled.sections.some((section: TestPromptSection) => section.name === "odai:child-responsibility-contract"), false);
         assert.ok(JSON.stringify(request.prompt).includes("SUPPLIED_OWNER"));
+        const effective = JSON.stringify(request.prompt) + assembled.sections.map((section: TestPromptSection) => section.text).join("\n");
+        assert.equal(effective.split("## 精神内核").length - 1, 1);
+        assert.equal(effective.split("## 受托边界").length - 1, 1);
+        assert.equal(effective.split("PARENT_SNAPSHOT_CORE").length - 1, 1);
+        assert.ok(effective.includes(`digest: ${roleBundle.digest}`));
+        assert.doesNotMatch(effective, /## 按表现分配支撑/u);
         return { localAgent: child, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "result" }] }),
           async dispose() { assert.ok(child && isManagedRoleChild(child)); } };
       } },
@@ -1391,6 +1403,10 @@ test("native labelled children deliver role owners and generic delegation explai
     const result = await assemble(assembly, { agent }, async () => assembly);
     const sections = result.sections.filter((section: TestPromptSection) => section.name === "odai:child-responsibility-contract");
     assert.equal(sections.length, role === "generic" ? 0 : 1);
+    const effective = result.sections.map((section: TestPromptSection) => section.text).join("\n");
+    assert.equal(effective.split("## 精神内核").length - 1, 1);
+    assert.equal(effective.split("## 受托边界").length - 1, 1);
+    assert.doesNotMatch(effective, /## 按表现分配支撑/u);
     if (role === "generic") continue;
     assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai/assets/routing-roles/${role}.md`), "utf8").trim()));
     const owner = { planner: "planning", reviewer: "verification", frontend: "craft" }[role];
@@ -2187,6 +2203,9 @@ test("child native tools and DSH tool instructions agree with the execution boun
       (section: TestPromptSection) => section.name === "odai:child-execution-boundary",
     );
     assert.equal(childSections.length, 1, "replace stale child guidance without duplication");
+    assert.equal(result.sections.find((section: TestPromptSection) => section.name === "odai:controller-output-policy")?.text, "",
+      "controller output guidance does not consume child context or limit its handback");
+    assert.equal(events.some((event) => event.type === "odai/output-policy-selected"), false);
     assert.match(childSections[0].text, /unapplied patch with the inspected baseline/);
     assert.match(childSections[0].text, /controller applies, integrates, and validates/);
     assert.match(childSections[0].text, /Narrower researcher, planner, and reviewer contracts/);
@@ -2717,11 +2736,27 @@ test("global and preset preserve one same-turn scope across hook order changes a
       { ...responsibilityGapEvent("planner"), seq: 4 },
     ];
     let actualHeader: { config?: ModelRoute } = {};
-    const agent = { phase: { turn: 1, step: 1 }, session: {
+    const restrictions = new Set<TestRestriction>();
+    const agent = { phase: { turn: 1, step: 1 }, ctx: { tools: { restrict(filter: TestRestriction) {
+      restrictions.add(filter);
+      return () => { restrictions.delete(filter); };
+    } } }, session: {
       header: {}, events, snapshotEvents: () => events, requestHeader() { return actualHeader; },
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     } };
     seedCurrentEvidence(contexts[0], agent, events);
+    for (const ctx of contexts) ctx.tools.schemas = () => [
+      ...["read", "write"].map((name) => ({ name, description: name, parameters: {} })), ...ctx.captured.tools,
+    ].filter((tool) => [...restrictions].every((filter) =>
+      (!filter.allow || filter.allow.includes(tool.name)) && !filter.deny.includes(tool.name)));
+    const assemble = async () => {
+      const assembly = { tools: contexts[0].tools.schemas?.(agent) ?? [],
+        sections: [...contexts[0].captured.sections, { name: "tool:write", text: "write instructions" }] };
+      const result = await contexts[0].captured.handlers.get("system-prompt/assemble")(assembly, { agent },
+        () => contexts[1].captured.handlers.get("system-prompt/assemble")(assembly, { agent }, async () => assembly));
+      return { ...result };
+    };
+    for (const ctx of contexts) ctx.systemPrompt.assemble = assemble;
     const signal = new AbortController().signal;
     const dispatchEvent = (event: DshEvent) => {
       for (const ctx of contexts) ctx.captured.handlers.get("session/event")(agent.session, event);
@@ -2730,9 +2765,12 @@ test("global and preset preserve one same-turn scope across hook order changes a
       agent.phase.step = step;
       const [outer, inner] = (reversed === (step === 1)) ? contexts : [...contexts].reverse();
       const payload = { agent, turn: 1, step, signal };
+      const captured = await assemble();
       await outer.captured.handlers.get("agent/pre-step")(payload, () => inner.captured.handlers.get("agent/pre-step")(
         payload, async () => ({ kind: "enter", messages: [original] }),
       ));
+      assert.equal(captured.tools.some((tool: TestToolSchema) => tool.name === "write"), false);
+      assert.equal(captured.sections.find((section: TestPromptSection) => section.name === "tool:write")?.text, "");
       const request = await outer.captured.handlers.get("agent/request")(payload, () => inner.captured.handlers.get("agent/request")(
         payload, async () => controller,
       ));
@@ -2751,6 +2789,12 @@ test("global and preset preserve one same-turn scope across hook order changes a
     assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-stopped").length, 1);
     agent.phase.step = 3;
     const payload = { agent, turn: 1, step: 3, signal };
+    const captured = await assemble();
+    await contexts[0].captured.handlers.get("agent/pre-step")(payload, () => contexts[1].captured.handlers.get("agent/pre-step")(
+      payload, async () => ({ kind: "enter", messages: [] }),
+    ));
+    assert.ok(captured.tools.some((tool: TestToolSchema) => tool.name === "write"));
+    assert.equal(captured.sections.find((section: TestPromptSection) => section.name === "tool:write")?.text, "write instructions");
     const restored = await contexts[0].captured.handlers.get("agent/request")(payload, () => contexts[1].captured.handlers.get("agent/request")(
       payload, async () => planner,
     ));
@@ -3437,6 +3481,104 @@ test("reviewer same-turn findings return to the controller for continued process
     { agent, turn: 1, step: 2 },
     async () => reviewerRequest,
   ), controllerRoute);
+});
+
+test("effective scope permissions align schemas and guards independently of model and registry support", async () => {
+  const route = { provider: "openai", model: "shared-model", maxTokens: 12000 };
+  const hostNames = ["read", "web_fetch", "bash", "write", "subagent", "unknown_mutation"];
+  for (const role of ["researcher", "planner", "reviewer", "frontend"] as const) {
+    for (const registry of ["supported", "missing", "throws"] as const) {
+      const ctx = fakeContext();
+      apply(ctx, { skillPath, routing: { roles: { [role]: route }, dispatch: { [role]: "same-turn" } } });
+      const original = userMessage("请完成当前已授权任务，保持需求与权限边界");
+      const events: DshEvent[] = [
+        { type: "turn/start", data: { turn: 1 } },
+        { type: "user/message", data: original },
+        { type: "step/start", data: { turn: 1, step: 1 } },
+        responsibilityGapEvent(role),
+      ];
+      const liveRestrictions = new Set<TestRestriction>();
+      const agent = {
+        phase: { turn: 1, step: 1 },
+        ...(registry === "missing" ? {} : { ctx: { tools: { restrict(filter: TestRestriction) {
+          if (registry === "throws") throw new Error("registry unavailable");
+          liveRestrictions.add(filter);
+          return () => { liveRestrictions.delete(filter); };
+        } } } }),
+        session: {
+          header: {}, events, snapshotEvents: () => events,
+          append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
+        },
+      };
+      seedCurrentEvidence(ctx, agent, events);
+      ctx.tools.schemas = () => [
+        ...hostNames.map((name) => ({ name, description: name, parameters: {} })),
+        ...ctx.captured.tools,
+      ].filter((tool) => [...liveRestrictions].every((filter) =>
+        (!filter.allow || filter.allow.includes(tool.name)) && !filter.deny.includes(tool.name)));
+      let assemblies = 0;
+      const assemble = async () => {
+        assemblies += 1;
+        const assembly = {
+          tools: ctx.tools.schemas?.(agent) ?? [],
+          sections: [...ctx.captured.sections, { name: "tool:write", text: "Native write instructions" }],
+        };
+        const transformed = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent }, async () => assembly);
+        return { ...transformed }; // rc.2 may copy the assembly but retain its arrays.
+      };
+      ctx.systemPrompt.assemble = assemble;
+      const pending = await assemble();
+      assert.ok(pending.tools.some((tool: TestToolSchema) => tool.name === "write"), "a gap alone cannot restrict permissions");
+      await ctx.captured.handlers.get("agent/pre-step")(
+        { agent, turn: 1, step: 1, signal: new AbortController().signal },
+        async () => ({ kind: "enter", messages: [original] }),
+      );
+      assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
+        { agent, turn: 1, step: 1 }, async () => route,
+      ), route, "permission selection cannot change model or budget");
+      ctx.captured.handlers.get("session/event")(agent.session, {
+        type: "request/header", data: { turn: 1, step: 1, header: { config: route } },
+      });
+      const active = pending; // rc.2 uses the assembly made before pre-step.
+      assert.equal(assemblies, role === "frontend" ? 1 : 2, "only changed permissions cause reassembly");
+      const readOnly = role !== "frontend";
+      for (const name of hostNames) {
+        const denied = ctx.captured.guards.some((guard) => guard({ name, agent }));
+        const expected = readOnly && !["read", "web_fetch"].includes(name);
+        assert.equal(denied, expected, `${role}/${registry}/${name} execution`);
+        assert.equal(active.tools.some((tool: TestToolSchema) => tool.name === name), !expected, `${role}/${registry}/${name} schema`);
+      }
+      assert.equal(active.tools.some((tool: TestToolSchema) => tool.name === "odai_responsibility_return"), readOnly);
+      assert.equal(active.sections.find((section: TestPromptSection) => section.name === "tool:write").text,
+        readOnly ? "" : "Native write instructions");
+      if (registry === "supported") {
+        assert.equal(liveRestrictions.size, 1, "replace the controller's prior restriction");
+        assert.equal([...liveRestrictions][0]?.allow?.includes("write"), readOnly ? false : undefined);
+      }
+      if (readOnly) {
+        await ctx.captured.tools.find((tool) => tool.name === "odai_responsibility_return").execute({
+          target: "controller", summary: "有界职责完成，交回总控继续任务。", evidenceRefs: ["current-task"],
+        }, { agent });
+      } else {
+        ctx.captured.handlers.get("session/event")(agent.session, {
+          type: "assistant/message", data: { turn: 1, step: 1, message: { content: [{ type: "text", text: "制作完成" }] } },
+        });
+      }
+      const restored = await assemble();
+      await ctx.captured.handlers.get("agent/pre-step")(
+        { agent, turn: 1, step: 2, signal: new AbortController().signal },
+        async () => ({ kind: "enter", messages: [] }),
+      );
+      assert.ok(restored.tools.some((tool: TestToolSchema) => tool.name === "write"), `${role}/${registry}: restore the previously restricted snapshot`);
+      assert.equal(events.filter((event) => event.type === "odai/responsibility-scope-started").length, 1,
+        "a completed same-turn review must not restart because it lacks a child evidence packet");
+      assert.equal(ctx.captured.guards.some((guard) => guard({ name: "write", agent })), false);
+      if (registry === "supported") {
+        assert.equal(liveRestrictions.size, 1);
+        assert.equal([...liveRestrictions][0]?.allow, undefined, "handback restores the controller registry");
+      }
+    }
+  }
 });
 
 test("planner handback restores the original controller route", async () => {
