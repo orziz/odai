@@ -67,7 +67,7 @@ export const FRONTEND_SPECIALIST_REASON = "FRONTEND_SUBSTANTIAL_INTERFACE_WORK";
 export const OUTPUT_LIMIT_CONTINUATION_REASON = "RESPONSIBILITY_OUTPUT_LIMIT_CONTINUATION";
 
 const RESPONSIBILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  researcher: "多源事实调查",
+  researcher: "事实调查",
   planner: "规划",
   reviewer: "验收",
   frontend: "前端设计与制作",
@@ -447,7 +447,7 @@ export function decideResearchPrefetch(input: RouteDecisionInput = {}): Readonly
   const explicitIntentText = stripQuotedMaterial(text);
   const proposal = input.proposal?.responsibility === "researcher" ? input.proposal : undefined;
   if (!proposal || !explicitIntentText || isLowRiskTransform(explicitIntentText)) {
-    return route("controller", "RESEARCHER_PREFETCH_NOT_NEEDED", "No evidence-grounded multi-source compression gap was proposed.", ["no-research-prefetch"]);
+    return route("controller", "RESEARCHER_PREFETCH_NOT_NEEDED", "No evidence-grounded research gap was proposed.", ["no-research-prefetch"]);
   }
   return route(
     "researcher",

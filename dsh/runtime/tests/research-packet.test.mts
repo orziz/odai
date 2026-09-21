@@ -62,6 +62,11 @@ test("research packet verifies source existence, boundaries, line numbers, and e
     const parsed = parseResearchPacket(JSON.stringify(packet()));
     const verified = verifyResearchPacketSources(parsed, root);
     assert.equal(verified.sourcesVerified, true);
+    const single = parseResearchPacket(JSON.stringify(packet({ facts: [packet().facts[0]] })));
+    assert.equal(verifyResearchPacketSources(single, root).sourceCount, 1);
+    assert.throws(() => verifyResearchPacketSources(parseResearchPacket(JSON.stringify(packet({
+      facts: [{ ...packet().facts[0], excerpt: "different" }],
+    }))), root), /does not match/u);
     assert.throws(
       () => verifyResearchPacketSources(parseResearchPacket(JSON.stringify(packet({ facts: [
         packet().facts[0],
@@ -103,14 +108,21 @@ test("research packet verifies source existence, boundaries, line numbers, and e
   }
 });
 
+test("research packet accepts a single source without requiring padding and keeps capacity bounds", () => {
+  for (const facts of [
+    [packet().facts[0]],
+    packet().facts.map((fact, index) => ({ ...fact, source: { path: "config/checkout.json", line: index + 1 } })),
+  ]) {
+    const parsed = parseResearchPacket(JSON.stringify(packet({ facts })));
+    assert.equal(parsed.sourceCount, 1);
+    assert.equal(parsed.facts.length, facts.length);
+  }
+  for (const facts of [[], Array.from({ length: 13 }, () => packet().facts[0])]) {
+    assert.throws(() => parseResearchPacket(JSON.stringify(packet({ facts }))), /source-backed facts/u);
+  }
+});
+
 test("research packet rejects weak or unsafe provenance", () => {
-  const oneSource = packet({
-    facts: packet().facts.map((fact, index) => ({
-      ...fact,
-      source: { path: "config/checkout.json", line: index + 1 },
-    })),
-  });
-  assert.throws(() => parseResearchPacket(JSON.stringify(oneSource)), /at least two distinct source paths/u);
   assert.throws(() => parseResearchPacket(JSON.stringify(packet({ facts: [
     packet().facts[0],
     { ...packet().facts[1], source: { path: "../private.md", line: 1 } },

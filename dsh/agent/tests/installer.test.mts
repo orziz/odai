@@ -362,7 +362,7 @@ test("incomplete composition prerequisites are rejected before preset installati
   const sourceRoot = resolve(scratch, "source");
   const dshHome = resolve(scratch, "home");
   try {
-    for (const file of ["package.json", "skills/odai/contracts/delegation.md", "skills/odai/scripts/compose-contracts.mjs"]) {
+    for (const file of ["package.json", "skills/odai-orchestration/contracts/delegation.md", "skills/odai-orchestration/scripts/compose-contracts.mjs"]) {
       await writeFixture(sourceRoot, "runtime");
       await rm(resolve(sourceRoot, file));
       await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), error => {
@@ -380,13 +380,17 @@ test("incomplete composition prerequisites are rejected before preset installati
 async function writeFixture(root: string, runtimeText: string): Promise<void> {
   await Promise.all([
     mkdir(resolve(root, "runtime"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai/contracts"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai/scripts"), { recursive: true }),
+    mkdir(resolve(root, "skills/odai"), { recursive: true }),
+    mkdir(resolve(root, "skills/odai-orchestration/contracts"), { recursive: true }),
+    mkdir(resolve(root, "skills/odai-orchestration/scripts"), { recursive: true }),
   ]);
   await Promise.all([
     writeFile(resolve(root, "package.json"), '{"private":true,"type":"module"}\n', "utf8"),
-    writeFile(resolve(root, "skills/odai/contracts/delegation.md"), "Fixture delegation contract.\n", "utf8"),
-    writeFile(resolve(root, "skills/odai/scripts/compose-contracts.mjs"), "export const fixture = true;\n", "utf8"),
+    writeFile(resolve(root, "runtime/governance-bundle.mjs"), "export const fixture = true;\n", "utf8"),
+    writeFile(resolve(root, "skills/odai-orchestration/SKILL.md"), "---\nname: odai-orchestration\n---\n", "utf8"),
+    writeFile(resolve(root, "skills/odai-orchestration/manifest.json"), "{\"schemaVersion\":1}\n", "utf8"),
+    writeFile(resolve(root, "skills/odai-orchestration/contracts/delegation.md"), "Fixture delegation contract.\n", "utf8"),
+    writeFile(resolve(root, "skills/odai-orchestration/scripts/compose-contracts.mjs"), "export const fixture = true;\n", "utf8"),
     writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./odai-governance.mjs\n", "utf8"),
     writeFile(resolve(root, "preset.yml"), "name: Odai\n", "utf8"),
     writeFile(resolve(root, "odai-governance.mjs"), "export * from \"./runtime/index.mjs\";\n", "utf8"),

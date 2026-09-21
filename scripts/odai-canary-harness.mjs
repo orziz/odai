@@ -855,7 +855,9 @@ function installCodexRoutingForFixture(workdir, args) {
   const controllerEffort = resolvedRunnerEffort(args);
   const plannerModel = args.codexRoutingPlannerModel;
   const reviewerModel = args.codexRoutingReviewerModel || controllerModel;
-  const installer = path.join(workdir, "skills", "odai", "scripts", "install-routing.mjs");
+  const orchestration = path.join(workdir, "skills", "odai-orchestration");
+  cpSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../skills/odai-orchestration"), orchestration, { recursive: true });
+  const installer = path.join(orchestration, "scripts", "install-routing.mjs");
   const command = [
     process.execPath,
     installer,
@@ -875,7 +877,7 @@ function installCodexRoutingForFixture(workdir, args) {
     throw new Error(`Codex routing installation failed: ${installed.stderr || installed.stdout || "unknown error"}`);
   }
   for (const gitCommand of [
-    ["git", "add", "-f", ".codex"],
+    ["git", "add", "-f", ".codex", "skills/odai-orchestration"],
     ["git", "commit", "-q", "-m", "fixture routing"],
   ]) {
     const result = run(gitCommand, { cwd: workdir, timeoutSeconds: 30 });

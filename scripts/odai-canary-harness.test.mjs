@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const harness = resolve(repoRoot, "scripts", "odai-canary-harness.mjs");
 const plan = resolve(repoRoot, "plans", "odai-canary.md");
 
 async function dryRun(args = []) {
-  const out = await mkdtemp(join(tmpdir(), "odai-canary-test-"));
+  const out = await realpath(await mkdtemp(join(tmpdir(), "odai-canary-test-")));
   try {
     await execFileAsync(process.execPath, [harness, "--out", out, ...args], { cwd: repoRoot });
     return {
@@ -49,6 +49,12 @@ test("canonical suite selection preserves historical defaults and bypasses them 
   const explicit = await dryRun(["--cases", "20,34"]);
   assert.equal(explicit.manifest.suite, null);
   assert.deepEqual(explicit.manifest.selected_cases, [20, 34]);
+});
+
+test("explicit routing installs the sibling skill in an isolated fixture without model calls", async () => {
+  const routed = await dryRun(["--cases", "1", "--codex-routing-telemetry", "--runner-model", "fixture-controller", "--codex-routing-planner-model", "fixture-planner"]);
+  assert.equal(routed.report.results[0].status, "dry-run");
+  assert.equal(routed.report.results[0].metrics.installed_routing.planner.model, "fixture-planner");
 });
 
 test("strict canonical suites persist a 4-of-4 pass threshold", async () => {

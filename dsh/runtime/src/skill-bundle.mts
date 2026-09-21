@@ -1,61 +1,50 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { composeRoleContract, validateCompositionManifest, stripEntryMetadata, ROLE_NAMES, REFERENCE_NAMES, ORCHESTRATION_URL } from "#odai-contracts";
+import type { OrchestrationManifest } from "#odai-contracts";
+import { GOVERNANCE_CONTRACT, loadGovernanceBundle, captureBundleFiles, bundleFile, parseSkillVersion, compareSkillVersions } from "./governance-bundle.mjs";
+import type { GovernanceBundle, GovernanceManifest } from "./governance-bundle.mjs";
+export { loadGovernanceBundle, readSkillManifest, parseSkillVersion, compareSkillVersions } from "./governance-bundle.mjs";
+export type { ParsedSkillVersion } from "./governance-bundle.mjs";
 
-import type { UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
-import { composeEntry, composeCore, composeRoleContract, validateCompositionManifest, RUNTIME_CONTRACT, ROLE_NAMES, REFERENCE_NAMES } from "#odai-contracts";
-import type { CompositionTopology } from "#odai-contracts";
-
-export const ODAI_RUNTIME_CONTRACT = RUNTIME_CONTRACT;
+export const ODAI_RUNTIME_CONTRACT = GOVERNANCE_CONTRACT;
 export const SKILL_MANIFEST_FILE = "manifest.json";
 export const SKILL_SOURCE_MODES = Object.freeze(["bundled", "auto", "user"] as const);
-
 export type SkillSourceMode = (typeof SKILL_SOURCE_MODES)[number];
-
-export interface ParsedSkillVersion {
-  readonly core: readonly [string, string, string];
-  readonly prerelease: readonly string[];
-}
-
 export const ODAI_ROLE_NAMES = ROLE_NAMES;
 export const ODAI_REFERENCE_NAMES = REFERENCE_NAMES;
-
 export type OdaiRoleName = (typeof ODAI_ROLE_NAMES)[number];
 export type OdaiReferenceName = (typeof ODAI_REFERENCE_NAMES)[number];
-
-export interface SkillManifest extends CompositionTopology {
-  readonly schemaVersion: 3;
-  readonly name: "odai";
-  readonly skillVersion: string;
-  readonly versionParts: ParsedSkillVersion;
-  readonly runtimeContract: number;
-  readonly roleFiles: Readonly<Record<OdaiRoleName, string>>;
-  readonly referenceFiles: Readonly<Record<OdaiReferenceName, string>>;
-  readonly requiredFiles: readonly string[];
-}
-
-export interface SkillBundle {
-  readonly path: string;
+export type SkillManifest = GovernanceManifest;
+export interface OrchestrationBundle {
   readonly root: string;
-  readonly source: string;
-  readonly provider: string;
-  readonly manifest: SkillManifest;
-  readonly skillText: string;
+  readonly manifest: OrchestrationManifest;
   readonly skillBody: string;
+  readonly digest: string;
+  readonly fileContents: Readonly<Record<string, string>>;
+}
+// DSH owns this composition. Neither source manifest contains the other's files.
+export interface SkillBundle extends Omit<GovernanceBundle, "digest" | "fileContents" | "referenceContracts"> {
+  readonly governance: GovernanceBundle;
+  readonly orchestration: OrchestrationBundle;
   readonly coreContract: string;
   readonly delegationContract: string;
   readonly roleContracts: Readonly<Record<string, string>>;
   readonly referenceContracts: Readonly<Record<string, string>>;
+  readonly referencePaths: Readonly<Record<OdaiReferenceName, string>>;
+  readonly requiredFiles: readonly string[];
   readonly digest: string;
   readonly fileContents: Readonly<Record<string, string>>;
 }
-
 export interface LoadSkillBundleOptions {
   source?: string;
   provider?: string;
+  // Explicit trusted caller input, used for captured evolution snapshots only.
+  // External governance discovery never selects a neighboring orchestration.
+  orchestrationRoot?: string;
 }
-
 export interface SkillBundleSelection {
   readonly mode: SkillSourceMode;
   readonly status: "selected" | "fallback";
@@ -64,359 +53,71 @@ export interface SkillBundleSelection {
   readonly bundle: SkillBundle;
   readonly candidate?: SkillBundle;
 }
+export interface ChooseSkillBundleOptions { mode?: unknown; bundled?: SkillBundle; candidate?: SkillBundle; candidateError?: unknown }
+const PROJECT_SOURCES = new Set(["project-dsh", "project-agents", "custom"]);
+const USER_SOURCES = new Set(["user-dsh", "user-agents"]);
 
-export interface ChooseSkillBundleOptions {
-  mode?: unknown;
-  bundled?: SkillBundle;
-  candidate?: SkillBundle;
-  candidateError?: unknown;
+export function loadOrchestrationBundle(root = fileURLToPath(ORCHESTRATION_URL)): Readonly<OrchestrationBundle> {
+  root = resolve(root);
+  const raw: unknown = JSON.parse(readFileSync(bundleFile(root, "manifest.json"), "utf8"));
+  const manifest = validateCompositionManifest(raw);
+  parseSkillVersion(manifest.version, "orchestration version");
+  const captured = captureBundleFiles(root, manifest.requiredFiles, manifest);
+  const skillBody = stripEntryMetadata(Buffer.from(captured.fileContents["SKILL.md"] ?? "", "base64").toString("utf8"));
+  if (!skillBody) throw new TypeError("orchestration entry is empty");
+  return Object.freeze({ root, manifest, skillBody, ...captured });
 }
-
-const MANIFEST_FIELDS = new Set<string>([
-  "schemaVersion",
-  "name",
-  "skillVersion",
-  "runtimeContract",
-  "roleFiles",
-  "moduleFiles",
-  "rolePresets",
-  "referenceFiles",
-  "requiredFiles",
-]);
-const PROJECT_SOURCES = new Set<string>(["project-dsh", "project-agents", "custom"]);
-const USER_SOURCES = new Set<string>(["user-dsh", "user-agents"]);
-const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u;
-
-function assertPlainObject(value: unknown, field: string): UnknownRecord {
-  if (!isUnknownRecord(value)) throw new TypeError(`${field} must be an object`);
-  return value;
-}
-
-function isSkillSourceMode(value: unknown): value is SkillSourceMode {
-  return typeof value === "string" && (SKILL_SOURCE_MODES as readonly string[]).includes(value);
-}
-
-export function parseSkillVersion(value: unknown, field = "skillVersion"): Readonly<ParsedSkillVersion> {
-  if (typeof value !== "string") throw new TypeError(`${field} must be a string`);
-  const match = value.match(VERSION_PATTERN);
-  if (!match) throw new TypeError(`${field} must use SemVer 2.0.0 syntax`);
-  const prerelease = match[4] === undefined ? [] : match[4].split(".");
-  for (const identifier of prerelease) {
-    if (/^\d+$/u.test(identifier) && identifier.length > 1 && identifier.startsWith("0")) {
-      throw new TypeError(`${field} has a numeric prerelease identifier with a leading zero`);
-    }
-  }
-  return Object.freeze({
-    core: Object.freeze([match[1], match[2], match[3]] as const),
-    prerelease: Object.freeze(prerelease),
-  });
-}
-
-function compareNumericIdentifier(left: string, right: string): number {
-  if (left.length < right.length) return -1;
-  if (left.length > right.length) return 1;
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
-
-function comparePrerelease(left: readonly string[], right: readonly string[]): number {
-  if (left.length === 0 && right.length === 0) return 0;
-  if (left.length === 0) return 1;
-  if (right.length === 0) return -1;
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftValue = left[index];
-    const rightValue = right[index];
-    if (leftValue === undefined) return -1;
-    if (rightValue === undefined) return 1;
-    const leftNumeric = /^\d+$/u.test(leftValue);
-    const rightNumeric = /^\d+$/u.test(rightValue);
-    if (leftNumeric && rightNumeric) {
-      const difference = compareNumericIdentifier(leftValue, rightValue);
-      if (difference !== 0) return difference;
-      continue;
-    }
-    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
-    if (leftValue < rightValue) return -1;
-    if (leftValue > rightValue) return 1;
-  }
-  return 0;
-}
-
-export function compareSkillVersions(
-  left: string | ParsedSkillVersion,
-  right: string | ParsedSkillVersion,
-): number {
-  const leftVersion = typeof left === "string" ? parseSkillVersion(left, "left skillVersion") : left;
-  const rightVersion = typeof right === "string" ? parseSkillVersion(right, "right skillVersion") : right;
-  for (let index = 0; index < 3; index += 1) {
-    const leftIdentifier = leftVersion.core[index];
-    const rightIdentifier = rightVersion.core[index];
-    if (leftIdentifier === undefined || rightIdentifier === undefined) {
-      throw new TypeError("skillVersion core must contain three identifiers");
-    }
-    const difference = compareNumericIdentifier(leftIdentifier, rightIdentifier);
-    if (difference !== 0) return difference;
-  }
-  return comparePrerelease(leftVersion.prerelease, rightVersion.prerelease);
-}
-
-function resolveBundleFile(root: string, relativePath: unknown): string {
-  if (typeof relativePath !== "string" || relativePath.trim() === "") {
-    throw new TypeError("skill manifest requiredFiles entries must be non-empty strings");
-  }
-  const segments = relativePath.split("/");
-  if (relativePath !== relativePath.trim()
-    || relativePath.includes("\\")
-    || isAbsolute(relativePath)
-    || segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
-    throw new TypeError(`skill manifest contains unsafe required file ${JSON.stringify(relativePath)}`);
-  }
-  const target = resolve(root, ...segments);
-  const fromRoot = relative(root, target);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
-    throw new TypeError(`skill manifest required file escapes its bundle: ${relativePath}`);
-  }
-  return target;
-}
-
-function assertRealPathInside(rootRealPath: string, target: string, label: string): string {
-  const targetRealPath = realpathSync(target);
-  const fromRoot = relative(rootRealPath, targetRealPath);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
-    throw new Error(`Odai skill bundle path escapes through a symlink: ${label}`);
-  }
-  return targetRealPath;
-}
-
-export function readSkillManifest(skillRoot: string): Readonly<SkillManifest> {
-  const rootRealPath = realpathSync(skillRoot);
-  const manifestPath = resolve(skillRoot, SKILL_MANIFEST_FILE);
-  let parsed: unknown;
-  try {
-    const manifestRealPath = assertRealPathInside(rootRealPath, manifestPath, SKILL_MANIFEST_FILE);
-    parsed = JSON.parse(readFileSync(manifestRealPath, "utf8")) as unknown;
-  } catch (error) {
-    throw new Error(`cannot read Odai skill manifest ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const manifest = assertPlainObject(parsed, `Odai skill manifest ${manifestPath}`);
-  const unknownFields = Object.keys(manifest).filter((field) => !MANIFEST_FIELDS.has(field));
-  if (unknownFields.length > 0) {
-    throw new TypeError(`Odai skill manifest ${manifestPath} has unknown fields: ${unknownFields.join(", ")}`);
-  }
-  if (manifest.schemaVersion !== 3) {
-    throw new TypeError(`Odai skill manifest ${manifestPath} has unsupported schemaVersion ${String(manifest.schemaVersion)}`);
-  }
-  if (manifest.name !== "odai") throw new TypeError(`Odai skill manifest ${manifestPath} must name odai`);
-  if (typeof manifest.skillVersion !== "string") {
-    throw new TypeError(`Odai skill manifest ${manifestPath}.skillVersion must be a string`);
-  }
-  const skillVersion = manifest.skillVersion;
-  const versionParts = parseSkillVersion(skillVersion, `Odai skill manifest ${manifestPath}.skillVersion`);
-  if (typeof manifest.runtimeContract !== "number" || !Number.isSafeInteger(manifest.runtimeContract) || manifest.runtimeContract <= 0) {
-    throw new TypeError(`Odai skill manifest ${manifestPath}.runtimeContract must be a positive integer`);
-  }
-  if (!Array.isArray(manifest.requiredFiles) || manifest.requiredFiles.length === 0) {
-    throw new TypeError(`Odai skill manifest ${manifestPath}.requiredFiles must be a non-empty array`);
-  }
-  const requiredFiles = manifest.requiredFiles.map((file) => {
-    if (typeof file !== "string" || file.trim() === "") {
-      throw new TypeError("skill manifest requiredFiles entries must be non-empty strings");
-    }
-    resolveBundleFile(skillRoot, file);
-    return file;
-  });
-  if (new Set(requiredFiles).size !== requiredFiles.length) {
-    throw new TypeError(`Odai skill manifest ${manifestPath}.requiredFiles contains duplicates`);
-  }
-  if (!requiredFiles.includes("SKILL.md")) {
-    throw new TypeError(`Odai skill manifest ${manifestPath} is missing required runtime file SKILL.md`);
-  }
-  const topology = validateCompositionManifest(manifest);
-  return Object.freeze({
-    ...topology,
-    schemaVersion: 3,
-    name: "odai",
-    skillVersion,
-    versionParts,
-    runtimeContract: manifest.runtimeContract,
-    requiredFiles: Object.freeze(requiredFiles),
-  });
-}
-
 export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptions = {}): Readonly<SkillBundle> {
-  const entryPath = resolve(skillPath);
-  const root = dirname(entryPath);
-  const rootRealPath = realpathSync(root);
-  const manifest = readSkillManifest(root);
-  const digest = createHash("sha256");
-  const contents = new Map<string, Buffer>();
-  digest.update(JSON.stringify({
-    schemaVersion: manifest.schemaVersion,
-    name: manifest.name,
-    skillVersion: manifest.skillVersion,
-    runtimeContract: manifest.runtimeContract,
-    moduleFiles: manifest.moduleFiles,
-    rolePresets: manifest.rolePresets,
-    roleFiles: manifest.roleFiles,
-    referenceFiles: manifest.referenceFiles,
-    requiredFiles: manifest.requiredFiles,
-  }));
-
-  for (const relativePath of [...manifest.requiredFiles].sort()) {
-    const path = resolveBundleFile(root, relativePath);
-    if (!existsSync(path)) throw new Error(`Odai skill bundle ${root} is missing ${relativePath}`);
-    const realPath = assertRealPathInside(rootRealPath, path, relativePath);
-    const content = readFileSync(realPath);
-    contents.set(relativePath, content);
-    digest.update("\0");
-    digest.update(relativePath);
-    digest.update("\0");
-    digest.update(content);
-  }
-
-  const skillContent = contents.get("SKILL.md");
-  if (!skillContent) throw new Error(`Odai skill bundle ${root} is missing SKILL.md`);
-  const skillText = skillContent.toString("utf8").trim();
-  if (!skillText) throw new Error(`Odai canonical skill is empty: ${entryPath}`);
-  const frontmatterMatch = skillText.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u);
-  const frontmatter = frontmatterMatch?.[1];
-  if (!frontmatterMatch || !frontmatter || !/^name:\s*odai\s*$/mu.test(frontmatter)) {
-    throw new Error(`Odai canonical skill entry does not declare name odai: ${entryPath}`);
-  }
-  if (!skillText.slice(frontmatterMatch[0].length).trim()) throw new Error(`Odai canonical skill body is empty: ${entryPath}`);
-  const contractContents = Object.freeze(Object.fromEntries([...contents].map(([file, content]) => [file, content.toString("utf8")])));
-  const skillBody = composeEntry(manifest, contractContents);
-  const coreContract = composeCore(manifest, contractContents);
-  const delegationContract = contractContents[manifest.moduleFiles.delegation]!.trim();
-  const roleContracts: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
-    ODAI_ROLE_NAMES.map((role) => [role, composeRoleContract(role, manifest, contractContents, { embedded: true })]),
-  ));
-  const referenceContracts: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
-    ODAI_REFERENCE_NAMES.map((reference) => {
-      const relativePath = manifest.referenceFiles[reference];
-      const text = contents.get(relativePath)?.toString("utf8").trim();
-      if (!text) throw new Error(`Odai canonical ${reference} reference is unavailable: ${resolve(root, relativePath)}`);
-      return [reference, text];
-    }),
-  ));
-  const fileContents: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
-    [...contents].map(([relativePath, content]) => [relativePath, content.toString("base64")]),
-  ));
-
-  const bundle: SkillBundle = {
-    path: entryPath,
-    root,
-    source: typeof options.source === "string" && options.source ? options.source : "bundled",
-    provider: typeof options.provider === "string" && options.provider ? options.provider : "odai-dsh-runtime",
-    manifest,
-    skillText,
-    skillBody,
-    coreContract,
-    delegationContract,
-    roleContracts,
-    referenceContracts,
-    digest: digest.digest("hex"),
-    fileContents,
-  };
+  const governance = loadGovernanceBundle(skillPath, options);
+  const orchestration = loadOrchestrationBundle(options.orchestrationRoot);
+  const contents = Object.freeze(Object.fromEntries(Object.entries(orchestration.fileContents).map(([file, bytes]) => [file, Buffer.from(bytes, "base64").toString("utf8")])));
+  const input = { runtimeContract: governance.manifest.runtimeContract, skillBody: governance.skillBody, referenceContracts: governance.referenceContracts };
+  const roleContracts = Object.freeze(Object.fromEntries(ODAI_ROLE_NAMES.map(role => [role, composeRoleContract(role, input, orchestration.manifest, contents, { embedded: true })])));
+  const delegationContract = contents[orchestration.manifest.delegationFile]?.trim();
+  const orchestrationReference = contents[orchestration.manifest.referenceFiles.orchestration]?.trim();
+  if (!delegationContract || !orchestrationReference) throw new Error("orchestration contract is empty");
+  const referenceContracts = Object.freeze({ ...governance.referenceContracts, orchestration: orchestrationReference });
+  const referencePaths = Object.freeze({ ...governance.manifest.referenceFiles, orchestration: `orchestration/${orchestration.manifest.referenceFiles.orchestration}` });
+  const fileContents = Object.freeze({ ...governance.fileContents,
+    ...Object.fromEntries(Object.entries(orchestration.fileContents).map(([file, bytes]) => [`orchestration/${file}`, bytes])) });
+  const requiredFiles = Object.freeze([...governance.manifest.requiredFiles, ...orchestration.manifest.requiredFiles.map(file => `orchestration/${file}`)]);
+  const digest = createHash("sha256").update(JSON.stringify({ contract: "odai-dsh-composition/1", governance: governance.digest, orchestration: orchestration.digest })).digest("hex");
+  const bundle: SkillBundle = { ...governance, governance, orchestration, coreContract: governance.skillBody,
+    delegationContract, roleContracts, referenceContracts, referencePaths, requiredFiles, digest, fileContents };
   Object.defineProperty(bundle, "fileContents", { value: fileContents, enumerable: false });
   return Object.freeze(bundle);
 }
-
 export function readSkillBundleFile(bundle: SkillBundle, relativePath: string): Buffer {
-  if (!bundle || typeof bundle !== "object" || !bundle.manifest?.requiredFiles?.includes(relativePath)) {
-    throw new TypeError(`unknown Odai skill bundle file: ${String(relativePath)}`);
-  }
-  const encoded = bundle.fileContents?.[relativePath];
-  if (typeof encoded !== "string") throw new Error(`Odai skill bundle snapshot is missing ${relativePath}`);
+  if (!bundle?.requiredFiles?.includes(relativePath)) throw new TypeError(`unknown Odai composition file: ${String(relativePath)}`);
+  const encoded = bundle.fileContents[relativePath];
+  if (typeof encoded !== "string") throw new Error(`Odai composition snapshot is missing ${relativePath}`);
   return Buffer.from(encoded, "base64");
 }
-
-function fallbackSelection(
-  mode: SkillSourceMode,
-  bundled: SkillBundle,
-  reasonCode: string,
-  detail?: string,
-  candidate?: SkillBundle,
-): Readonly<SkillBundleSelection> {
-  return Object.freeze({
-    mode,
-    status: "fallback",
-    reasonCode,
-    ...(detail === undefined ? {} : { detail }),
-    bundle: bundled,
-    ...(candidate ? { candidate } : {}),
-  });
+function fallbackSelection(mode: SkillSourceMode, bundled: SkillBundle, reasonCode: string, detail?: string, candidate?: SkillBundle): Readonly<SkillBundleSelection> {
+  return Object.freeze({ mode, status: "fallback", reasonCode, ...(detail === undefined ? {} : { detail }), bundle: bundled, ...(candidate ? { candidate } : {}) });
 }
-
-function selected(
-  mode: SkillSourceMode,
-  bundle: SkillBundle,
-  reasonCode: string,
-  candidate?: SkillBundle,
-): Readonly<SkillBundleSelection> {
-  return Object.freeze({
-    mode,
-    status: "selected",
-    reasonCode,
-    bundle,
-    ...(candidate ? { candidate } : {}),
-  });
+function selected(mode: SkillSourceMode, bundle: SkillBundle, reasonCode: string, candidate?: SkillBundle): Readonly<SkillBundleSelection> {
+  return Object.freeze({ mode, status: "selected", reasonCode, bundle, ...(candidate ? { candidate } : {}) });
 }
-
 export function chooseSkillBundle(options: ChooseSkillBundleOptions = {}): Readonly<SkillBundleSelection> {
   const { mode, bundled, candidate, candidateError } = options;
-  if (!isSkillSourceMode(mode)) throw new TypeError(`unknown Odai skill source mode: ${String(mode)}`);
+  if (typeof mode !== "string" || !(SKILL_SOURCE_MODES as readonly string[]).includes(mode)) throw new TypeError(`unknown Odai skill source mode: ${String(mode)}`);
+  const sourceMode = mode as SkillSourceMode;
   if (!bundled) throw new TypeError("bundled Odai skill is required");
-  if (mode === "bundled") return selected(mode, bundled, "bundled-configured");
-  if (candidateError) {
-    return fallbackSelection(mode, bundled, "external-invalid", candidateError instanceof Error ? candidateError.message : String(candidateError));
-  }
-  if (!candidate) {
-    return mode === "auto"
-      ? selected(mode, bundled, "external-not-installed")
-      : fallbackSelection(mode, bundled, "user-source-missing", "no compatible user-level Odai skill is installed");
-  }
-  if (candidate.manifest.runtimeContract !== ODAI_RUNTIME_CONTRACT) {
-    return fallbackSelection(
-      mode,
-      bundled,
-      "runtime-contract-mismatch",
-      `candidate runtimeContract ${candidate.manifest.runtimeContract} is incompatible with runtime contract ${ODAI_RUNTIME_CONTRACT}`,
-      candidate,
-    );
-  }
-
+  if (sourceMode === "bundled") return selected(sourceMode, bundled, "bundled-configured");
+  if (candidateError) return fallbackSelection(sourceMode, bundled, "external-invalid", candidateError instanceof Error ? candidateError.message : String(candidateError));
+  if (!candidate) return sourceMode === "auto" ? selected(sourceMode, bundled, "external-not-installed") : fallbackSelection(sourceMode, bundled, "user-source-missing", "no compatible user-level Odai skill is installed");
+  if (candidate.manifest.runtimeContract !== ODAI_RUNTIME_CONTRACT) return fallbackSelection(sourceMode, bundled, "runtime-contract-mismatch", `candidate runtimeContract ${candidate.manifest.runtimeContract} is incompatible with runtime contract ${ODAI_RUNTIME_CONTRACT}`, candidate);
   const versionOrder = compareSkillVersions(candidate.manifest.versionParts, bundled.manifest.versionParts);
   if (versionOrder === 0) {
-    if (candidate.digest === bundled.digest) return selected(mode, bundled, "external-equivalent", candidate);
-    return fallbackSelection(
-      mode,
-      bundled,
-      "same-version-content-conflict",
-      `candidate ${candidate.manifest.skillVersion} differs from the bundled content with the same version`,
-      candidate,
-    );
+    if (candidate.governance.digest === bundled.governance.digest) return selected(sourceMode, bundled, "external-equivalent", candidate);
+    return fallbackSelection(sourceMode, bundled, "same-version-content-conflict", `candidate ${candidate.manifest.skillVersion} differs from the bundled content with the same version`, candidate);
   }
-
-  if (mode === "user") {
-    if (!USER_SOURCES.has(candidate.source) && candidate.source !== "custom") {
-      return fallbackSelection(mode, bundled, "user-source-invalid", `source ${candidate.source} is not user-level`, candidate);
-    }
-    return selected(mode, candidate, "user-configured", candidate);
+  if (sourceMode === "user") {
+    if (!USER_SOURCES.has(candidate.source) && candidate.source !== "custom") return fallbackSelection(sourceMode, bundled, "user-source-invalid", `source ${candidate.source} is not user-level`, candidate);
+    return selected(sourceMode, candidate, "user-configured", candidate);
   }
-  if (PROJECT_SOURCES.has(candidate.source)) return selected(mode, candidate, "project-scope-override", candidate);
-  if (USER_SOURCES.has(candidate.source)) {
-    return versionOrder > 0
-      ? selected(mode, candidate, "newer-user-skill", candidate)
-      : fallbackSelection(
-          mode,
-          bundled,
-          "user-skill-older",
-          `candidate ${candidate.manifest.skillVersion} is older than bundled ${bundled.manifest.skillVersion}`,
-          candidate,
-        );
-  }
-  return fallbackSelection(mode, bundled, "external-source-unsupported", `source ${candidate.source} cannot provide Odai governance`, candidate);
+  if (PROJECT_SOURCES.has(candidate.source)) return selected(sourceMode, candidate, "project-scope-override", candidate);
+  if (USER_SOURCES.has(candidate.source)) return versionOrder > 0 ? selected(sourceMode, candidate, "newer-user-skill", candidate) : fallbackSelection(sourceMode, bundled, "user-skill-older", `candidate ${candidate.manifest.skillVersion} is older than bundled ${bundled.manifest.skillVersion}`, candidate);
+  return fallbackSelection(sourceMode, bundled, "external-source-unsupported", `source ${candidate.source} cannot provide Odai governance`, candidate);
 }

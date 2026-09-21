@@ -297,7 +297,7 @@ try {
         }
         if (researchResult?.data?.status !== "completed"
           || !Number.isSafeInteger(researchResult?.data?.sourceCount)
-          || researchResult.data.sourceCount < 2
+          || researchResult.data.sourceCount < 1
           || !/^[a-f0-9]{64}$/u.test(researchResult?.data?.packetDigest || "")) {
           throw new Error(`researcher packet evidence was not accepted: ${JSON.stringify(researchResult)}`);
         }

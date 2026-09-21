@@ -2,6 +2,6 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#odai-contracts": "./skills/odai/scripts/compose-contracts.mjs"
+    "#odai-contracts": "./skills/odai-orchestration/scripts/compose-contracts.mjs"
   }
 }

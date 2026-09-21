@@ -978,6 +978,11 @@ test("routing off ignores stale protection evidence while memory remains availab
   );
   assert.equal(result.messages.length, 1);
   assert.equal(ctx.captured.guards[0]({ callId: "write-off", agent, name: "write" }), undefined);
+  const assembly = { sections: [...ctx.captured.sections], tools: [] };
+  const assembled = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent }, async () => assembly);
+  const sections = new Map<string, string>(assembled.sections.map((section: TestPromptSection) => [section.name, section.text] as const));
+  for (const name of ["odai:orchestration", "odai:native-delegation", "odai:responsibility-gap"]) assert.equal(sections.get(name), "");
+  assert.ok(sections.get("odai:canonical-governance")?.includes(loadSkillBundle(skillPath).skillBody));
 });
 
 test("repeated command outcomes inject one plugin notice without denying retries or claiming human authority", () => {
@@ -1340,11 +1345,10 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
         assert.equal(assembled.sections.some((section: TestPromptSection) => section.name === "odai:child-responsibility-contract"), false);
         assert.ok(JSON.stringify(request.prompt).includes("SUPPLIED_OWNER"));
         const effective = JSON.stringify(request.prompt) + assembled.sections.map((section: TestPromptSection) => section.text).join("\n");
-        assert.equal(effective.split("## 精神内核").length - 1, 1);
-        assert.equal(effective.split("## 受托边界").length - 1, 1);
+        assert.ok(JSON.stringify(request.prompt).includes(JSON.stringify(roleBundle.coreContract).slice(1, -1)));
+        assert.ok(JSON.stringify(request.prompt).includes(JSON.stringify(roleBundle.delegationContract).slice(1, -1)));
         assert.equal(effective.split("PARENT_SNAPSHOT_CORE").length - 1, 1);
         assert.ok(effective.includes(`digest: ${roleBundle.digest}`));
-        assert.doesNotMatch(effective, /## 按表现分配支撑/u);
         return { localAgent: child, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "result" }] }),
           async dispose() { assert.ok(child && isManagedRoleChild(child)); } };
       } },
@@ -1404,11 +1408,11 @@ test("native labelled children deliver role owners and generic delegation explai
     const sections = result.sections.filter((section: TestPromptSection) => section.name === "odai:child-responsibility-contract");
     assert.equal(sections.length, role === "generic" ? 0 : 1);
     const effective = result.sections.map((section: TestPromptSection) => section.text).join("\n");
-    assert.equal(effective.split("## 精神内核").length - 1, 1);
-    assert.equal(effective.split("## 受托边界").length - 1, 1);
-    assert.doesNotMatch(effective, /## 按表现分配支撑/u);
+    const snapshot = loadSkillBundle(resolve(import.meta.dirname, "../../../skills/odai/SKILL.md"));
+    assert.equal(effective.split(snapshot.coreContract).length - 1, 1);
+    assert.equal(effective.split(snapshot.delegationContract).length - 1, 1);
     if (role === "generic") continue;
-    assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai/assets/routing-roles/${role}.md`), "utf8").trim()));
+    assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai-orchestration/assets/routing-roles/${role}.md`), "utf8").trim()));
     const owner = { planner: "planning", reviewer: "verification", frontend: "craft" }[role];
     if (owner) assert.ok(sections[0].text.includes(readFileSync(resolve(import.meta.dirname, `../../../skills/odai/references/${owner}.md`), "utf8").trim()));
   }
@@ -2008,7 +2012,8 @@ test("skill evolution activation preserves the current turn and changes the next
   assert.doesNotMatch(initialPrompt, /EVOLUTION_NEXT_TURN/u);
   const shown = await tool.execute({ action: "show" }, { agent });
   const inspected = await tool.execute({ action: "inspect", path: "SKILL.md" }, { agent });
-  const oldString = "`odai` 是用户统一入口与最终交付者，按真实缺口补判断、工艺、验证和外力。";
+  const oldString = loadSkillBundle(skillPath).skillBody.split(/\r?\n/u)[0];
+  assert.ok(oldString);
   const proposalArgs = {
     action: "propose",
     objective: "Prove next-turn evolution selection",
@@ -2499,22 +2504,15 @@ test("plugin registers canonical prompt, monotonic guard, audit observer, and ro
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "observe" } });
 
-  assert.equal(ctx.captured.sections.length, 9);
-  assert.match(ctx.captured.sections[0].text, /odai canonical governance/u);
-  assert.match(ctx.captured.sections[0].text, /already loaded by this runtime; do not call the skill tool/u);
-  assert.equal(ctx.captured.sections[1].text, "");
-  assert.match(ctx.captured.sections[2].text, /naturally asks to inspect, set, change, or remove/u);
-  assert.match(ctx.captured.sections[2].text, /Never infer, recommend as chosen, or silently select/u);
-  assert.match(ctx.captured.sections[3].text, /user-controlled human-safety continuity/iu);
-  assert.match(ctx.captured.sections[3].text, /Never infer or automatically save a current mood/u);
-  assert.equal(ctx.captured.sections[4].text, "");
-  assert.match(ctx.captured.sections[5].text, /explicitly asks to inspect, set, or reset that source/u);
-  assert.equal(ctx.captured.sections[6].text, "");
-  assert.match(ctx.captured.sections[7].text, /compaction model configuration/u);
-  assert.match(ctx.captured.sections[7].text, /Never infer or silently choose/u);
-  assert.match(ctx.captured.sections[7].text, /controller, researcher, planner, reviewer, frontend/u);
-  assert.match(ctx.captured.sections[8].text, /long-term semantic memory/u);
-  assert.match(ctx.captured.sections[8].text, /no hidden provider, model, embedding, subagent, or compaction call/u);
+  const sections = new Map(ctx.captured.sections.map((section: TestPromptSection) => [section.name, section.text] as const));
+  assert.equal(sections.size, ctx.captured.sections.length);
+  assert.deepEqual([...sections.keys()], [
+    "odai:canonical-governance", "odai:orchestration", "odai:canonical-craft", "odai:routing-configuration",
+    "odai:human-safety-continuity", "odai:responsibility-gap", "odai:skill-source-configuration",
+    "odai:controller-output-policy", "odai:compaction-model-configuration", "odai:semantic-memory",
+  ]);
+  assert.ok(sections.get("odai:canonical-governance")?.includes(loadSkillBundle(skillPath).skillBody));
+  for (const name of ["odai:orchestration", "odai:canonical-craft", "odai:controller-output-policy"]) assert.equal(sections.get(name), "");
   const tools = new RequiredMap(ctx.captured.tools.map((tool: TestTool) => [tool.name, tool] as const));
   assert.deepEqual([...tools.keys()], [
     "odai_review_evidence",
@@ -4528,7 +4526,7 @@ test("an unavailable frontend mapping falls back locally with an explicit non-re
   assert.equal(resolutions, 1);
   assert.match(messageText(result.messages[1]), /Continue locally as the current controller/u);
   assert.match(messageText(result.messages[1]), /Do not claim the configured frontend responsibility ran/u);
-  assert.match(messageText(result.messages[1]), /Canonical craft reference/u);
+  assert.ok(messageText(result.messages[1]).includes(loadSkillBundle(skillPath).referenceContracts.craft));
   assert.equal(events.some((event) => event.type === "odai/route-upgrade"), false);
   assert.equal(findEvent(events, (event) => event.type === "odai/route-result").data.status, "fallback");
   const base = { provider: "base", model: "controller" };
@@ -4593,7 +4591,7 @@ test("frontend incident upgrades in place, verifies its actual route, and overri
   }));
   assert.equal(starts, 0);
   assert.match(routed.messages[1].content[0].text, /target responsibility: frontend/u);
-  assert.match(routed.messages[1].content[0].text, /Canonical craft reference/u);
+  assert.ok(routed.messages[1].content[0].text.includes(loadSkillBundle(skillPath).referenceContracts.craft));
   assert.match(routed.messages[1].content[0].text, /not an independent child/u);
 
   const request = ctx.captured.handlers.get("agent/request");
@@ -5141,7 +5139,11 @@ test("configured auto mode keeps an evidence-grounded planner gap in the current
   });
 });
 
-test("configured researcher compresses evidence for the controller without inventing a planner gap", async () => {
+test("configured researcher accepts single-source evidence without inventing a planner gap", async () => {
+  const singleSourceOutput = researchPacketText({ facts: [{
+    claim: "The client already retries once.", excerpt: "retries=1",
+    source: { path: "config/checkout.json", line: 4 }, authority: "runtime configuration",
+  }], stop: "Configured retry is established; provider behavior remains unknown." });
   const starts: TestSubagentRequest[] = [];
   const subagents = {
     async start(_provider: string, request: UnknownRecord) {
@@ -5152,7 +5154,7 @@ test("configured researcher compresses evidence for the controller without inven
         },
         result: Promise.resolve({
           stopReason: "completed",
-          output: [{ type: "text", text: researchPacketText() }],
+          output: [{ type: "text", text: singleSourceOutput }],
         }),
         async dispose() {},
       };
@@ -5198,7 +5200,7 @@ test("configured researcher compresses evidence for the controller without inven
   assert.doesNotMatch(messageText(result.messages[2]), /planner responsibility contract/u);
   const researchResult = findEvent(events, (event) => event.type === "odai/research-result");
   assert.equal(researchResult.data.status, "completed");
-  assert.equal(researchResult.data.sourceCount, 2);
+  assert.equal(researchResult.data.sourceCount, 1);
   assert.equal(researchResult.data.routeSource, "deployment-config");
   assert.equal(researchResult.data.fallbackUsed, false);
   assert.equal(researchResult.data.routeReceiptStatus, "applied");

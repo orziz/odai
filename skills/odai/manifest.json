@@ -1,26 +1,8 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 5,
   "name": "odai",
-  "skillVersion": "0.5.0",
-  "runtimeContract": 7,
-  "moduleFiles": {
-    "entry": "SKILL.md",
-    "delegation": "contracts/delegation.md"
-  },
-  "roleFiles": {
-    "controller": "assets/routing-roles/controller.md",
-    "researcher": "assets/routing-roles/researcher.md",
-    "planner": "assets/routing-roles/planner.md",
-    "reviewer": "assets/routing-roles/reviewer.md",
-    "frontend": "assets/routing-roles/frontend.md"
-  },
-  "rolePresets": {
-    "controller": { "modules": ["core", "entry"], "references": [] },
-    "researcher": { "modules": ["core", "delegation"], "references": [] },
-    "planner": { "modules": ["core", "delegation"], "references": ["planning"] },
-    "reviewer": { "modules": ["core", "delegation"], "references": ["verification"] },
-    "frontend": { "modules": ["core", "delegation"], "references": ["craft"] }
-  },
+  "skillVersion": "0.6.0",
+  "runtimeContract": 8,
   "referenceFiles": {
     "dao": "references/dao.md",
     "planning": "references/planning.md",
@@ -34,33 +16,14 @@
   "requiredFiles": [
     "SKILL.md",
     "agents/openai.yaml",
-    "assets/claude-agents/agent.md",
-    "assets/codex-agents/config.toml",
-    "assets/codex-agents/role.toml",
-    "assets/copilot-agents/agent.md",
-    "assets/hooks-policy.example.json",
-    "assets/routing-roles/controller.md",
-    "assets/routing-roles/frontend.md",
-    "assets/routing-roles/planner.md",
-    "assets/routing-roles/researcher.md",
-    "assets/routing-roles/reviewer.md",
     "assets/task-state.md",
-    "contracts/delegation.md",
-    "references/care.md",
-    "references/craft.md",
     "references/dao.md",
-    "references/human-safety.md",
-    "references/leverage.md",
     "references/planning.md",
-    "references/support.md",
+    "references/craft.md",
     "references/verification.md",
-    "scripts/build-hooks.mjs",
-    "scripts/build-routing.mjs",
-    "scripts/compose-contracts.mjs",
-    "scripts/compose-contracts.d.mts",
-    "scripts/install-routing.mjs",
-    "scripts/odai-hook.mjs",
-    "scripts/run-role.mjs",
-    "scripts/verify-routing.mjs"
+    "references/support.md",
+    "references/leverage.md",
+    "references/care.md",
+    "references/human-safety.md"
   ]
 }

@@ -44,7 +44,7 @@ function buildAdapter(host, target) {
     host,
     policyPath: "<project>/.odai/hooks.json",
     defaultBehavior: "No policy file means no-op.",
-    generatedFrom: "skills/odai/scripts/build-hooks.mjs",
+    generatedFrom: "integrations/hooks/scripts/build-hooks.mjs",
     capabilities: host === "grok" ? ["pre-tool"] : ["pre-tool", "stop-check"],
   };
 
@@ -258,7 +258,7 @@ function printHelp() {
   console.log(`Build optional odai hook adapters.
 
 Usage:
-  node skills/odai/scripts/build-hooks.mjs --host <host|all> --out <directory>
+  node integrations/hooks/scripts/build-hooks.mjs --host <host|all> --out <directory>
 
 Hosts:
   ${supportedHosts.join(", ")}

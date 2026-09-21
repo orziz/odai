@@ -4,48 +4,49 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { composeRoleContract, validateCompositionManifest, MODULE_FILE_NAMES, ROLE_NAMES, REFERENCE_NAMES } from "./compose-contracts.mjs";
+import { composeRoleContract, validateCompositionManifest, stripEntryMetadata } from "./compose-contracts.mjs";
+import { createHash } from "node:crypto";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
-const manifest = JSON.parse(readFileSync(path.join(skillRoot, "manifest.json"), "utf8"));
-validateCompositionManifest(manifest);
-const ownerNames = Object.freeze({ moduleFiles: MODULE_FILE_NAMES, roleFiles: ROLE_NAMES, referenceFiles: REFERENCE_NAMES });
-const contractContents = {};
-
-const canonicalRoot = realpathSync(skillRoot);
-const requiredFiles = new Set(manifest.requiredFiles);
-
-function ownerFilePath(group, name) {
-  const relativeSource = manifest[group]?.[name];
-  if (typeof relativeSource !== "string" || relativeSource.trim() === "" || relativeSource.includes("\\")
-    || path.isAbsolute(relativeSource) || /^[A-Za-z]:/u.test(relativeSource)
-    || relativeSource.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
-    throw new Error(`Unsafe manifest owner path: ${group}.${name}`);
-  }
-  if (!requiredFiles.has(relativeSource)) throw new Error(`Manifest owner is undeclared: ${group}.${name}`);
-  const source = realpathSync(path.resolve(skillRoot, relativeSource));
-  const nested = path.relative(canonicalRoot, source);
-  if (nested === "" || nested === ".." || nested.startsWith(`..${path.sep}`) || path.isAbsolute(nested)) {
-    throw new Error(`Manifest owner escapes the canonical root: ${group}.${name}`);
-  }
-  return source;
-}
-for (const [group, names] of Object.entries(ownerNames)) {
-  for (const name of names) contractContents[manifest[group][name]] = readFileSync(ownerFilePath(group, name), "utf8");
-}
-
 const argv = process.argv.slice(2);
+if (argv.includes("--help") || argv.includes("-h")) printHelp();
+const manifest = validateCompositionManifest(JSON.parse(readFileSync(path.join(skillRoot, "manifest.json"), "utf8")));
+const governanceRoot = path.resolve(option("--governance-root") || path.join(skillRoot, "../odai"));
+const governanceManifest = JSON.parse(readFileSync(path.join(governanceRoot, "manifest.json"), "utf8"));
+if (governanceManifest.name !== "odai" || governanceManifest.runtimeContract !== manifest.governanceContract) throw new Error("Incompatible governance skill; supply --governance-root <odai-directory>");
+function capture(root, declared) {
+  if (!Array.isArray(declared.requiredFiles) || new Set(declared.requiredFiles).size !== declared.requiredFiles.length) throw new Error("Invalid requiredFiles");
+  const contents = {};
+  const digest = createHash("sha256").update(JSON.stringify(declared));
+  for (const file of [...declared.requiredFiles].sort()) {
+    if (typeof file !== "string" || file.includes("\\") || path.isAbsolute(file) || /^[A-Za-z]:/u.test(file)
+      || file.split("/").some(part => !part || part === "." || part === "..")) throw new Error(`Unsafe bundle path: ${file}`);
+    const source = realpathSync(path.resolve(root, file));
+    const nested = path.relative(realpathSync(root), source);
+    if (!nested || nested === ".." || nested.startsWith(`..${path.sep}`) || path.isAbsolute(nested)) throw new Error(`Bundle file escapes root: ${file}`);
+    const bytes = readFileSync(source);
+    contents[file] = bytes.toString("utf8");
+    digest.update("\0").update(file).update("\0").update(bytes);
+  }
+  return { contents, digest: digest.digest("hex") };
+}
+const extension = capture(skillRoot, manifest);
+const core = capture(governanceRoot, governanceManifest);
+const contractContents = extension.contents;
+const governance = { runtimeContract: governanceManifest.runtimeContract,
+  skillBody: stripEntryMetadata(core.contents["SKILL.md"] || ""),
+  referenceContracts: Object.fromEntries(Object.entries(governanceManifest.referenceFiles).map(([name, file]) => [name, core.contents[file]])) };
 
-if (argv.includes("--help") || argv.includes("-h")) {
+function printHelp() {
   console.log(`Usage:
-  node skills/odai/scripts/build-routing.mjs --host <codex|claude|copilot> --out <directory> \\
+  node skills/odai-orchestration/scripts/build-routing.mjs --host <codex|claude|copilot> --out <directory> [--governance-root <path>] \\
     --controller-model <model> --planner-model <model> --reviewer-model <model> \\
     [--researcher-model <model>] [--frontend-model <model>] [--controller-effort <effort>] \\
     [--researcher-effort <effort>] [--planner-effort <effort>] [--reviewer-effort <effort>] \\
     [--frontend-effort <effort>] [--verifier-command <command>]
 
-生成 odai 的可选宿主 auto 路由适配器。一个持续总控负责实施整合与最终交付，只在多源证据压缩、独立规划、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。这里不跨 provider、不增加第二总控或隐藏的每轮前置流程。`);
+生成 odai 的可选宿主 auto 路由适配器。一个持续总控负责实施整合与最终交付，只在证据压缩、独立规划、独立验收或前端专业制作能改变结果时调用相应责任；researcher 与 frontend 映射默认不生成。这里不跨 provider、不增加第二总控或隐藏的每轮前置流程。`);
   process.exit(0);
 }
 
@@ -75,7 +76,7 @@ const roles = Object.freeze([
 ]);
 const descriptions = {
   controller: "持续持有用户目标、全局状态、修正回路与最终交付。",
-  researcher: "只为会改变决定的多源事实缺口返回有界来源账本，调用前有收益依据，回交后验贡献。",
+  researcher: "只为会改变决定的事实缺口返回有界来源账本，调用前有收益依据，回交后验贡献。",
   planner: "只在独立判断能改变路线时形成有界的证据化规划。",
   reviewer: "只在独立判断能改变放行结果时依据真实证据验收。",
   frontend: "只在界面设计或前端制作存在专业缺口时形成可验证成品。",
@@ -100,7 +101,9 @@ else buildCopilot(target);
 const metadata = {
   id: `odai-routing-${host}`,
   host,
-  generatedFrom: "skills/odai/scripts/build-routing.mjs",
+  generatedFrom: "skills/odai-orchestration/scripts/build-routing.mjs",
+  governance: { version: governanceManifest.skillVersion, digest: core.digest },
+  orchestration: { version: manifest.version, digest: extension.digest },
   mode: "single-controller-conditional-routing",
   mapping: Object.fromEntries(roles.map((role) => [role, {
     provider: host,
@@ -199,12 +202,12 @@ function buildCopilot(root) {
 }
 
 function roleBody(role, hostName) {
-  const source = ownerFilePath("roleFiles", role);
+  const source = path.join(skillRoot, manifest.roleFiles[role]);
   if (!existsSync(source)) throw new Error(`Missing canonical routing role body: ${source}`);
   const names = hostName === "codex"
     ? { researcher: "odai_researcher", planner: "odai_planner", reviewer: "odai_reviewer", frontend: "odai_frontend" }
     : { researcher: "odai-researcher", planner: "odai-planner", reviewer: "odai-reviewer", frontend: "odai-frontend" };
-  const rendered = renderText(composeRoleContract(role, manifest, contractContents), {
+  const rendered = renderText(composeRoleContract(role, governance, manifest, contractContents), {
     __ODAI_POLICY__: policy,
     __ODAI_RESEARCHER_ROLE__: models.researcher ? names.researcher : "researcher（当前适配器未配置映射，不能调用）",
     __ODAI_PLANNER_ROLE__: names.planner,
@@ -248,7 +251,7 @@ function copyScript(name, targetFile) {
 
 function assertKnownArgs() {
   const known = new Set([
-    "--host", "--out", "--controller-model", "--researcher-model", "--planner-model",
+    "--host", "--out", "--governance-root", "--controller-model", "--researcher-model", "--planner-model",
     "--reviewer-model", "--frontend-model", "--controller-effort", "--researcher-effort",
     "--planner-effort", "--reviewer-effort", "--frontend-effort", "--verifier-command",
   ]);

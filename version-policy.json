@@ -28,6 +28,26 @@
       "path": "skills/odai/manifest.json",
       "field": "runtimeContract",
       "label": "Odai runtime contract version"
+    },
+    {
+      "path": "skills/odai/manifest.json",
+      "field": "schemaVersion",
+      "label": "Odai governance schema version"
+    },
+    {
+      "path": "skills/odai-orchestration/manifest.json",
+      "field": "version",
+      "label": "Odai orchestration skill version"
+    },
+    {
+      "path": "skills/odai-orchestration/manifest.json",
+      "field": "governanceContract",
+      "label": "Odai orchestration governance contract"
+    },
+    {
+      "path": "skills/odai-orchestration/manifest.json",
+      "field": "schemaVersion",
+      "label": "Odai orchestration schema version"
     }
   ]
 }

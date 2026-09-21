@@ -24,6 +24,7 @@ if (!pluginTarballArg && !agentTarballArg) {
 const runtimeFiles = await relativeFileMap(resolve(repoRoot, "dsh/runtime/build"));
 const runtimeModules = [...runtimeFiles.keys()].filter((path) => path.endsWith(".mjs"));
 const canonicalFiles = await relativeFileMap(resolve(repoRoot, "skills/odai"));
+const orchestrationFiles = await relativeFileMap(resolve(repoRoot, "skills/odai-orchestration"));
 if (!runtimeModules.includes("index.mjs")) throw new Error("compiled runtime is missing index.mjs");
 if (!canonicalFiles.has("SKILL.md") || !canonicalFiles.has("manifest.json")) {
   throw new Error("canonical Odai source is incomplete");
@@ -36,6 +37,7 @@ if (!clientTemplate.includes("__ODAI_CLIENT_PACKAGE__")) {
 const pluginExpected = new Map([
   ...prefixed(runtimeFiles, "package/runtime"),
   ...prefixed(canonicalFiles, "package/skills/odai"),
+  ...prefixed(orchestrationFiles, "package/skills/odai-orchestration"),
   ...prefixed(await relativeFileMap(resolve(repoRoot, "dsh/plugin/build")), "package/build"),
   ["package/client/client.js", Buffer.from(clientTemplate.replaceAll("__ODAI_CLIENT_PACKAGE__", "odai-dsh-plugin"))],
   ["package/cordis.patch.yml", await readFile(resolve(repoRoot, "dsh/plugin/cordis.patch.yml"))],
@@ -46,6 +48,7 @@ const pluginExpected = new Map([
 const agentExpected = new Map([
   ...prefixed(runtimeFiles, "package/preset/odai/runtime"),
   ...prefixed(canonicalFiles, "package/preset/odai/skills/odai"),
+  ...prefixed(orchestrationFiles, "package/preset/odai/skills/odai-orchestration"),
   ...prefixed(await relativeFileMap(resolve(repoRoot, "dsh/agent/build")), "package/build"),
   ["package/client/client.js", Buffer.from(clientTemplate.replaceAll("__ODAI_CLIENT_PACKAGE__", "odai-dsh-agent"))],
   ["package/control-center.cordis.patch.yml", await readFile(resolve(repoRoot, "dsh/agent/control-center.cordis.patch.yml"))],

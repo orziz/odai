@@ -84,7 +84,9 @@ try {
     scope: args.scope,
     target: targetRoot,
     installedAt: new Date().toISOString(),
-    generatedFrom: "skills/odai/scripts/install-routing.mjs",
+    generatedFrom: "skills/odai-orchestration/scripts/install-routing.mjs",
+    governance: generated.governance,
+    orchestration: generated.orchestration,
     mapping: generated.mapping,
     routingPolicy: generated.routing_policy,
     activation: generated.activation,
@@ -108,6 +110,7 @@ try {
 
 function buildAdapter(outputRoot, root) {
   const command = [builder, "--host", args.host, "--out", outputRoot];
+  if (args.governanceRoot) command.push("--governance-root", args.governanceRoot);
   for (const role of roles) {
     command.push(`--${role}-model`, args[`${role}Model`]);
     if (args[`${role}Effort`]) command.push(`--${role}-effort`, args[`${role}Effort`]);
@@ -417,7 +420,7 @@ function resolveConfigRoot(host, scope, target) { if (scope === "user") return t
 function parseArgs(values) {
   const result = { host: "", scope: "project", target: "", uninstall: false, yes: false, help: false };
   for (const role of configurableRoles) { result[`${role}Model`] = ""; result[`${role}Effort`] = ""; }
-  const fields = new Map([["--host", "host"], ["--scope", "scope"], ["--target", "target"]]);
+  const fields = new Map([["--host", "host"], ["--scope", "scope"], ["--target", "target"], ["--governance-root", "governanceRoot"]]);
   for (const role of configurableRoles) { fields.set(`--${role}-model`, `${role}Model`); fields.set(`--${role}-effort`, `${role}Effort`); }
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -435,11 +438,11 @@ function printHelp() {
   console.log(`由 odai 在取得用户授权后安装、更新或卸载宿主路由。
 
 Usage:
-  node skills/odai/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] \\
+  node skills/odai-orchestration/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] \\
     --controller-model <model> --planner-model <model> --reviewer-model <model> \\
-    [--researcher-model <model>] [--frontend-model <model>] [--<role>-effort <effort>] --yes
+    [--researcher-model <model>] [--frontend-model <model>] [--<role>-effort <effort>] [--governance-root <path>] --yes
 
-  node skills/odai/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] --uninstall --yes
+  node skills/odai-orchestration/scripts/install-routing.mjs --host <codex|claude|copilot> --scope <project|user> [--target <path>] --uninstall --yes
 
 安装后用户只需正常使用 odai。总控是唯一持续任务线程并负责实施整合；planner、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker、executor 和 stage runner 托管文件。`);
 }

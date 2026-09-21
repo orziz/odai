@@ -112,8 +112,13 @@ export function supportsDshVersion(version: string): boolean {
 export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 const requiredFiles = Object.freeze([
   "package.json",
-  "skills/odai/contracts/delegation.md",
-  "skills/odai/scripts/compose-contracts.mjs",
+  "skills/odai/SKILL.md",
+  "skills/odai/manifest.json",
+  "skills/odai-orchestration/SKILL.md",
+  "skills/odai-orchestration/manifest.json",
+  "skills/odai-orchestration/contracts/delegation.md",
+  "skills/odai-orchestration/scripts/compose-contracts.mjs",
+  "runtime/governance-bundle.mjs",
   "agent.cordis.yml",
   "preset.yml",
   "odai-governance.mjs",
@@ -124,8 +129,6 @@ const requiredFiles = Object.freeze([
   "runtime/skill-selection-state.mjs",
   "runtime/skill-selector.mjs",
   "runtime/skill-source-config.mjs",
-  "skills/odai/SKILL.md",
-  "skills/odai/manifest.json",
 ]);
 
 export function renderAgentCompositionForDsh(composition: string, dshVersion = SUPPORTED_DSH_VERSION): string {

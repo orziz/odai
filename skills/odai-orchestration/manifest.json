@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "name": "odai-orchestration",
+  "version": "0.1.0",
+  "governanceContract": 8,
+  "delegationFile": "contracts/delegation.md",
+  "roleFiles": {
+    "controller": "assets/routing-roles/controller.md",
+    "researcher": "assets/routing-roles/researcher.md",
+    "planner": "assets/routing-roles/planner.md",
+    "reviewer": "assets/routing-roles/reviewer.md",
+    "frontend": "assets/routing-roles/frontend.md"
+  },
+  "rolePresets": {
+    "controller": { "references": ["orchestration"] },
+    "researcher": { "references": [] },
+    "planner": { "references": ["planning"] },
+    "reviewer": { "references": ["verification"] },
+    "frontend": { "references": ["craft"] }
+  },
+  "referenceFiles": { "orchestration": "references/orchestration.md" },
+  "requiredFiles": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "contracts/delegation.md",
+    "assets/routing-roles/controller.md",
+    "assets/routing-roles/researcher.md",
+    "assets/routing-roles/planner.md",
+    "assets/routing-roles/reviewer.md",
+    "assets/routing-roles/frontend.md",
+    "assets/codex-agents/config.toml",
+    "assets/codex-agents/role.toml",
+    "assets/claude-agents/agent.md",
+    "assets/copilot-agents/agent.md",
+    "references/orchestration.md",
+    "scripts/build-routing.mjs",
+    "scripts/install-routing.mjs",
+    "scripts/run-role.mjs",
+    "scripts/verify-routing.mjs",
+    "scripts/compose-contracts.mjs",
+    "scripts/compose-contracts.d.mts"
+  ]
+}

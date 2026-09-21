@@ -1,0 +1,4 @@
+interface:
+  display_name: "Odai Orchestration"
+  short_description: "按实际缺口分工、交接、整合与核验的可选编排"
+  default_prompt: "使用 $odai-orchestration 在已有 Odai 治理与当前授权内选择必要分工，交接、整合并验证结果。"

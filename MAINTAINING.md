@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前未发布候选为 DSH `0.2.33` / canonical `0.5.0`，仅面向 DSH `0.1.5-rc.2`。双包 `0.2.32` 已发布且保留 rc.1 合同，不能复用其版本号。
+- 当前未发布候选为 DSH `0.2.35` / 治理 `0.6.0` / 编排 `0.1.0`，仅面向 DSH `0.1.5-rc.2`。双包 `0.2.33` 已发布且采用 rc.2 合同，不能复用其版本号。
 - 当前定向评估及限制统一在 [`docs/evaluation-results.md`](docs/evaluation-results.md)，实际职责调用和宿主保护边界统一在 [`docs/routing-results.md`](docs/routing-results.md)。不复制旧版本分数作为当前结论，也不把有限样本当作全量验收。
 - 结果文档保持当前状态，用户要求重试时以最新完整结果更新对应项，简要说明重试；淘汰的试跑、重复快照与已结束执行计划及时清理。已发布版本事实保留在 CHANGELOG 与兼容表，旧实现和旧文档由 Git 历史承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -13,22 +13,20 @@
 
 ```text
 AGENTS.md                         仓库级维护约束
-skills/odai/                      odai canonical source
-  SKILL.md                        完整治理入口与共享核心的唯一正文
-  manifest.json                  模块、职责、reference owner 与声明式预设
-  contracts/delegation.md         共用受托边界，不授予工具或权限
-  scripts/compose-contracts.mjs   各宿主共享的可信组合器与核心投影
+skills/odai/                      独立治理技能
+  SKILL.md                        精神内核、判断、授权、行动与完成
+  manifest.json                  治理版本、reference owner 和文件清单
   agents/openai.yaml              宿主 UI 元数据
-  references/dao.md               事的所有权、事实校准、授权与边界
-  references/planning.md          正式计划、可执行合同与跨轮续作
-  references/craft.md             已决定结果的实施、设计、文档与审查工艺
-  references/verification.md      验收、证据与完成判断
-  references/support.md           失稳后的最小结构化支撑
-  references/leverage.md          能力与责任选择、调度和交接
-  references/care.md              非危机日常关怀
-  references/human-safety.md      自伤、轻生与即时危险保护
-  assets/                         跨会话状态、Hooks 策略与可选宿主角色源
-  scripts/                        可选 Hooks 共享运行时与宿主适配生成器
+  references/                    计划、制作、验收、支撑、能力选择与人身保护
+  assets/task-state.md            可选跨轮状态
+skills/odai-orchestration/        可选、单向依赖治理的编排技能
+  SKILL.md                        编排入口与安装指引
+  manifest.json                  编排版本、治理契约、角色和引用依赖
+  contracts/delegation.md         共用受托边界
+  references/orchestration.md    职责选择、交接与降级
+  assets/                         职责预设和宿主模板
+  scripts/                        可信组合器、路由生成、安装与调用核验
+integrations/hooks/              可选 Hooks 运行时、生成器和策略示例
 docs/evaluation.md                稳定评测契约
 docs/evaluation-results.md        模型全量 / A/B 的公开记录
 docs/routing-results.md           可选宿主能力路由的独立实验记录
@@ -82,21 +80,18 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 7. `SKILL.md` 是高注意力定额，不是可持续追加区；新规则进入入口时应优先合并或替换旧文字，只有行为证据证明净增量时才扩容。
 8. 只有具备独立用户触发面、可单独分发且不能由现有 owner 承接的能力才新增公开 skill；仓库维护说明归本文与 `AGENTS.md`，不另造无人调用的维护 skill。
 9. 只有重复使用且需要确定性执行的逻辑才新增 script；只有会被 agent 直接复用于交付的内容才新增 asset。新增前先确认现有 owner、真实复用证据与验证方式。
-10. 修改 `references/leverage.md` 的能力路由契约时，在 `assets/routing-roles/` 的唯一正文 owner 中修改，随后复核三类宿主外壳、角色 runner、生成器、安装器与真实新会话验证；不得在宿主目录复制或改写平行角色正文，生成测试不能替代安装后调用。
+10. 能力选择和交接规则归 `references/leverage.md`，角色独有义务归 `assets/routing-roles/`；通过既有组合器供宿主消费，不维护平行正文。只有影响加载、调度、生成或安装行为时才检查相应执行路径；单纯文案整理不要求重跑全部宿主或真实会话，生成成功也不冒充实际调用成功。
 
 ## 验证与评测
 
-普通 source / 文档修改至少运行：
+修改 skill 文件后运行基本完整性检查：
 
 ```bash
 node scripts/validate-odai-skill.mjs
-node --test scripts/validate-odai-skill-contracts.test.mjs
 git diff --check
 ```
 
-合同测试在临时副本中实际删除或置空精神内核、五项定义与意图边界，调用主校验器确认拒绝，并以原文通过排除环境假失败；它保护文本合同，不替代模型行为评测。保留的具体约束按关键分句分别做删除反例，同时用等义措辞检查避免锁死整句。references 作为完整命名资源加载，不锁定无人消费的章节标题；允许不改变含义的措辞调整，关键边界和源文件一致性仍须验证。
-
-入口体积输出估算值、审视目标、已审基线及差值，数值由 validator 统一维护。只有超过已审基线才产生新的增长 warning；基线内仍显示与目标的关系，不把已接受的体积持续报成新问题。基线须经明确的能力保持审查后更新，可以升或降，不随当前体积自动变化；目标和 warning 都不是删减能力的硬性预算。
+该检查只处理元数据、声明文件、资源引用与合同能否加载，不判断规则含义、写作质量或模型效果。Markdown 的语句、关键词、词序和篇幅不作为单元测试或 CI 门槛；规则变更由实际需求和全文审阅判断，不为局部措辞增加校验。DSH 调度、权限、安装、快照与生成器的可执行行为继续使用对应测试，按改动影响选择，不因改写文案重跑无关全量。
 
 DSH source 使用根目录 `npm run check:dsh`：一次构建后完成 runtime、Agent、Plugin 的严格类型检查，再用 Node 校验经过渲染的浏览器脚本。两个包的 `check` 均委托该入口，不重复构建，也不依赖 Unix `find/xargs`。
 
@@ -104,26 +99,26 @@ DSH source 使用根目录 `npm run check:dsh`：一次构建后完成 runtime�
 
 ```bash
 node scripts/test-odai-hooks.mjs
-node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
+node integrations/hooks/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
 ```
 
 改可选能力路由配置或生成器时补充：
 
 ```bash
 node scripts/test-odai-routing.mjs
-node skills/odai/scripts/build-routing.mjs --host codex --out /tmp/odai-routing \
+node skills/odai-orchestration/scripts/build-routing.mjs --host codex --out /tmp/odai-routing \
   --controller-model test-controller --planner-model test-planner \
   --reviewer-model test-reviewer
-node skills/odai/scripts/install-routing.mjs --host codex --scope project --target /tmp/odai-routing-project \
+node skills/odai-orchestration/scripts/install-routing.mjs --host codex --scope project --target /tmp/odai-routing-project \
   --controller-model test-controller --planner-model test-planner \
   --reviewer-model test-reviewer --yes
-node skills/odai/scripts/install-routing.mjs --host codex --scope project --target /tmp/odai-routing-project \
+node skills/odai-orchestration/scripts/install-routing.mjs --host codex --scope project --target /tmp/odai-routing-project \
   --uninstall --yes
 ```
 
 Codex 自定义角色必须由 `config.toml` 的 `[agents.<name>]` 与 `config_file` 显式注册；仅复制角色 TOML 不算可用。用户只在安装或更新时确认一次模型映射，正常任务不得要求用户指定角色、内部策略或运行命令。安装器默认 `auto`，注册 controller、planner、reviewer 以及显式提供的 researcher/frontend，不制造每轮前置流程。单一充分 controller 直接闭环，其他责任按真实缺口调用。内部角色必须设置 `ODAI_ROUTING_ACTIVE=1` 防止递归。
 
-controller 是唯一持续任务线程、实施 owner 与最终交付 owner，不是额外模型调用。planner 只在独立判断能改变路线时使用，回交后由 controller 恢复实施；reviewer 只在独立判断能改变放行结果时使用；researcher/frontend 同样须有具体缺口与收益依据。小任务直接闭环，高风险只提高证据、授权和验收强度，不自动制造角色。调用前判断预期贡献，调用后分别核对执行、独立性、指定能力与实际代价；缺少用量不宣称节省，也不抹掉已有交付证据。具体判据由 `references/leverage.md` 统一维护，DSH 的机械放行仍服从 runtime 自身合同。
+controller 是唯一持续任务线程、实施 owner 与最终交付 owner，不是额外模型调用。planner 只在独立判断能改变路线时使用，回交后由 controller 恢复实施；reviewer 只在独立判断能改变放行结果时使用；researcher/frontend 同样须有具体缺口与收益依据。小任务直接闭环，高风险只提高证据、授权和验收强度，不自动制造角色。调用前判断预期贡献，调用后分别核对执行、独立性、指定能力与实际代价；缺少用量不宣称节省，也不抹掉已有交付证据。具体判据由 `skills/odai-orchestration/references/orchestration.md` 统一维护，DSH 的机械放行仍服从 runtime 自身合同。
 
 安装器会在不覆盖无关设置的前提下合并既有 Codex 配置，并把原始配置摘要与内容记入托管清单；更新与卸载先核对当前托管哈希，卸载再精确恢复原配置。非合并位置只处理空目标或自身完整托管且未被外部修改的配置。新版更新会根据旧清单安全移除已退役的 Hook、Executor 与 stage runner 托管文件，不删除未由 odai 托管的项目配置。Codex、Claude Code 与 Copilot 都只生成当前角色配置；未取得等价宿主证据时不得宣称真实路由已核实。修改路由契约时，必须同时复核角色正文、生成器、安装器、role runner、三个宿主外壳与真实新会话行为。
 

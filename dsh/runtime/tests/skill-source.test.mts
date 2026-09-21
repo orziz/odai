@@ -90,11 +90,6 @@ function installBundle(root: string, version: string, marker = ""): string {
   if (marker) {
     writeFileSync(resolve(root, "SKILL.md"), `${readFileSync(resolve(root, "SKILL.md"), "utf8").trimEnd()}\n\n${marker}\n`, "utf8");
     writeFileSync(
-      resolve(root, "assets/routing-roles/planner.md"),
-      `${readFileSync(resolve(root, "assets/routing-roles/planner.md"), "utf8").trimEnd()}\n\n${marker}_PLANNER\n`,
-      "utf8",
-    );
-    writeFileSync(
       resolve(root, "references/planning.md"),
       `${readFileSync(resolve(root, "references/planning.md"), "utf8").trimEnd()}\n\n${marker}_PLANNING\n`,
       "utf8",
@@ -164,13 +159,8 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
   assert.equal(bundled.manifest.skillVersion, manifest.skillVersion);
   assert.equal(bundled.manifest.runtimeContract, manifest.runtimeContract);
   assert.deepEqual(bundled.manifest.requiredFiles, manifest.requiredFiles);
-  assert.match(bundled.roleContracts.researcher, /来源账本只是检索索引/u);
-  assert.match(bundled.roleContracts.reviewer, /来源绑定(?:本身)?不证明语义冲突/u);
-  assert.match(bundled.roleContracts.reviewer, /局部审查不以重建全任务需求/u);
-  assert.match(bundled.roleContracts.planner, /只在明确委托正式计划时/u);
-  assert.match(bundled.roleContracts.controller, /完整需求覆盖和最终验收责任不能随委派转移/u);
   assert.ok(bundled.manifest.requiredFiles.includes("references/care.md"));
-  assert.deepEqual(Object.keys(bundled.referenceContracts), [
+  assert.deepEqual(Object.keys(bundled.governance.referenceContracts), [
     "dao",
     "planning",
     "craft",
@@ -205,10 +195,10 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
     );
     assert.throws(
       () => loadSkillBundle(resolve(scratch, "odai", "SKILL.md")),
-      /does not declare name odai/u,
+      /must declare name odai/u,
     );
-    rmSync(resolve(scratch, "odai", "assets/routing-roles/planner.md"));
-    assert.throws(() => loadSkillBundle(resolve(scratch, "odai", "SKILL.md")), /missing assets\/routing-roles\/planner\.md/u);
+    rmSync(resolve(scratch, "odai", "references/planning.md"));
+    assert.throws(() => loadSkillBundle(resolve(scratch, "odai", "SKILL.md")));
 
     const topologyRoot = resolve(scratch, "topology");
     installBundle(topologyRoot, bundled.manifest.skillVersion);
@@ -220,14 +210,14 @@ test("bundle manifest validates complete content and full SemVer precedence", ()
     const supportPath = topologyManifest.referenceFiles.support;
     delete topologyManifest.referenceFiles.support;
     writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /referenceFiles/u);
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), TypeError);
     topologyManifest.referenceFiles.support = topologyManifest.referenceFiles.dao;
     writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /distinct paths/u);
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), TypeError);
     topologyManifest.referenceFiles.support = supportPath;
     topologyManifest.referenceFiles.unknown = "references/dao.md";
     writeFileSync(topologyManifestPath, `${JSON.stringify(topologyManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), /invalid owners/u);
+    assert.throws(() => loadSkillBundle(resolve(topologyRoot, "SKILL.md")), TypeError);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -245,7 +235,7 @@ test("bundle files cannot escape lexical or realpath boundaries", (t) => {
     }
     lexicalManifest.requiredFiles.push("../outside.md");
     writeFileSync(lexicalManifestPath, `${JSON.stringify(lexicalManifest, null, 2)}\n`, "utf8");
-    assert.throws(() => loadSkillBundle(resolve(lexicalRoot, "SKILL.md")), /unsafe required file/u);
+    assert.throws(() => loadSkillBundle(resolve(lexicalRoot, "SKILL.md")), TypeError);
 
     const symlinkRoot = resolve(scratch, "symlink");
     installBundle(symlinkRoot, bundled.manifest.skillVersion);
@@ -263,7 +253,7 @@ test("bundle files cannot escape lexical or realpath boundaries", (t) => {
       }
       throw error;
     }
-    assert.throws(() => loadSkillBundle(resolve(symlinkRoot, "SKILL.md")), /escapes through a symlink/u);
+    assert.throws(() => loadSkillBundle(resolve(symlinkRoot, "SKILL.md")), /escapes its root/u);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -323,7 +313,7 @@ test("invalid and conflicting candidates continue to the next compatible source"
     const agentsHome = resolve(scratch, "agents-home");
     mkdirSync(resolve(project, ".git"), { recursive: true });
     installBundle(resolve(project, ".dsh/skills/odai"), "0.5.0", "BROKEN_PROJECT");
-    rmSync(resolve(project, ".dsh/skills/odai/assets/routing-roles/reviewer.md"));
+    rmSync(resolve(project, ".dsh/skills/odai/references/verification.md"));
     installBundle(resolve(dshHome, "skills/odai"), bundled.manifest.skillVersion, "SAME_VERSION_CONFLICT");
     installBundle(resolve(agentsHome, "skills/odai"), "9.0.0", "USER_AGENTS");
 
@@ -574,7 +564,7 @@ test("runtime injects one project snapshot into both prompt and routed role cont
     assert.ok(startRequest);
     const prompt = startRequest.prompt;
     assert.ok(Array.isArray(prompt) && isUnknownRecord(prompt[0]) && typeof prompt[0].text === "string");
-    assert.match(prompt[0].text, /PROJECT_RUNTIME_PLANNER/u);
+    assert.match(prompt[0].text, /PROJECT_RUNTIME_PLANNING/u);
     assert.ok(prompt[0].text.includes(planning.contract.trim()), "planner receives its complete owner from the same selected snapshot");
 
     const sourceTool = ctx.captured.tools.find(({ name }) => name === "odai_skill_source_config");

@@ -19,10 +19,8 @@ jobs:
         run: npm ci
       - name: Typecheck and build all DSH packages
         run: npm run typecheck:dsh
-      - name: Validate canonical skill
-        run: |
-          node scripts/validate-odai-skill.mjs
-          node --test scripts/validate-odai-skill-contracts.test.mjs
+      - name: Check skill files and loading
+        run: node scripts/validate-odai-skill.mjs
       - name: Test canary harness infrastructure
         run: node --test scripts/odai-canary-harness.test.mjs
       - name: Check maintenance scripts
@@ -45,12 +43,12 @@ jobs:
           node --check scripts/openai-compatible-canary-runner.mjs
           node --check scripts/test-odai-hooks.mjs
           node --check scripts/test-odai-routing.mjs
-          node --check skills/odai/scripts/odai-hook.mjs
-          node --check skills/odai/scripts/build-hooks.mjs
-          node --check skills/odai/scripts/build-routing.mjs
-          node --check skills/odai/scripts/install-routing.mjs
-          node --check skills/odai/scripts/run-role.mjs
-          node --check skills/odai/scripts/verify-routing.mjs
+          node --check integrations/hooks/scripts/odai-hook.mjs
+          node --check integrations/hooks/scripts/build-hooks.mjs
+          node --check skills/odai-orchestration/scripts/build-routing.mjs
+          node --check skills/odai-orchestration/scripts/install-routing.mjs
+          node --check skills/odai-orchestration/scripts/run-role.mjs
+          node --check skills/odai-orchestration/scripts/verify-routing.mjs
           node --check scripts/package-odai-artifact.mjs
           node --check scripts/run-package-pack.mjs
           node --check scripts/run-package-pack.test.mjs

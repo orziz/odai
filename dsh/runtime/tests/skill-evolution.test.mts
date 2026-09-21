@@ -527,7 +527,7 @@ test("core and destructive changes require a generation-bound BREAKING confirmat
     const skill = await tool.execute({ action: "inspect", path: "SKILL.md" }, { name: tool.name, agent: owner });
     const dao = await tool.execute({ action: "inspect", path: "references/dao.md" }, { name: tool.name, agent: owner });
     const support = await tool.execute({ action: "inspect", path: "references/support.md" }, { name: tool.name, agent: owner });
-    const core = "只做授权内必要、安全、有益的动作";
+    const core = required(resultContent(skill).split(/\r?\n/u).find(line => line.startsWith("description:")), "skill metadata");
     const daoHeading = required(resultContent(dao).split(/\r?\n/u)[0], "dao heading");
     const supportHeading = required(resultContent(support).split(/\r?\n/u)[0], "support heading");
     const proposed = await authorizedProposal(tool, owner, {
@@ -612,7 +612,7 @@ test("entry, core, and delegation additions all require BREAKING authorization",
     const current = upstreamSelection();
     const tool: TestEvolutionTool = createSkillEvolutionTool(root, { currentSelectionFor: () => current });
     const owner = execution().agent;
-    for (const path of Object.values(current.bundle.manifest.moduleFiles)) {
+    for (const path of ["SKILL.md", "orchestration/SKILL.md", `orchestration/${current.bundle.orchestration.manifest.delegationFile}`]) {
       const source = await tool.execute({ action: "inspect", path }, { name: tool.name, agent: owner });
       const anchors = resultContent(source).split(/\r?\n/u).filter(line => /^(?:## |description:)/u.test(line));
       assert.ok(anchors.length > 0);

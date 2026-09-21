@@ -97,8 +97,8 @@ export function parseResearchPacket(output: unknown, options: ResearchPacketOpti
   const packet = plainObject(parseJsonText(raw), "research packet");
   exactFields(packet, PACKET_FIELDS, "research packet");
   if (packet.schemaVersion !== 1) throw new TypeError("research packet.schemaVersion must be 1");
-  if (!Array.isArray(packet.facts) || packet.facts.length < 2 || packet.facts.length > DEFAULT_MAX_FACTS) {
-    throw new TypeError(`research packet.facts must contain 2-${DEFAULT_MAX_FACTS} source-backed facts`);
+  if (!Array.isArray(packet.facts) || packet.facts.length < 1 || packet.facts.length > DEFAULT_MAX_FACTS) {
+    throw new TypeError(`research packet.facts must contain 1-${DEFAULT_MAX_FACTS} source-backed facts`);
   }
   const facts = Object.freeze(packet.facts.map((value, index) => {
     const fact = plainObject(value, `research packet.facts[${index}]`);
@@ -110,9 +110,6 @@ export function parseResearchPacket(output: unknown, options: ResearchPacketOpti
       authority: text(fact.authority, `research packet.facts[${index}].authority`, 500),
     });
   }));
-  if (new Set(facts.map((fact) => fact.source.path)).size < 2) {
-    throw new TypeError("research packet must cite at least two distinct source paths");
-  }
   const normalized = Object.freeze({
     schemaVersion: 1 as const,
     question: text(packet.question, "research packet.question", 1_200),

@@ -145,7 +145,7 @@ export function renderResearchTaskContract(taskText: string): string {
     "Factual question: Resolve the assigned responsibility gap using the expected change, evidence references, and original user task below. Treat evidence references as leads to verify. If no gap is supplied, use the factual question in the user task; if it is unclear, return the missing evidence boundary.",
     "Allowed source scope: the current project root only. Use repository-relative paths and read-only source tools; do not inspect parent, sibling, user, or unrelated directories.",
     "Authority and freshness: label each current-checkout source by its actual role (for example runtime configuration, implementation, test, incident record, or documentation). Do not invent an authority hierarchy; report unresolved conflicts and missing freshness evidence as unknowns.",
-    "Stop condition: return the smallest packet with 2-6 source-backed facts from at least two files, or stop with the missing evidence boundary. Do not select a route or continue after additional reading cannot change this factual question.",
+    "Stop condition: return the smallest sufficient source-backed packet, or stop with the missing evidence boundary. One fact or one source file is allowed; do not pad the packet or add sources to meet a quota. Do not select a route or continue after additional reading cannot change this factual question.",
     "For every fact, excerpt must exactly equal the complete cited source line after trimming leading and trailing whitespace.",
     "",
     "Assigned research task:",
@@ -384,13 +384,13 @@ export function canonicalPrompt(selection: SkillSelection, child = false, coreIn
   return [
     "## odai canonical governance",
     `Canonical source: ${bundle.source} (${bundle.provider})`,
-    `Canonical skill: ${bundle.manifest.skillVersion}; runtime contract: ${bundle.manifest.runtimeContract}; digest: ${bundle.digest}.`,
+    `Canonical skill: ${bundle.manifest.skillVersion}; runtime contract: ${bundle.manifest.runtimeContract}; governance digest: ${bundle.governance.digest}.`,
+    `Bundled orchestration: ${bundle.orchestration.manifest.version}; orchestration digest: ${bundle.orchestration.digest}; composition digest: ${bundle.digest}.`,
     ...(evolution ? [evolution] : []),
     ...(fallback ? [fallback] : []),
     child
-      ? "The shared core is loaded from the responsibility's canonical snapshot. Follow the supplied delegation contract, not the controller's entry workflow."
-      : "The canonical core and controller entry are already loaded by this runtime; do not call the skill tool or read SKILL.md to load them again.",
-    ...(!child ? ["The controller owns final delivery; delegate only for a real independent gap with observable net benefit."] : []),
+      ? "Governance is loaded from the authenticated task snapshot. Act within the supplied delegation scope and host permissions."
+      : "Canonical governance is already loaded; do not call the skill tool or read SKILL.md to load it again. Orchestration, when enabled, is provided separately.",
     "",
     coreInDelegation ? "The same-snapshot core is included once in the authenticated parent's responsibility contract below." : child ? bundle.coreContract : bundle.skillBody,
   ].join("\n");

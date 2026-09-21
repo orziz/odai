@@ -27,15 +27,9 @@ type AuthorizationAction = "propose" | "activate" | "rebase" | "rollback" | "dea
 type AuthorizationLevel = "standard" | "breaking";
 
 interface ManifestSnapshot {
-  schemaVersion: number;
-  name: string;
-  skillVersion: string;
-  runtimeContract: number;
-  moduleFiles: Record<string, string>;
-  rolePresets: Record<string, { modules: readonly string[]; references: readonly string[] }>;
-  roleFiles: Record<string, string>;
-  referenceFiles: Record<string, string>;
-  requiredFiles: string[];
+  governance: Omit<SkillManifest, "versionParts">;
+  orchestration: SkillBundle["orchestration"]["manifest"];
+  requiredFiles: readonly string[];
 }
 interface BundleSnapshot { manifest: ManifestSnapshot; files: Map<string, Buffer> }
 interface Replacement { readonly oldString: string; readonly newString: string }
@@ -183,7 +177,7 @@ const STORE_SCHEMA_VERSION = 1;
 const STATE_FILE = "state.json";
 const METADATA_FILE = "metadata.json";
 const DIGEST_PATTERN = /^[a-f0-9]{64}$/u;
-const EVOLVABLE_PATH = /^(?:SKILL\.md|assets\/task-state\.md|assets\/routing-roles\/[a-z0-9-]+\.md|references\/[a-z0-9-]+\.md|contracts\/delegation\.md)$/u;
+const EVOLVABLE_PATH = /^(?:SKILL\.md|assets\/task-state\.md|references\/[a-z0-9-]+\.md|orchestration\/(?:SKILL\.md|assets\/routing-roles\/[a-z0-9-]+\.md|references\/[a-z0-9-]+\.md|contracts\/delegation\.md))$/u;
 const MAX_STATE_BYTES = 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
 const MAX_FILE_BYTES = 128 * 1024;
@@ -438,22 +432,13 @@ export function skillEvolutionDisabled(env: Readonly<Record<string, string | und
 }
 
 function manifestValue(bundle: SkillBundle): ManifestSnapshot {
-  return {
-    schemaVersion: bundle.manifest.schemaVersion,
-    name: bundle.manifest.name,
-    skillVersion: bundle.manifest.skillVersion,
-    runtimeContract: bundle.manifest.runtimeContract,
-    moduleFiles: { ...bundle.manifest.moduleFiles },
-    rolePresets: structuredClone(bundle.manifest.rolePresets),
-    roleFiles: { ...bundle.manifest.roleFiles },
-    referenceFiles: { ...bundle.manifest.referenceFiles },
-    requiredFiles: [...bundle.manifest.requiredFiles],
-  };
+  const { versionParts: _versionParts, ...governance } = bundle.manifest;
+  return { governance: structuredClone(governance), orchestration: structuredClone(bundle.orchestration.manifest), requiredFiles: [...bundle.requiredFiles] };
 }
 
 function snapshotBundle(bundle: SkillBundle): Readonly<BundleSnapshot> {
   const files = new Map<string, Buffer>();
-  for (const path of bundle.manifest.requiredFiles) {
+  for (const path of bundle.requiredFiles) {
     const content = readSkillBundleFile(bundle, path);
     if (content.byteLength > MAX_FILE_BYTES) throw new Error(`Odai skill file ${path} exceeds ${MAX_FILE_BYTES} bytes`);
     files.set(path, content);
@@ -462,25 +447,14 @@ function snapshotBundle(bundle: SkillBundle): Readonly<BundleSnapshot> {
 }
 
 function cloneSnapshot(snapshot: Readonly<BundleSnapshot>): BundleSnapshot {
-  return {
-    manifest: {
-      ...snapshot.manifest,
-      moduleFiles: { ...snapshot.manifest.moduleFiles },
-      rolePresets: structuredClone(snapshot.manifest.rolePresets),
-      roleFiles: { ...snapshot.manifest.roleFiles },
-      referenceFiles: { ...snapshot.manifest.referenceFiles },
-      requiredFiles: [...snapshot.manifest.requiredFiles],
-    },
-    files: new Map([...snapshot.files].map(([path, content]) => [path, Buffer.from(content)])),
-  };
+  return { manifest: structuredClone(snapshot.manifest), files: new Map([...snapshot.files].map(([path, content]) => [path, Buffer.from(content)])) };
 }
 
 function writeBundleSnapshot(root: string, snapshot: Readonly<BundleSnapshot>): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  writeDurableFile(resolve(root, "manifest.json"), `${JSON.stringify(snapshot.manifest, null, 2)}\n`);
-  for (const [path, content] of snapshot.files) {
-    writeDurableFile(resolve(root, ...path.split("/")), content);
-  }
+  writeDurableFile(resolve(root, "manifest.json"), `${JSON.stringify(snapshot.manifest.governance, null, 2)}\n`);
+  writeDurableFile(resolve(root, "orchestration/manifest.json"), `${JSON.stringify(snapshot.manifest.orchestration, null, 2)}\n`);
+  for (const [path, content] of snapshot.files) writeDurableFile(resolve(root, ...path.split("/")), content);
   syncDirectory(root);
 }
 
@@ -749,8 +723,8 @@ function walkTree(root: string, prefix = ""): string[] {
   return found;
 }
 
-function assertExactBundleTree(root: string, manifest: SkillManifest): void {
-  const expected = new Set(["manifest.json", ...manifest.requiredFiles]);
+function assertExactBundleTree(root: string, bundle: SkillBundle): void {
+  const expected = new Set(["manifest.json", "orchestration/manifest.json", ...bundle.requiredFiles]);
   const actual = walkTree(root);
   for (const path of actual) {
     if (!expected.has(path)) throw new Error(`Odai evolution bundle contains undeclared file ${path}`);
@@ -767,15 +741,13 @@ function generationAuthorizationProfile(
 ): Readonly<GenerationAuthorizationProfile> {
   const reasons = new Set<string>();
   const protectedGovernanceFiles = new Set([
-    ...Object.values(baseSnapshot.manifest.moduleFiles),
-    ...Object.values(resultSnapshot.manifest.moduleFiles),
-    "scripts/compose-contracts.mjs",
-    "scripts/compose-contracts.d.mts",
-    baseSnapshot.manifest.referenceFiles.dao,
-    resultSnapshot.manifest.referenceFiles.dao,
+    "SKILL.md", "orchestration/SKILL.md",
+    `orchestration/${baseSnapshot.manifest.orchestration.delegationFile}`,
+    `orchestration/${resultSnapshot.manifest.orchestration.delegationFile}`,
+    baseSnapshot.manifest.governance.referenceFiles.dao,
+    resultSnapshot.manifest.governance.referenceFiles.dao,
   ]);
-  if (JSON.stringify(baseSnapshot.manifest.rolePresets) !== JSON.stringify(resultSnapshot.manifest.rolePresets)
-    || JSON.stringify(baseSnapshot.manifest.moduleFiles) !== JSON.stringify(resultSnapshot.manifest.moduleFiles)) {
+  if (JSON.stringify(baseSnapshot.manifest) !== JSON.stringify(resultSnapshot.manifest)) {
     reasons.add("protected-composition-topology");
   }
   for (const path of protectedGovernanceFiles) {
@@ -818,10 +790,10 @@ function validateGeneration(
   }
   const rawMetadata = readJsonFile(resolve(generationRoot, METADATA_FILE), `Odai evolution generation ${id} metadata`, MAX_METADATA_BYTES);
   const initial = normalizeGenerationMetadata(rawMetadata, id);
-  const baseBundle = loadSkillBundle(resolve(generationRoot, "base/SKILL.md"), { source: "evolution-base", provider: "odai-evolution-store" });
-  const resultBundle = loadSkillBundle(resolve(generationRoot, "bundle/SKILL.md"), { source: "evolution", provider: "odai-evolution-store" });
-  assertExactBundleTree(resolve(generationRoot, "base"), baseBundle.manifest);
-  assertExactBundleTree(resolve(generationRoot, "bundle"), resultBundle.manifest);
+  const baseBundle = loadSkillBundle(resolve(generationRoot, "base/SKILL.md"), { source: "evolution-base", provider: "odai-evolution-store", orchestrationRoot: resolve(generationRoot, "base/orchestration") });
+  const resultBundle = loadSkillBundle(resolve(generationRoot, "bundle/SKILL.md"), { source: "evolution", provider: "odai-evolution-store", orchestrationRoot: resolve(generationRoot, "bundle/orchestration") });
+  assertExactBundleTree(resolve(generationRoot, "base"), baseBundle);
+  assertExactBundleTree(resolve(generationRoot, "bundle"), resultBundle);
   if (baseBundle.digest !== initial.base.digest) throw new Error(`Odai evolution generation ${id} base digest does not match metadata`);
   if (resultBundle.digest !== initial.result.digest) {
     throw new Error(`Odai evolution generation ${id} result digest does not match metadata`);
@@ -835,7 +807,7 @@ function validateGeneration(
     || initial.result.runtimeContract !== resultBundle.manifest.runtimeContract) {
     throw new Error(`Odai evolution generation ${id} metadata does not match its manifests`);
   }
-  const patches = normalizePatchMetadata(initial.patches, baseBundle.manifest);
+  const patches = normalizePatchMetadata(initial.patches, baseBundle);
   if (generationIdFor({ ...initial, patches }) !== id) {
     throw new Error(`Odai evolution generation ${id} identity does not cover its stored provenance`);
   }
@@ -851,7 +823,7 @@ function validateGeneration(
     replay.files.set(patch.path, resultContent);
   }
   const resultSnapshot = snapshotBundle(resultBundle);
-  for (const path of baseBundle.manifest.requiredFiles) {
+  for (const path of baseBundle.requiredFiles) {
     const expected = replay.files.get(path);
     const actual = resultSnapshot.files.get(path);
     if (!expected || !actual || !expected.equals(actual)) throw new Error(`Odai evolution generation ${id} has an untracked change in ${path}`);
@@ -928,8 +900,8 @@ function createGeneration(
   try {
     writeBundleSnapshot(resolve(temporary, "base"), upstreamSnapshot);
     writeBundleSnapshot(resolve(temporary, "bundle"), finalSnapshot);
-    const baseBundle = loadSkillBundle(resolve(temporary, "base/SKILL.md"));
-    const resultBundle = loadSkillBundle(resolve(temporary, "bundle/SKILL.md"));
+    const baseBundle = loadSkillBundle(resolve(temporary, "base/SKILL.md"), { orchestrationRoot: resolve(temporary, "base/orchestration") });
+    const resultBundle = loadSkillBundle(resolve(temporary, "bundle/SKILL.md"), { orchestrationRoot: resolve(temporary, "bundle/orchestration") });
     if (baseBundle.digest !== upstreamBundle.digest) throw new Error("Odai evolution base changed while creating a candidate");
     if (resultBundle.digest === baseBundle.digest) return { status: "absorbed" };
     const identity: Omit<GenerationMetadata, "generationId"> = {
@@ -1014,7 +986,7 @@ function preserveConflict(
     for (const path of new Set(conflicts.map((conflict) => conflict.path))) {
       const base = generation.baseSnapshot.files.get(path);
       const ours = generation.resultSnapshot.files.get(path);
-      const theirs = upstreamBundle.manifest.requiredFiles.includes(path) ? readSkillBundleFile(upstreamBundle, path) : undefined;
+      const theirs = upstreamBundle.requiredFiles.includes(path) ? readSkillBundleFile(upstreamBundle, path) : undefined;
       if (base) writeDurableFile(resolve(temporary, "base", ...path.split("/")), base);
       if (ours) writeDurableFile(resolve(temporary, "ours", ...path.split("/")), ours);
       if (theirs) writeDurableFile(resolve(temporary, "theirs", ...path.split("/")), theirs);
@@ -1392,9 +1364,9 @@ export function createSkillEvolutionTool(
   return {
     name: "odai_skill_evolution",
     description: [
-      "Inspect and manage immutable user evolution generations for Odai governance Markdown only when the user asks.",
+      "Inspect and manage immutable user evolution generations for governance and orchestration Markdown only when the user asks. Orchestration paths start with orchestration/.",
       "Every write action requires an action- and content-bound phrase as the only block in the current open turn's latest genuine user message; model text and model-supplied evidence never authorize mutation.",
-      "Propose and rebase create inactive candidates. Any SKILL.md or manifest-owned dao reference change, or a replacement that removes its old text, requires the distinct ACTIVATE BREAKING phrase. Active-pointer changes start next turn.",
+      "Propose and rebase create inactive candidates. Either skill entry, the governance dao reference, orchestration delegation, or a replacement removing old text requires ACTIVATE BREAKING. Active-pointer changes start next turn.",
       "Never change manifests, scripts, runtime code, or installed package files.",
     ].join(" "),
     parameters: {
@@ -1481,7 +1453,7 @@ export function createSkillEvolutionTool(
         const bundle = args.generationId === undefined
           ? selection.bundle
           : validateGeneration(root, safeGenerationId(args.generationId)).resultBundle;
-        const path = assertEvolvablePath(args.path, bundle.manifest);
+        const path = assertEvolvablePath(args.path, bundle);
         const content = readSkillBundleFile(bundle, path);
         return Promise.resolve(Object.freeze({
           action: "inspect",
@@ -1504,7 +1476,7 @@ export function createSkillEvolutionTool(
         const expectedBundleDigest = exactDigest(args.expectedBundleDigest, "expectedBundleDigest");
         if (expectedBundleDigest !== selection.bundle.digest) throw new Error("expectedBundleDigest does not match the current immutable turn snapshot");
         const objective = nonEmptyString(args.objective, "objective", MAX_OBJECTIVE_CHARS);
-        const changes = normalizeProposedChanges(args.changes, selection.bundle.manifest);
+        const changes = normalizeProposedChanges(args.changes, selection.bundle);
         const proposal = proposalAuthorization(objective, expectedBundleDigest, changes);
         let humanAuthorization;
         try {

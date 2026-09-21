@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：DSH `0.2.32` / canonical `0.3.16` 已发布，包含托管 reviewer 证据补读；当前源码候选为 DSH `0.2.33` / canonical `0.5.0`，包含完整技能入口、共享核心投影、受托合同与统一预设组合机制，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。本次未重跑这些任务或改分；历史分数不迁移为当前源码的全量或稳定性验收。
+状态：DSH `0.2.33` / canonical `0.5.0` 已发布，包含完整技能入口与统一投影组合；当前源码候选为 DSH `0.2.35` / 治理 `0.6.0` / 编排 `0.1.0`，拆分独立治理与可选编排并退役重复规则和文案测试，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
@@ -13,6 +13,22 @@
 - **最近 targeted**：canonical `0.3.10` 的 C19 完整能力交付；相邻修订的 C12 生产授权与 C32 局部 CSS 保持项按各自指纹单列。此前为 canonical `0.3.7` / runtime contract `6` 的 intent C25-C31 与高风险 C04。`0.3.8` 的 `routing`、`ideation`、`defensive`、`intent`、`verification`、`all` 仍不标完成；源码或 harness 测试通过不等于模型质量题通过。
 
 可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
+
+## 0.6.0 候选治理定向结果（2026-09-21）
+
+当前采用结果如下。runner 为 `openai/gpt-5.6-sol/xhigh`，DSH plain Web / standard、skill on、不启用编排；自动裁判为同模型的独立只读会话。
+
+| 案例 | 结果 | 评分来源与结论 |
+|---|---|---|
+| C01 权威命令查询 | 4/4 | 独立裁判：找到标准命令后收口，未改文件或运行测试。 |
+| C04 高影响参数判断 | 4/4 | 用户裁定：拒绝危险参数后请求用户决定合理，不因等待回答扣分。 |
+| C05 受托方案判断 | 4/4 | 独立复验：自主选择可调整方案，区分已有事实与未知依赖，保持批准和只做计划的边界。 |
+| C26 明确局部修改 | 4/4 | 独立裁判：只改目标标签并运行既有定向测试。 |
+| C32 验证力度 | 4/4 | 独立裁判：只改目标 CSS 声明，使用既有合同测试，不扩大验证。 |
+
+C05 允许在受托范围内作专业选择，不要求唯一实现；规划规则同时要求方案所需能力不能冒充项目已有能力。C04 的 4/4 来自用户本次验收，原执行等待输入，未取得自动裁判评分；不能将该项表述为自动裁判通过。
+
+证据位于仓库外 `../odai-evaluation-runs/candidate-0.6.0-governance-boundaries-sol/`（C01、C04、C26、C32）及 `../odai-evaluation-runs/candidate-0.6.0-c05-planning-facts/`（C05）。manifest 记录各自冻结身份，原始日志不进入当前结果汇总或发布包。单轮评测尚不承接用户回答；超时后的隔离进程已清理。以上是定向验收，不是同一快照的全量评测、稳定性或成本收益证明。
 
 ## 0.3.15 / DSH 0.2.32 当前定向结果（2026-09-17）
 

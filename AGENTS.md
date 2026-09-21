@@ -5,16 +5,16 @@
 - 本仓库中的每次用户请求都必须使用 canonical `skills/odai/SKILL.md` 治理。若宿主明确声明当前 `odai-dsh-agent` 或 `odai-dsh-plugin` 已把完整 canonical governance 注入系统提示，并给出 skill version、runtime contract 与 bundle digest，则该注入本身视为已完整加载；声明有效且本会话未改动 canonical bundle 期间，不得再调用 skill 或 `read` 重复载入同一正文。仅当注入声明缺失或不可信、任务直接审查或修改 Odai、或 manifest 声明的 canonical 文件在注入后发生变化时，才须在行动前完整读取当前 `SKILL.md`，并以新内容继续治理。其他宿主若当前任务尚未完整读取其当下版本，任何调查、判断、修改或测试前先完整读取。
 - 按 odai 的真实缺口决定是否读取支撑资料；使用 odai 不等于自动增加计划、路由、角色、文件、测试或流程，简单任务仍直接完成。
 - 对 odai 自身及其配套机制的新增、扩写、删减与压缩使用同一标准：明确当前问题、预期改善、必须保持的行为，并以相称行为证据决定保留或退役；没有具体收益依据或未验证保持项的新增同样不得合入或发布。优先复用现有检查，证据足够即停，不为满足此规则新造测试或审计设施；已有实现、历史方案、题本得分和文字增减量都不单独证明净收益。
-- 以减少 token、延迟或成本为目的的优化，必须先用行为契约、反例与测试证明既有能力和安全边界不退化，再评估节省是否成立；不能验证保持项、只测预算下降、依赖模型自报或以删除能力换取指标时，不得合入或发布。
+- 优化按实际影响选择证据，不因目标是减少 token、延迟或成本就统一要求测试。编辑去重与引用归位核对规则仍完整提供且适用条件不变；改变行为、权限或读取契约时验证对应保持项与主要反例。宣称效果或成本改善须有可比实测证据，不把文字缩短或模型自报当收益证明；未验证必要保持项或以删除能力换指标时，不得合入或发布。
 - 评测维护、题本设计、裁判与报告整理仍按上述要求治理；真正受测的 runner 则严格服从冻结的评测臂，不继承本节。`on` 只加载该臂声明的冻结 skill 与项目材料；`off` 必须在干净隔离环境运行，不读取或注入 odai、`.odai/local.md`、odai 路由或 Hooks、要求使用 odai 的仓库指令、其他臂输出、既往 runner 转录或其派生状态。
 
 ## 官方 skills 单一事实源
 
-- `skills/odai/` 与 `skills/ribao/` 是各自唯一可编辑的 canonical source；odai 是统一入口与最终交付 owner，ribao 是可独立加载的专业汇报能力。
+- `skills/odai/`、`skills/odai-orchestration/` 与 `skills/ribao/` 是各自唯一可编辑的 source。odai 提供独立治理；odai-orchestration 是单向依赖治理的可选编排技能；ribao 是独立汇报能力。各自通过技能入口安装，不把编排预设或适配器放回治理核心。
 - `cli/skills/` 不在仓库中常驻；它只由 npm `prepack` 临时生成，并在 `postpack` 清理。
 - 即使用户或 IDE 指向打包期间临时出现的 `cli/skills/`，也要把对应修改落到仓库根 `skills/<name>/`。
 - source 修改完成后，运行 `node scripts/validate-odai-skill.mjs` 验证 canonical skills。
-- canonical references 按单一所有权维护：`references/planning.md` 只负责正式计划、可执行合同与跨轮续作，`references/craft.md` 只负责已决定结果的制作工艺，`references/leverage.md` 只负责能力与责任选择、调度和交接；角色合同只引用对应 owner，不复制另一层的清单或宿主机制。
+- canonical references 按单一所有权维护：`references/planning.md` 只负责正式计划、可执行合同与跨轮续作，`references/craft.md` 只负责已决定结果的制作工艺，治理 `references/leverage.md` 负责工具、资料与技能的选择；编排技能的 `references/orchestration.md` 负责职责选择、调度和交接；角色合同只引用对应 owner，不复制另一层的清单或宿主机制。
 - odai-cli 未冻结时，发布相关修改还需运行 `npm --prefix cli run pack:dry-run`，确认产物与当前声明的打包范围一致，且命令结束后没有遗留 `cli/skills/`；冻结期间遵循下节边界。
 
 ## odai-cli 冻结边界
@@ -31,7 +31,7 @@
 ## DSH 集成修改边界
 
 - `odai-dsh-plugin` 与 `odai-dsh-agent` 的问题必须在本仓库内解决；修复实现、兼容层、配置、补丁、测试和文档只能落到本项目受版本控制的文件中。
-- `skills/odai/` 只承载跨宿主都成立的治理语义和通用角色合同；DSH 的 hook、工具名、same-turn / child 调度、路由状态、证据事件、provider / model 字段与 token 优先级必须落在 `dsh/runtime/`，不得为方便复用写入 canonical skill、通用角色正文或 `.odai/local.md`。
+- `skills/odai/` 只承载跨宿主治理，`skills/odai-orchestration/` 承载通用编排与角色合同；DSH 的 hook、工具名、same-turn / child 调度、路由状态、证据事件、provider / model 字段与 token 优先级必须落在 `dsh/runtime/`，不得为方便复用写入 canonical skill、通用角色正文或 `.odai/local.md`。
 - DSH 可在运行时组合 canonical 通用合同与 `dsh/runtime/` 私有补充合同。语义是否上移 canonical 由责任归属与证据决定，不设固定宿主数量门槛：只有该语义跨宿主成立、不含 DSH 机制，证据足以支持其通用净收益，且兼容影响与迁移已明确验证时才上移；单一宿主暴露问题既不自动证明通用，也不自动阻止通用治理修正。需要新增 required file 或改变读取契约时必须显式升级 skill version / runtime contract，不得顺带修改。
 - `AGENTS.md` 只记录上述稳定落位规则；具体触发条件、事件字段、预算值和实现流程以 `dsh/runtime` 源码及同目录测试为事实源，避免文档副本漂移。
 - `odai-dsh-agent` 与 `odai-dsh-plugin` 作为同一发布单元维护；从 `0.0.10` 起两个 `package.json` 的版本号必须完全一致，同一功能发布同时升版。测试与 prepack 必须运行仓库版本一致性检查，禁止单包漂移或用已发布旧版本承载新改动。

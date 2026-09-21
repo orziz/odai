@@ -157,6 +157,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     order: -20,
     text: canonicalPrompt(baseSelection),
   });
+  ctx.systemPrompt.section({ name: "odai:orchestration", order: -19.75, text: "" });
   ctx.systemPrompt.section({
     name: "odai:canonical-craft",
     order: -19.5,
@@ -464,10 +465,11 @@ export function createPromptRuntime(deps: PromptDependencies) {
         (section) => !["odai:child-execution-boundary", "odai:child-responsibility-contract", "odai:native-delegation"].includes(section.name),
       ).map((section) => {
         if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection, childSession, Boolean(boundBundle)) };
+        if (section.name === "odai:orchestration") return { ...section, text: !childSession && config.routing.mode !== "off" ? selection.bundle.orchestration.skillBody : "" };
         if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
         if (section.name === "odai:human-safety-continuity") return { ...section, text: continuityPrompt };
-        if (section.name === "odai:responsibility-gap") return { ...section, text: childSession ? "" : RESPONSIBILITY_GAP_PROMPT };
+        if (section.name === "odai:responsibility-gap") return { ...section, text: childSession || config.routing.mode === "off" ? "" : RESPONSIBILITY_GAP_PROMPT };
         if (section.name === "odai:skill-source-configuration") return { ...section, text: activation.skillSource ? SKILL_SOURCE_CONFIG_PROMPT : "" };
         if (section.name === "odai:controller-output-policy") return { ...section, text: outputPrompt };
         if (section.name === "odai:compaction-model-configuration") return { ...section, text: activation.compactionConfig ? COMPACTION_CONFIG_PROMPT : "" };
@@ -476,7 +478,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       }).concat(childSession ? [{
         name: "odai:child-execution-boundary",
         text: [!childRole ? selection.bundle.delegationContract : "", DSH_CHILD_EXECUTION_PROMPT].filter(Boolean).join("\n\n"),
-      }] : [{ name: "odai:native-delegation", text: DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
+      }] : [{ name: "odai:native-delegation", text: config.routing.mode === "off" ? "" : DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
     };
     const key = JSON.stringify(executionRestriction);
     const surfaces = surfacesFor(agent);

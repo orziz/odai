@@ -2,14 +2,14 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const skill = path.join(repo, "skills", "odai");
+const skill = path.join(repo, "skills", "odai-orchestration");
 const builder = path.join(skill, "scripts", "build-routing.mjs");
 const installer = path.join(skill, "scripts", "install-routing.mjs");
 const roles = ["controller", "planner", "reviewer"];
@@ -33,7 +33,7 @@ function testBuilds() {
   const root = temp("odai-routing-build-");
   try {
     for (const host of ["codex", "claude", "copilot"]) {
-      const result = runNode(builder, buildArgs(host, path.join(root, host)));
+      const result = runNode(builder, [...buildArgs(host, path.join(root, host)), "--governance-root", path.join(repo, "skills/odai")]);
       assert.equal(result.status, 0, result.stderr);
       const generated = path.join(root, host, host);
       const adapter = json(path.join(generated, "ADAPTER.json"));
@@ -67,6 +67,19 @@ function testBuilds() {
     assert.deepEqual(Object.keys(adapter.mapping), ["controller", "planner", "reviewer", "researcher", "frontend"]);
     assert.ok(existsSync(path.join(generated, ".codex", "agents", "odai-researcher.toml")));
     assert.ok(existsSync(path.join(generated, ".codex", "agents", "odai-frontend.toml")));
+    const isolated = path.join(root, "independent/odai-orchestration");
+    cpSync(skill, isolated, { recursive: true });
+    const help = runNode(path.join(isolated, "scripts/build-routing.mjs"), ["--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    const project = path.join(root, "independent-project");
+    mkdirSync(project);
+    const installed = runNode(path.join(isolated, "scripts/install-routing.mjs"), [
+      "--host", "codex", "--scope", "project", "--target", project,
+      "--governance-root", path.join(repo, "skills/odai"),
+      "--controller-model", "test-controller", "--planner-model", "test-planner", "--reviewer-model", "test-reviewer", "--yes",
+    ]);
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.equal(JSON.parse(installed.stdout).status, "installed");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

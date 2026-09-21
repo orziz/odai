@@ -25,7 +25,7 @@ if ((clientRoot === undefined) !== (options.clientPackage === undefined)) {
 if (command === "prepare") {
   await assertCanonicalSkill();
   await Promise.all([
-    prepareCopy(skillSource, resolve(skillRoot, "odai"), skillRoot),
+    prepareSkills(),
     runtimeRoot ? prepareCopy(runtimeSource, runtimeRoot, runtimeRoot) : undefined,
     clientRoot && options.clientPackage
       ? prepareClient(clientRoot, options.clientPackage)
@@ -69,6 +69,12 @@ function resolveTarget(root, value, label) {
     throw new Error(`${label} must stay below the package root`);
   }
   return target;
+}
+
+async function prepareSkills() {
+  await rm(skillRoot, { recursive: true, force: true });
+  await mkdir(skillRoot, { recursive: true });
+  await Promise.all(["odai", "odai-orchestration"].map(name => cp(resolve(repoRoot, "skills", name), resolve(skillRoot, name), { recursive: true })));
 }
 
 async function prepareCopy(source, target, cleanRoot) {

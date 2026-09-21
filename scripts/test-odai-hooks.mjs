@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const hook = path.join(repoRoot, "skills", "odai", "scripts", "odai-hook.mjs");
-const builder = path.join(repoRoot, "skills", "odai", "scripts", "build-hooks.mjs");
+const hook = path.join(repoRoot, "integrations", "hooks", "scripts", "odai-hook.mjs");
+const builder = path.join(repoRoot, "integrations", "hooks", "scripts", "build-hooks.mjs");
 const temporaryRoots = [];
 process.on("exit", () => {
   for (const root of temporaryRoots) rmSync(root, { recursive: true, force: true });

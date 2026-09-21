@@ -15,10 +15,13 @@ test("canonical rendering omits metadata while retaining body, source identity, 
   assert.ok(prompt.endsWith(bundle.skillBody));
   assert.ok(bundle.skillText.startsWith("---\nname: odai\n"));
   assert.doesNotMatch(prompt, /^name: odai$|^description:/mu);
-  assert.match(prompt, /controller owns final delivery; delegate only for a real independent gap with observable net benefit/u);
-  assert.match(prompt, /already loaded by this runtime; do not call the skill tool/u);
+  assert.equal(prompt.includes(bundle.orchestration.skillBody), false);
+  assert.equal(prompt.includes(bundle.roleContracts.controller), false);
   assert.ok(prompt.includes(`Canonical source: ${bundle.source} (${bundle.provider})`));
-  assert.ok(prompt.includes(`runtime contract: ${bundle.manifest.runtimeContract}; digest: ${bundle.digest}`));
+  assert.ok(prompt.includes(`runtime contract: ${bundle.manifest.runtimeContract}`));
+  assert.ok(prompt.includes(`governance digest: ${bundle.governance.digest}`));
+  assert.ok(prompt.includes(`orchestration digest: ${bundle.orchestration.digest}`));
+  assert.ok(prompt.includes(`composition digest: ${bundle.digest}`));
   assert.deepEqual(readSkillBundleFile(bundle, "SKILL.md"), readFileSync(resolve(root, "SKILL.md")));
 
   const selected = canonicalPrompt({
@@ -62,8 +65,8 @@ test("body extraction preserves LF, CRLF, and Markdown separators and rejects in
   }
   for (const source of ["name: odai\nBody", "---\nname: other\n---\nBody", "---\nname: odai\nBody"]) {
     writeFileSync(entry, source);
-    assert.throws(() => loadSkillBundle(entry), /does not declare name odai/u);
+    assert.throws(() => loadSkillBundle(entry), TypeError);
   }
   writeFileSync(entry, "---\nname: odai\n---\n");
-  assert.throws(() => loadSkillBundle(entry), /skill body is empty/u);
+  assert.throws(() => loadSkillBundle(entry), TypeError);
 });

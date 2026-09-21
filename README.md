@@ -54,11 +54,19 @@ Make agents **faster, more accurate, better, steadier, cheaper, lighter, broader
 
 ## 30-Second Start
 
-Install the unified entry point:
+Install standalone governance:
 
 ```bash
 npx skills add https://github.com/orziz/odai --skill odai
 ```
+
+The source candidate separates optional orchestration into an installable sibling skill:
+
+```bash
+npx skills add https://github.com/orziz/odai --skill odai-orchestration
+```
+
+`odai-orchestration` depends on `odai` and adds responsibility presets and host routing adapters. Installing the skill does not change host settings. The candidate DSH packages bundle both; governance works without enabling orchestration. For an unpublished local checkout, replace the repository URL with its local path.
 
 Then invoke it with `/odai`. That is the normal form in clients that expose skills as slash commands:
 
@@ -88,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The published `0.2.32` Plugin and Agent release targets exactly `dsh@0.1.5-rc.1`; the current `0.2.33` source candidate targets only `dsh@0.1.5-rc.2`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
+The published `0.2.33` Plugin and Agent release and the current `0.2.35` source candidate target exactly `dsh@0.1.5-rc.2`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
@@ -280,10 +288,10 @@ These are the only per-turn hooks managed by odai. The capability-routing instal
 The repository keeps one dependency-free runtime and generates native host adapters on demand instead of maintaining six platform mirrors:
 
 ```bash
-node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
+node integrations/hooks/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
 ```
 
-Replace `all` with `codex`, `claude`, `copilot`, `gemini`, `grok`, or `kimi` when only one adapter is needed. Each output contains an `ADAPTER.json` describing its install form. Start from [`skills/odai/assets/hooks-policy.example.json`](skills/odai/assets/hooks-policy.example.json), adapt it to project evidence, and place the result at `<project>/.odai/hooks.json`.
+Replace `all` with `codex`, `claude`, `copilot`, `gemini`, `grok`, or `kimi` when only one adapter is needed. Each output contains an `ADAPTER.json` describing its install form. Start from [`integrations/hooks/assets/hooks-policy.example.json`](integrations/hooks/assets/hooks-policy.example.json), adapt it to project evidence, and place the result at `<project>/.odai/hooks.json`.
 
 | Host | Pre-write read-only protection | Declared acceptance before closure |
 |---|---:|---:|
@@ -298,7 +306,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.2.33` / canonical `0.5.0`; the published DSH release is `0.2.32`. The latest directed model evaluation used frozen canonical `0.3.15`, GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge. The subsequent review-evidence paging fix is verified separately through capture replay and isolated host checks; it does not inherit those scores.
+The current source candidate is DSH `0.2.35` / governance `0.6.0` / orchestration `0.1.0`; the published DSH release is `0.2.33`. The latest directed model evaluation used frozen canonical `0.3.15`, GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge. The subsequent review-evidence paging fix is verified separately through capture replay and isolated host checks; it does not inherit those scores.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

@@ -54,11 +54,19 @@ odai 不是用户的回声，也不是规则的复读机。它以人的目的为
 
 ## 30 秒上手
 
-安装统一入口：
+安装独立治理技能：
 
 ```bash
 npx skills add https://github.com/orziz/odai --skill odai
 ```
+
+当前源码候选把可选编排拆成了同级、可独立安装的技能：
+
+```bash
+npx skills add https://github.com/orziz/odai --skill odai-orchestration
+```
+
+`odai-orchestration` 单向依赖 `odai`，提供职责预设和宿主路由适配器；安装技能不会自动修改宿主配置。候选 DSH 包内置两者，未启用编排时治理仍独立工作。使用尚未发布的本地源码时，将仓库 URL 换为本地仓库路径。
 
 然后用 `/odai` 交任务。支持 slash command 的客户端里，常规就是这种写法：
 
@@ -88,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-已发布的 `0.2.32` Plugin 与 Agent 仅面向精确 `dsh@0.1.5-rc.1`；当前 `0.2.33` 源码候选仅支持 `dsh@0.1.5-rc.2`。已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
+已发布的 `0.2.33` Plugin 与 Agent 以及当前 `0.2.35` 源码候选均仅支持精确的 `dsh@0.1.5-rc.2`。已发布版本的历史记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 声明新版 Web 传输依赖，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
@@ -280,10 +288,10 @@ skill 负责判断，Hooks 只把项目已经明确的边界变成机械护栏�
 仓库维护一份无依赖运行时，按需生成宿主原生适配，不常驻六套平台镜像：
 
 ```bash
-node skills/odai/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
+node integrations/hooks/scripts/build-hooks.mjs --host all --out /tmp/odai-hooks
 ```
 
-也可以把 `all` 换成 `codex`、`claude`、`copilot`、`gemini`、`grok` 或 `kimi`。每个输出目录里的 `ADAPTER.json` 会说明安装形态；策略从 [`skills/odai/assets/hooks-policy.example.json`](skills/odai/assets/hooks-policy.example.json) 起步，按项目事实改好后放到项目根 `.odai/hooks.json`。
+也可以把 `all` 换成 `codex`、`claude`、`copilot`、`gemini`、`grok` 或 `kimi`。每个输出目录里的 `ADAPTER.json` 会说明安装形态；策略从 [`integrations/hooks/assets/hooks-policy.example.json`](integrations/hooks/assets/hooks-policy.example.json) 起步，按项目事实改好后放到项目根 `.odai/hooks.json`。
 
 | 宿主 | 写前只读路径保护 | 收口前显式验收 |
 |---|---:|---:|
@@ -298,7 +306,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前源码候选为 DSH `0.2.33` / canonical `0.5.0`，已发布 DSH 为 `0.2.32`。最近一组定向模型评估使用冻结的 canonical `0.3.15`、GPT-6 Astra / xhigh 总控和 GPT-5.6 Terra / xhigh 独立裁判；后续审查证据分页修复由原生记录回放和隔离宿主检查单独验证，不继承旧分数。
+当前源码候选为 DSH `0.2.35` / 治理 `0.6.0` / 编排 `0.1.0`，已发布 DSH 为 `0.2.33`。最近一组定向模型评估使用冻结的 canonical `0.3.15`、GPT-6 Astra / xhigh 总控和 GPT-5.6 Terra / xhigh 独立裁判；后续审查证据分页修复由原生记录回放和隔离宿主检查单独验证，不继承旧分数。
 
 当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 
