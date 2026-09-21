@@ -160,15 +160,18 @@ await mkdir(workspace, { recursive: true });
 await cp(resolve(agentRoot, "preset/odai"), sourceRoot, { recursive: true });
 const developmentRuntime = resolve(repoRoot, "dsh/runtime/build");
 const developmentSkill = resolve(repoRoot, "skills/odai");
-if (!compiledPackage && existsSync(developmentRuntime) && existsSync(developmentSkill)) {
+const developmentOrchestration = resolve(repoRoot, "skills/odai-orchestration");
+if (!compiledPackage && existsSync(developmentRuntime) && existsSync(developmentSkill) && existsSync(developmentOrchestration)) {
   await Promise.all([
     cp(developmentRuntime, resolve(sourceRoot, "runtime"), { recursive: true }),
     cp(developmentSkill, resolve(sourceRoot, "skills/odai"), { recursive: true }),
+    cp(developmentOrchestration, resolve(sourceRoot, "skills/odai-orchestration"), { recursive: true }),
   ]);
 } else if (!existsSync(resolve(sourceRoot, "odai-governance.mjs"))
   || !existsSync(resolve(sourceRoot, "runtime/index.mjs"))
-  || !existsSync(resolve(sourceRoot, "skills/odai/SKILL.md"))) {
-  throw new Error("Odai Agent verification requires either repository sources or packaged runtime and skill files");
+  || !existsSync(resolve(sourceRoot, "skills/odai/SKILL.md"))
+  || !existsSync(resolve(sourceRoot, "skills/odai-orchestration/SKILL.md"))) {
+  throw new Error("Odai Agent verification requires either repository sources or packaged runtime and both skill bundles");
 }
 await installAgentPreset({ dshHome: home, sourceRoot, dshVersion: targetDshVersion });
 
