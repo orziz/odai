@@ -575,7 +575,8 @@ test("failed read-only checks remain failed evidence available to reviewers", ()
     assert.equal(packet.coverage.latestFailedCheckIndex, 4, command);
     assert.equal(packet.sufficient, true, "failed checks are reviewable, not passing acceptance");
     const failure = packet.entries.find((entry) => entry.identity === "tool-call:failed-check");
-    assert.ok(failure?.kinds.includes("check-failed"), command);
+    assert.ok(failure, command);
+    assert.ok(failure.kinds.includes("check-failed"), command);
     assert.match(failure.text, /exit code: 1/u);
   }
 });
