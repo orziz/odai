@@ -453,11 +453,17 @@ test("proposal rejects stale, executable, ambiguous, duplicate, and unowned chan
   const scratch = scratchRoot("proposal-guards");
   try {
     const root = resolve(scratch, "skill-evolution");
-    const current = upstreamSelection();
+    const fixtureRoot = resolve(scratch, "upstream");
+    cpSync(canonicalRoot, fixtureRoot, { recursive: true });
+    const repeated = "ODAI_AMBIGUOUS_MATCH_FIXTURE";
+    const supportPath = resolve(fixtureRoot, "references/support.md");
+    const support = `${readFileSync(supportPath, "utf8")}\n${repeated}\n${repeated}\n`;
+    writeFileSync(supportPath, support, "utf8");
+    assert.equal(support.split(repeated).length - 1, 2);
+    const current = upstreamSelection(loadSkillBundle(resolve(fixtureRoot, "SKILL.md"), { source: "bundled", provider: "odai-dsh-runtime" }));
     const tool: TestEvolutionTool = createSkillEvolutionTool(root, { currentSelectionFor: () => current });
     const owner = execution().agent;
     const supportHash = await sha256For(tool, owner, "references/support.md");
-    const support = readFileSync(resolve(canonicalRoot, "references/support.md"), "utf8");
     const firstLine = required(support.split(/\r?\n/u)[0], "support first line");
     const prepared = await tool.execute({
       action: "propose",
@@ -486,18 +492,23 @@ test("proposal rejects stale, executable, ambiguous, duplicate, and unowned chan
       }, { name: tool.name, agent: owner }),
       /governance Markdown/u,
     );
-    const ambiguousArgs = {
-      action: "propose",
-      objective: "ambiguous",
-      expectedBundleDigest: current.bundle.digest,
-      changes: [{ path: "references/support.md", expectedSha256: supportHash, replacements: [{ oldString: "-", newString: "+" }] }],
-    };
-    const ambiguousPrepared = await tool.execute(ambiguousArgs, { name: tool.name, agent: owner });
-    authorize(owner, required(ambiguousPrepared.proposalPhrase, "proposal phrase"));
-    assert.throws(
-      () => tool.execute(ambiguousArgs, { name: tool.name, agent: owner }),
-      /must match exactly once/u,
-    );
+    for (const [oldString, count] of [[repeated, 2], ["ODAI_ABSENT_MATCH_FIXTURE", 0]] as const) {
+      assert.equal(support.split(oldString).length - 1, count);
+      const args = {
+        action: "propose",
+        objective: "reject non-unique replacement",
+        expectedBundleDigest: current.bundle.digest,
+        changes: [{ path: "references/support.md", expectedSha256: supportHash, replacements: [{ oldString, newString: "replacement" }] }],
+      };
+      const prepared = await tool.execute(args, { name: tool.name, agent: owner });
+      authorize(owner, required(prepared.proposalPhrase, "proposal phrase"));
+      assert.throws(
+        () => tool.execute(args, { name: tool.name, agent: owner }),
+        new RegExp(`must match exactly once; found ${count}`, "u"),
+      );
+      assert.equal(existsSync(resolve(root, "state.json")), false, "rejected replacement must not change the active pointer");
+      assert.equal(existsSync(resolve(root, "generations")), false, "rejected replacement must not create a generation");
+    }
     assert.throws(
       () => tool.execute({
         action: "propose",

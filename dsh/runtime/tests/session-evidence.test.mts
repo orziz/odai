@@ -48,7 +48,7 @@ test("new evidence stays outside a real DSH session log and reloads by session i
   }
 });
 
-test("same-request risk protection survives scope release and legacy sidecar reload", () => {
+test("legacy sidecar reload preserves active scopes but cannot revive released protection through route failure", () => {
   const root = mkdtempSync(resolve(tmpdir(), "odai-protection-identity-"));
   const sessionId = "protection-transition";
   const legacyId = createHash("sha256").update("odai/route-protection:1:1").digest("hex");
@@ -60,15 +60,24 @@ test("same-request risk protection survives scope release and legacy sidecar rel
     const evidence = createSessionEvidence({ root });
     const agent = testAgent(sessionId, [{ type: "turn/start", data: { turn: 1 } }]);
     evidence.append(agent, "odai/route-decided", { turn: 1, step: 1 });
+    const reloadProtection = () => {
+      const resumed = testAgent(sessionId, [{ type: "turn/start", data: { turn: 1 } }]);
+      return activeRouteProtection(resumed, createSessionEvidence({ root }).events(resumed));
+    };
+    assert.equal(reloadProtection()?.scopeId, "scope",
+      "an active read-only scope must survive sidecar reload");
     evidence.append(agent, "odai/route-protection-released", { turn: 1, scopeId: "scope", reason: "route-request-failed" });
+    assert.equal(reloadProtection(), undefined);
     const protection = { turn: 1, step: 1, mode: "read-only", source: "route-request-failure", reasonCode: "PLANNER_EVIDENCE_STATE_GAP" };
     evidence.append(agent, "odai/route-protection", protection);
     evidence.append(agent, "odai/route-protection", { ...protection });
     const stored = readStoredSessionEvidence(root, sessionId);
     assert.equal(stored.length, 4);
     assert.equal(stored[0].id, legacyId);
-    const resumed = testAgent(sessionId, [{ type: "turn/start", data: { turn: 1 } }]);
-    assert.equal(activeRouteProtection(resumed, createSessionEvidence({ root }).events(resumed))?.reasonCode, protection.reasonCode);
+    assert.deepEqual(stored[3].data, protection, "historical failure evidence remains intact");
+    assert.equal(reloadProtection(), undefined,
+      "a historical route failure cannot reinstate released write protection");
+    assert.deepEqual(readStoredSessionEvidence(root, sessionId), stored, "reload must not rewrite historical evidence");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
