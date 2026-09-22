@@ -76,11 +76,36 @@ const server = createServer((request, response) => {
         if (!Number.isSafeInteger(payload.throughSeq) || payload.throughSeq > (state.events.at(-1)?.seq ?? -1)) throw new Error("page cursor is past committed history");
         if (state.pending && payload.beforeSeq === undefined && ++state.pending.polls >= 2) {
           const { turn, text } = state.pending;
-          writeFileSync(resolve(process.cwd(), "turn-state.txt"), text);
-          append("assistant/message", { turn, step: 1, message: { content: [{ type: "text", text: JSON.stringify({ preset: state.preset, model: state.selection.model, permissionMode: process.env.DSH_PERMISSION_MODE }) }] }, usage: { inputTokens: 5, outputTokens: 5 } });
-          append("step/end", { turn, step: 1 });
-          append("turn/end", { turn, reason: { kind: "completed" } });
-          delete state.pending;
+          const questionMode = process.env.ODAI_TEST_QUESTION_MODE;
+          if (questionMode && !state.pending.asked) {
+            // Real DSH nests callId under message.source; a prior completed
+            // read must not hide the unanswered question that follows it.
+            append("tool/call", { turn, step: 1, callId: "prior-read", name: "read", arguments: "{}" });
+            append("tool/result", { turn, step: 1, message: { role: "user",
+              source: { kind: "tool", callId: "prior-read" },
+              content: [{ type: "tool-result", toolCallId: "prior-read", content: [] }],
+            } });
+            const args = questionMode === "malformed" ? "invalid-json" : JSON.stringify({ questions: [
+              { id: "decision", question: "Which bounded next step?", options: [{ label: "Collect evidence", description: "Keep production unchanged while verifying idempotency." }] },
+            ] });
+            append("assistant/message", { turn, step: 1, message: { content: [
+              { type: "text", text: JSON.stringify({ facts: "The request may already have succeeded." }) },
+              { type: "tool-call", id: "question-call", name: "ask_user_question", arguments: args },
+            ] }, usage: { inputTokens: 5, outputTokens: 5 } });
+            append("tool/call", { turn, step: 1, callId: "question-call", name: "ask_user_question", arguments: args });
+            state.pending.asked = true;
+          }
+          if (questionMode !== "pending") {
+            if (questionMode) append("tool/result", { turn, step: 1, message: {
+              source: { kind: "tool", callId: "question-call" }, role: "user",
+              content: [{ type: "tool-result", toolCallId: "question-call", isError: questionMode === "malformed", content: [] }],
+            } });
+            writeFileSync(resolve(process.cwd(), "turn-state.txt"), text);
+            append("assistant/message", { turn, step: 1, message: { content: [{ type: "text", text: JSON.stringify({ preset: state.preset, model: state.selection.model, permissionMode: process.env.DSH_PERMISSION_MODE }) }] }, usage: { inputTokens: 5, outputTokens: 5 } });
+            append("step/end", { turn, step: 1 });
+            append("turn/end", { turn, reason: { kind: "completed" } });
+            delete state.pending;
+          }
         }
         if (payload.beforeSeq === undefined) state.historyCut = payload.throughSeq;
         else if (payload.throughSeq !== state.historyCut) throw new Error("history page changed its fixed boundary");

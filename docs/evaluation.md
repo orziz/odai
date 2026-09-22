@@ -60,6 +60,8 @@ Codex 路由观测使用 `--codex-routing-telemetry`。安装映射不等于真�
 
 source-plugin 可用 `--routing-config-file <冻结快照>` 复用编译 runtime 的 store parser，保留各职责显式字段与 dispatch，不混用旧角色 flags、不改用户 store；入口旁须有 `routing-config.mjs`。`--preflight` 只验证生成的隔离配置，不调用模型，不能作为实际路由或宿主端到端证明。
 
+单轮 Web runner 可显式使用 `--capture-user-question`：在本次真实用户请求中检测到持续未返回结果的 `ask_user_question` 后，保存完整问题、选项和原生事件快照，记为 `awaiting-user`，由评测器停止隔离进程；不代答、不伪造 `turn/end`，也不把工具失败或普通超时改成成功。裁判核对问题与原始调用一致，再依题本判断必要性和交付质量；C04 的完整决策提问可获 4 分，机械确认或推回工作不因此加分。该模式不用于 judge 或脚本多轮续作。
+
 多轮使用同一题本末尾的协议，冻结后传 `--turns-file <协议文件>`。adapter 分别发送真实用户消息，核对 requestId、turn 和原生结束回执，完整读取分页。原生 `user/message` 必须位于快照之后新开的 claimed step 中，匹配 `source.rpcId`，且同一 step/turn 的结束事件随后出现；历史终态不能完成新请求。history 先从认证的 `session/follow` 获取同一 session 的真实 cursor，再以固定 `throughSeq`、递减 `beforeSeq` 分页，拒绝无进展页，不使用最大整数冒充游标。恢复时重启自己创建的进程并校验同一 session 的既有消息和终态。中间 workspace 快照与完整逐轮事件放在 fixture 外，`last_message.txt.turns.json` 持有对应回执和指针。裁判输入完整保留所有用户修订，并提供完整日志、diff 和中间快照的位置；不能用最终状态或截断的转录证明中间轮没有越界。单轮与扩展协议分别报告。
 
 DSH 裁判复用同一个 adapter，使用 `--role judge --surface plain --prompt-file - --schema-file {schema} --cwd {workdir} --last-message {judge_output}`，由 harness 通过 stdin 提交裁判请求；provider/model/推理档仍须显式传入已选择值。harness 的 `--judge-cmd` 识别此入口。judge 始终 skill-off、独立 HOME/session、只读文件权限且禁止提权审批；这些配置与真实宿主捕获证据须分开描述。runner/judge 的模型选项在 harness 中同时记录，实际 adapter 命令也必须传入相同值。隔离 patch 显式定义 `defaultPreset: read-only` 及其 `sandbox: read-only / approval: never`，不能假定宿主内置该组合；原生 `permission/preset`、`sandbox/mode`、`approval/policy` 是实际启动状态的依据。

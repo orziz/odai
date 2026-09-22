@@ -402,6 +402,7 @@ function parseArgs(argv) {
     surface: "",
     transport: "auto",
     turnsFile: "",
+    captureUserQuestion: false,
     runtimePluginPath: "",
     runtimeSkillPath: "",
     routingConfigFile: "",
@@ -445,6 +446,7 @@ function parseArgs(argv) {
     else if (arg === "--surface") parsed.surface = argv[++index];
     else if (arg === "--transport") parsed.transport = argv[++index];
     else if (arg === "--turns-file") parsed.turnsFile = argv[++index];
+    else if (arg === "--capture-user-question") parsed.captureUserQuestion = true;
     else if (arg === "--runtime-plugin-path") parsed.runtimePluginPath = argv[++index];
     else if (arg === "--runtime-skill-path") parsed.runtimeSkillPath = argv[++index];
     else if (arg === "--routing-config-file") {
@@ -486,6 +488,12 @@ function parseArgs(argv) {
   if (typeof parsed.turnsFile !== "string" || parsed.turnsFile.startsWith("--")) throw new Error("--turns-file requires a protocol file");
   if (parsed.turnsFile) {
     if (parsed.transport === "headless") throw new Error("multi-turn protocols require Web transport");
+    parsed.transport = "web";
+  }
+  if (parsed.captureUserQuestion) {
+    if (parsed.role !== "runner" || parsed.turnsFile || parsed.transport === "headless") {
+      throw new Error("--capture-user-question requires a single-turn Web runner, not a judge or scripted conversation");
+    }
     parsed.transport = "web";
   }
   parsed.profileHome = parsed.profileHome.trim();
@@ -798,10 +806,20 @@ async function runWebAgent(command, patchPath, prompt, args, options) {
       const text = turn.useCasePrompt ? prompt : turn.prompt;
       const started = Date.now();
       await dshWebRpc(baseUrl, "session.prompt", { requestId, sessionId, mode: "queue", content: [{ type: "text", text }] }, browserCookie);
-      const settled = await waitForTurnEnd(baseUrl, sessionId, child, () => output, deadline, browserCookie, afterSeq, requestId);
-      const { events, message, start, end } = settled;
+      const settled = await waitForTurnEnd(baseUrl, sessionId, child, () => output, deadline, browserCookie, afterSeq, requestId, args.captureUserQuestion);
+      const { events, message, start, end, question } = settled;
       const acceptedText = message.data?.content?.filter((block) => block.type === "text").map((block) => block.text).join("");
       if (acceptedText !== text) throw new Error("durable user prompt differs from the submitted protocol turn");
+      if (question) {
+        // This is an evaluator stop at an unanswered interaction, never a
+        // fabricated turn/end or human answer. Preserve the pre-stop snapshot.
+        report.outcome = "awaiting-user";
+        report.turns.push({ requestId, sessionId, turn: start.data.turn, messageSeq: message.seq,
+          startSeq: start.seq, endSeq: null, prompt: acceptedText,
+          question, durationMs: Date.now() - started });
+        await writeFile(`${resolve(args.lastMessage)}.events.jsonl`, events.map((event) => JSON.stringify(event)).join("\n") + "\n", "utf8");
+        return { code: 0, signal: null, stdout: "", sessionId, stderr: output, outcome: "awaiting-user" };
+      }
       finalText = [...events].reverse().find((event) => event.type === "assistant/message" && event.seq > message.seq && event.seq < end.seq)
         ?.data?.message?.content?.filter((block) => block.type === "text").map((block) => block.text).join("") ?? "";
       reason = end.data?.reason;
@@ -861,7 +879,8 @@ async function readCompleteHistory(baseUrl, sessionId, browserCookie) {
   return [...found.values()].sort((a, b) => a.seq - b.seq);
 }
 
-async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, browserCookie, afterSeq, requestId) {
+async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, browserCookie, afterSeq, requestId, captureUserQuestion = false) {
+  let pendingQuestionSeq;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`dsh web exited during the turn (${child.exitCode})\n${output()}`);
     const history = await readCompleteHistory(baseUrl, sessionId, browserCookie);
@@ -880,6 +899,23 @@ async function waitForTurnEnd(baseUrl, sessionId, child, output, deadline, brows
       const end = history.find((event) => event.type === "turn/end" && event.data?.turn === turn && event.seq > message.seq);
       if (end && (!stepEnd || stepEnd.seq >= end.seq)) throw new Error("native turn ended without closing the accepted message step");
       if (end) return { events: history.filter((event) => event.seq >= start.seq && event.seq <= end.seq), message, start, end };
+      if (captureUserQuestion) {
+        const pending = history.filter((event) => event.type === "tool/call" && event.seq > message.seq
+          && event.data?.turn === turn && !history.some((result) => result.type === "tool/result"
+            && result.seq > event.seq && result.data?.turn === turn
+            && result.data?.message?.source?.callId === event.data?.callId));
+        const call = pending.length === 1 && pending[0].data?.name === "ask_user_question" ? pending[0] : undefined;
+        let args;
+        try { args = typeof call?.data?.arguments === "string" ? JSON.parse(call.data.arguments) : call?.data?.arguments; } catch { /* malformed arguments are not a question boundary */ }
+        const valid = Array.isArray(args?.questions) && args.questions.length > 0
+          && args.questions.every((question) => typeof question?.id === "string" && question.id.trim()
+            && typeof question.question === "string" && question.question.trim());
+        if (valid && pendingQuestionSeq === call.seq) {
+          return { events: history, message, start,
+            question: { callSeq: call.seq, callId: call.data.callId, questions: args.questions } };
+        }
+        pendingQuestionSeq = valid ? call.seq : undefined;
+      }
     }
     await delay(100);
   }

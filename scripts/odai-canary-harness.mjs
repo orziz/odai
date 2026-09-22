@@ -3538,10 +3538,30 @@ function assertJudgeTimeoutRecoveryPolicy() {
   }
 }
 
-function conversationEvidence(workdir, caseId) {
+export function conversationEvidence(workdir, caseId) {
   const receipt = path.join(workdir, "last_message.txt.turns.json");
   if (!existsSync(receipt)) return "";
   const report = JSON.parse(readText(receipt));
+  if (report.outcome === "awaiting-user") {
+    const turn = report.turns?.[0];
+    const eventsPath = path.join(workdir, "last_message.txt.events.jsonl");
+    const events = readText(eventsPath).trim().split("\n").map((line) => JSON.parse(line));
+    const message = events.find((event) => event.seq === turn?.messageSeq && event.type === "user/message"
+      && event.data?.source?.rpcId === turn.requestId);
+    const call = events.find((event) => event.seq === turn?.question?.callSeq && event.type === "tool/call"
+      && event.data?.name === "ask_user_question" && event.data?.turn === turn.turn
+      && event.data?.callId === turn.question.callId);
+    const args = typeof call?.data?.arguments === "string" ? JSON.parse(call.data.arguments) : call?.data?.arguments;
+    if (report.schemaVersion !== 1 || report.completed !== false || report.protocol || report.turns.length !== 1
+      || turn.endSeq !== null || !message || !call || call.seq <= message.seq
+      || !Array.isArray(args?.questions) || !args.questions.length
+      || JSON.stringify(args.questions) !== JSON.stringify(turn.question.questions)
+      || events.some((event) => event.seq > call.seq && event.data?.turn === turn.turn
+        && (event.type === "turn/end" || (event.type === "tool/result" && event.data?.message?.source?.callId === call.data.callId)))) {
+      throw new Error("unanswered question receipt does not match its native snapshot");
+    }
+    return `\nUnanswered user-question boundary (full tool payload):\n${JSON.stringify(turn, null, 2)}\nThe evaluator stopped at this pending request without answering it; no native turn completion or subsequent implementation is claimed. Inspect ${eventsPath} and the raw transcript for preceding facts and actions. Score the handoff under this case's acceptance: a necessary, evidence-backed decision request may be complete, but needless confirmation or merely pushing the work back to the user is not. Do not infer a user's answer.\n`;
+  }
   if (!report.protocol) return "";
   if (report.schemaVersion !== 1 || !report.completed || report.protocol.caseId !== caseId
     || !Array.isArray(report.turns) || report.turns.length !== report.protocol.turns.length) {
@@ -4531,9 +4551,11 @@ function main() {
   return 0;
 }
 
-try {
-  process.exitCode = main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    process.exitCode = main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

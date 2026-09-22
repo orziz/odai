@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { observeProviderOutputCeiling } from "./dsh-output-budget-observation.mjs";
+import { conversationEvidence } from "./odai-canary-harness.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -385,6 +386,31 @@ export function readRoutingStore(path) {
       model: "gpt-5.6-luna",
       permissionMode: "danger-full-access",
     });
+    const questionOptions = { root, sourceHome, isolationHome, workdir, promptFile,
+      surface: "plain", routingMode: "off", dshBin: dshCommand, preflight: false,
+      transport: "web", controllerEmbedsSkill: false, extraArgs: ["--capture-user-question"] };
+    await runSurface({ ...questionOptions, questionMode: "pending" });
+    const questionReport = JSON.parse(await readFile(resolve(root, "plain-web.json.turns.json"), "utf8"));
+    assert.equal(questionReport.completed, false);
+    assert.equal(questionReport.outcome, "awaiting-user");
+    assert.equal(questionReport.turns[0].endSeq, null);
+    assert.equal(questionReport.turns[0].question.questions[0].question, "Which bounded next step?");
+    await copyFile(resolve(root, "plain-web.json.turns.json"), resolve(root, "last_message.txt.turns.json"));
+    await copyFile(resolve(root, "plain-web.json.events.jsonl"), resolve(root, "last_message.txt.events.jsonl"));
+    assert.match(conversationEvidence(root, 4), /Keep production unchanged while verifying idempotency/u);
+    questionReport.turns[0].question.questions[0].question = "Invented question";
+    await writeFile(resolve(root, "last_message.txt.turns.json"), JSON.stringify(questionReport));
+    assert.throws(() => conversationEvidence(root, 4), /does not match its native snapshot/u);
+    for (const questionMode of ["resolved", "malformed"]) {
+      await runSurface({ ...questionOptions, questionMode });
+      const completed = JSON.parse(await readFile(resolve(root, "plain-web.json.turns.json"), "utf8"));
+      assert.equal(completed.completed, true);
+      assert.equal(completed.outcome, undefined, "answered or failed tool calls are not pending questions");
+    }
+    await assert.rejects(() => runSurface({ ...questionOptions, questionMode: "pending",
+      extraArgs: ["--timeout", "1"] }), /timed out/u);
+    assert.equal(JSON.parse(await readFile(resolve(root, "plain-web.json.turns.json"), "utf8")).completed, false);
+
     const turnsFile = resolve(root, "conversation.json");
     await writeFile(turnsFile, JSON.stringify({ schemaVersion: 1, name: "test-continuation", caseId: 5,
       acceptance: ["Retain real messages and state across restart"],
@@ -491,6 +517,7 @@ async function runSurface(options) {
       ODAI_CANARY_SKILL_MODE: options.skillMode ?? "on",
       ODAI_TEST_UNCLAIMED_MESSAGE: options.unclaimedMessage ? "1" : "",
       ODAI_TEST_HISTORY_STALL: options.historyStall ? "1" : "",
+      ODAI_TEST_QUESTION_MODE: options.questionMode ?? "",
     },
   });
   if (options.input !== undefined) execution.child.stdin.end(options.input);
