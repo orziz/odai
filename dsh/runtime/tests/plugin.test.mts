@@ -1295,8 +1295,9 @@ test("persisted handbacks join their native task without replacing tool verifica
   const packet = buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored });
   assert.equal(packet.entries.filter((entry) => entry.kinds.includes("planning")).length, 2);
   assert.equal(packet.coverage.testCount, 0);
-  assert.equal(packet.coverage.currentEvidence, false);
-  assert.equal(packet.sufficient, false);
+  assert.equal(packet.coverage.checkCount, 0);
+  assert.equal(packet.coverage.diffCount, 0);
+  assert.equal(packet.sufficient, true, "an authenticated task can be reviewed before verification exists");
   nativeEvents.push({ type: "user/message", seq: 2, data: userMessage("另一个任务", "other-task") });
   assert.equal(buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored }).entries.filter((entry) => entry.kinds.includes("planning")).length, 0);
   assert.equal(buildRoleContextPacket(agent, "reviewer", "review", { evidenceEvents: stored, taskMessageId: "handback-task" }).entries.filter((entry) => entry.kinds.includes("planning")).length, 2);
@@ -1311,13 +1312,13 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
   writeFileSync(boundEntry, readFileSync(boundEntry, "utf8").replace("## 精神内核\n", "## 精神内核\n\nPARENT_SNAPSHOT_CORE\n"));
   const roleBundle = loadSkillBundle(boundEntry);
   apply(ctx, { skillPath, routing: { roles: { reviewer: route, researcher: route } } });
-  for (const role of ["reviewer", "researcher"] as const) {
+  for (const [role, withSnapshot] of [["reviewer", true], ["reviewer", false], ["researcher", false]] as const) {
     const parent: DshAgent = { session: { header: { id: `managed-parent-${role}` }, snapshotEvents: () => [], append() {} } };
     let child: DshAgent | undefined;
     const reviewEvidence = createReviewEvidenceSnapshot([{ index: 1, source: "tool", kinds: ["tool"], label: "captured source", text: "complete source" }]);
     const outcome = await runRoutedRole({
       provider: "spawn", decision: { role }, roleContract: `${roleBundle.roleContracts[role]}\nSUPPLIED_OWNER`, taskText: "bounded verified evidence", agent: parent,
-      signal: new AbortController().signal, roleRoute: route, roleBundle, reviewEvidence,
+      signal: new AbortController().signal, roleRoute: route, roleBundle, ...(withSnapshot ? { reviewEvidence } : {}),
       subagents: { async start(_provider, request) {
         const label = String(request.label);
         const makeChild = (parentId: string, id: string): DshAgent => ({ session: {
@@ -1331,16 +1332,29 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
         assert.equal(isManagedRoleChild(makeChild(String(parent.session.header.id), "copied-label")), false);
         const requested = await ctx.captured.handlers.get("agent/request")({ agent: child, turn: 1, step: 1 }, async () => ({ provider: "openai", model: "base" }));
         assert.equal(requested.model, route.model);
-        const assembly = { sections: [...ctx.captured.sections], tools: ctx.captured.tools.map(({ name }: TestToolSchema) => ({ name })) };
+        const assembly = {
+          sections: [...ctx.captured.sections],
+          tools: [...ctx.captured.tools.map(({ name }: TestToolSchema) => ({ name })),
+            ...["read", "glob", "grep", "bash", "write", "subagent"].map((name) => ({ name }))],
+        };
         const assembled = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent: child }, async () => assembly);
-        assert.deepEqual(Array.from(assembled.tools, (tool: TestToolSchema) => tool.name), role === "reviewer" ? ["odai_review_evidence"] : []);
+        assert.deepEqual(Array.from(assembled.tools, (tool: TestToolSchema) => tool.name).sort(),
+          [...(role === "reviewer" && withSnapshot ? ["odai_review_evidence"] : []), "read", "glob", "grep"].sort());
         if (role === "reviewer") {
-          for (const name of ["read", "bash", "write", "web_fetch", "subagent"]) assert.match(String(ctx.captured.guards[0]({ agent: child, name })), /ODAI_REVIEW_EVIDENCE_ONLY/);
-          assert.equal(ctx.captured.guards[0]({ agent: child, name: "odai_review_evidence" }), undefined);
+          for (const name of ["read", "glob", "grep"]) assert.equal(ctx.captured.guards[0]({ agent: child, name }), undefined, name);
+          for (const name of ["bash", "pwsh", "write", "edit", "web_fetch", "subagent"]) {
+            assert.match(String(ctx.captured.guards[0]({ agent: child, name })), /ODAI_REVIEW_READ_ONLY/, name);
+          }
           const reader = ctx.captured.tools.find((tool: TestTool) => tool.name === "odai_review_evidence");
           assert.ok(reader);
-          const page = await reader.execute({ digest: reviewEvidence.digest, action: "read", id: "tool-event-1" }, { agent: child, callId: "page", name: reader.name });
-          assert.equal(page.text, "complete source");
+          if (withSnapshot) {
+            assert.equal(ctx.captured.guards[0]({ agent: child, name: "odai_review_evidence" }), undefined);
+            const page = await reader.execute({ digest: reviewEvidence.digest, action: "read", id: "tool-event-1" }, { agent: child, callId: "page", name: reader.name });
+            assert.equal(page.text, "complete source");
+          } else {
+            await assert.rejects(reader.execute({ digest: reviewEvidence.digest, action: "read", id: "tool-event-1" },
+              { agent: child, callId: "missing-page", name: reader.name }), /active managed reviewer/);
+          }
         }
         assert.equal(assembled.sections.some((section: TestPromptSection) => section.name === "odai:child-responsibility-contract"), false);
         assert.ok(JSON.stringify(request.prompt).includes("SUPPLIED_OWNER"));
@@ -2694,10 +2708,10 @@ test("global and preset runtime instances deduplicate durable evidence and routi
   const result = await globalRoute(payload, () => presetRoute(payload, base));
 
   assert.equal(events.filter((event) => event.type === "odai/route-decided").length, 1);
-  assert.equal(events.filter((event) => event.type === "odai/route-protection").length, 1);
+  assert.equal(events.filter((event) => event.type === "odai/route-protection").length, 0);
   assert.equal(result.messages.filter((message: DshMessage) => message.source?.plugin === "odai-dsh-runtime").length, 1);
-  assert.match(globalCtx.captured.guards[0]({ callId: "global-write", name: "write", agent }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
-  assert.match(presetCtx.captured.guards[0]({ callId: "preset-write", name: "write", agent }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.equal(globalCtx.captured.guards[0]({ callId: "global-write", name: "write", agent }), undefined);
+  assert.equal(presetCtx.captured.guards[0]({ callId: "preset-write", name: "write", agent }), undefined);
 
   const execution = {
     callId: "shared-call",
@@ -2850,8 +2864,8 @@ test("coexisting runtimes leave request failures and disposal recovery to the sc
       ));
       assert.equal(result.kind, outcome === "provider" ? "retry" : "failed");
       if (outcome === "provider") {
-        assert.ok(events.some((event) => event.type === "odai/route-protection" && event.data.source === "route-request-failure"), JSON.stringify(events.filter((event) => ["odai/route-protection", "odai/route-fallback", "odai/responsibility-scope-stopped"].includes(event.type))));
-        for (const [index, ctx] of contexts.entries()) assert.match(ctx.captured.guards[0]({ agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/, `runtime=${index}, reversed=${reversed}`);
+        assert.equal(events.some((event) => event.type === "odai/route-protection" && event.data.source === "route-request-failure"), false);
+        for (const [index, ctx] of contexts.entries()) assert.equal(ctx.captured.guards[0]({ agent, name: "write" }), undefined, `runtime=${index}, reversed=${reversed}`);
       }
       for (const ctx of contexts) ctx.captured.handlers.get("session/event")(agent.session, { type: "turn/end", data: { turn: 1, reason: { kind: "error" } } });
       assert.equal(events.some((event) => event.type === "odai/route-applied" && event.data.stopReason === "no-effective-request"), false);
@@ -3030,14 +3044,13 @@ test("an invalid user routing store keeps governance loaded and repairs through 
   }));
 
   const missing = findEvent(events, (event) => event.type === "odai/route-config-missing");
-  const protection = findEvent(events, (event) => event.type === "odai/route-protection");
   assert.equal(missing.data.status, "invalid");
   assert.ok(typeof missing.data.error === "string");
   assert.match(missing.data.error, /cannot read odai routing config/u);
-  assert.equal(protection.data.source, "route-config-invalid");
-  assert.match(messageText(result.messages[1]), /saved configuration is invalid/u);
-  assert.match(messageText(result.messages[1]), /repair and persist/u);
-  assert.match(ctx.captured.guards[0]({ callId: "invalid-config-write", agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.equal(events.some((event) => event.type === "odai/route-protection"), false);
+  assert.match(messageText(result.messages[1]), /routing capability is invalid/u);
+  assert.match(messageText(result.messages[1]), /Continue authorized work/u);
+  assert.equal(ctx.captured.guards[0]({ callId: "invalid-config-write", agent, name: "write" }), undefined);
 
   const tool = ctx.captured.tools.find((candidate: TestTool) => candidate.name === "odai_routing_config");
   const repaired = await tool.execute({
@@ -3801,7 +3814,7 @@ test("a positionless late header cannot erase durable base-route restoration", a
   const mismatch = findEvent(events, (event) => event.type === "odai/responsibility-scope-restored").data;
   assert.equal(mismatch.scopeId, "scope-late-header");
   assert.equal(mismatch.status, "mismatch");
-  assert.match(ctx.captured.guards[0]({ callId: "write-1", agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.equal(ctx.captured.guards[0]({ callId: "write-1", agent, name: "write" }), undefined);
 
   await ctx.captured.handlers.get("agent/pre-step")(
     { agent, turn: 3, step: 1, signal },
@@ -3979,7 +3992,7 @@ test("a provider failure after route preflight retries the original controller o
   assert.equal(events.filter((event) => event.type === "odai/route-fallback").length, 1);
 });
 
-test("reviewer starts a child only from a complete hash-addressed evidence packet", async () => {
+test("reviewer starts from an authenticated task and investigates available or failed execution evidence", async () => {
   let starts = 0;
   let startRequest: TestSubagentRequest | undefined;
   const ctx = fakeContext({
@@ -4056,7 +4069,6 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.match(blockText(startRequest.prompt[0]), /Frozen requirement decisions/u);
   assert.match(blockText(startRequest.prompt[0]), /R-default/u);
   assert.match(blockText(startRequest.prompt[0]), /Preserve default behavior while fixing routing/u);
-  assert.match(blockText(startRequest.prompt[0]), /source binding does not prove the normalized meaning or replacement semantics/u);
   assert.match(blockText(startRequest.prompt[0]), /Planner acceptance A1: reuse the canonical owner/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: planner-handback, planning/u);
   assert.match(blockText(startRequest.prompt[0]), /kinds: tool, diff/u);
@@ -4162,7 +4174,7 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
           localAgent: {
             session: childSession({ provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" }),
           },
-          result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "reviewed after evidence refresh" }] }),
+          result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "Source review can proceed; execution-dependent acceptance remains unjudged because no test or check receipt was supplied." }] }),
           async dispose() {},
         };
       },
@@ -4189,39 +4201,35 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
   );
   assert.equal(fallbackResolutions, 0);
-  assert.match(messageText(fallback.messages[1]), /Remain on the current controller route/u);
-  assert.match(messageText(fallback.messages[1]), /only to gather or fix that evidence/u);
-  assert.match(messageText(fallback.messages[1]), /not independent acceptance/u);
+  assert.equal(fallbackStarts, 1);
+  assert.match(messageText(fallback.messages[1]), /execution-dependent acceptance remains unjudged/u);
   assert.equal(fallbackEvents.some((event) => event.type === "odai/route-upgrade"), false);
   assert.equal(fallbackEvents.some((event) => event.type === "odai/route-protection"), false);
-  assert.equal(fallbackEvents.some((event) => event.type === "odai/route-applied"), false);
   const fallbackDecision = findEvent(fallbackEvents, (event) => event.type === "odai/route-decided").data;
-  assert.equal(fallbackDecision.action, "direct");
-  assert.equal(fallbackDecision.targetRole, "reviewer");
-  assert.ok((fallbackDecision.signals ?? []).includes("controller-local-review"));
+  assert.equal(fallbackDecision.action, "delegate");
+  assert.equal(fallbackDecision.role, "reviewer");
+  assert.equal((fallbackDecision.signals ?? []).includes("controller-local-review"), false);
   const fallbackContext = findEvent(fallbackEvents, (event) => event.type === "odai/route-context").data;
   assert.deepEqual(fallbackContext.taskBoundary, {
-    source: "latest",
-    startEventIndex: 0,
-    priorEventCount: 0,
-    messageId: "user-1",
+    source: "latest", startEventIndex: 0, priorEventCount: 0, messageId: "user-1",
   });
+  assert.equal(fallbackContext.sufficient, true);
+  assert.equal(fallbackContext.diffCount, 0);
+  assert.equal(fallbackContext.testCount, 0);
+  assert.equal(fallbackContext.checkCount, 0);
   const fallbackResult = findEvent(fallbackEvents, (event) => event.type === "odai/route-result").data;
-  assert.equal(fallbackResult.stopReason, "evidence-packet-missing");
-  assert.equal(fallbackResult.independent, false);
-  assert.equal(fallbackEvents.some((event) => event.type === "odai/responsibility-gap-consumed"), false);
-  const deferredGap = findEvent(fallbackEvents, (event) => event.type === "odai/responsibility-gap-deferred").data;
-  assert.equal(deferredGap.responsibility, "reviewer");
-  assert.match(String(deferredGap.evidenceDigest), /^[a-f0-9]{64}$/u);
-  assert.match(messageText(fallback.messages[1]), /remains pending/u);
-  assert.match(messageText(fallback.messages[1]), /Evidence diagnostics/u);
+  assert.equal(fallbackResult.status, "completed", "review ran; this is not an acceptance verdict");
+  assert.equal(fallbackResult.stopReason, "completed");
+  assert.equal(fallbackResult.routeReceiptStatus, "applied");
+  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-consumed").length, 1);
+  assert.equal(fallbackEvents.some((event) => event.type === "odai/responsibility-gap-deferred"), false);
   const repeatedFallback = await fallbackCtx.captured.handlers.get("agent/pre-step")(
     { agent: fallbackAgent, turn: 1, step: 2, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
   );
   assert.equal(repeatedFallback.messages.length, 1);
-  assert.equal(fallbackStarts, 0);
-  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 1);
+  assert.equal(fallbackStarts, 1, "a consumed review must not restart without another scoped gap");
+  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 0);
   fallbackEvents.push(
     { type: "turn/start", seq: 300, data: { turn: 2 } },
     { type: "user/message", seq: 301, data: userMessage("继续") },
@@ -4231,8 +4239,8 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     async () => ({ kind: "enter", messages: [userMessage("继续")] }),
   );
   assert.equal(carriedFallback.messages.length, 1);
-  assert.equal(fallbackStarts, 0);
-  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 1);
+  assert.equal(fallbackStarts, 1, "a consumed review must not restart without another scoped gap");
+  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 0);
   fallbackEvents.push(
     { type: "turn/start", seq: 310, data: { turn: 3 } },
     { type: "user/message", seq: 311, data: userMessage("继续；A1 还必须覆盖回滚") },
@@ -4242,8 +4250,8 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
     async () => ({ kind: "enter", messages: [userMessage("继续；A1 还必须覆盖回滚")] }),
   );
   assert.equal(clarifiedFallback.messages.length, 1);
-  assert.equal(fallbackStarts, 0);
-  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 1);
+  assert.equal(fallbackStarts, 1, "a consumed review must not restart without another scoped gap");
+  assert.equal(fallbackEvents.filter((event) => event.type === "odai/responsibility-gap-deferred").length, 0);
   fallbackEvents.push(
     ...nativeToolEvents("diff-after-deferral", "git diff -- dsh/runtime/src/router.mts", "diff --git a/router.mjs b/router.mjs\n+bounded change", { callSeq: 201 }),
     ...nativeToolEvents("test-after-deferral", "node --test dsh/runtime/tests/router.test.mts", "tests 14 pass 14 fail 0 exit code: 0", { callSeq: 211 }),
@@ -4322,7 +4330,17 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   assert.equal(executeStarts, 0);
 
   let failedStarts = 0;
-  const failedCtx = fakeContext({ subagents: { async start() { failedStarts += 1; throw new Error("failed tests must block reviewer children"); } } });
+  const failedCtx = fakeContext({ subagents: { async start(_provider: string, request: UnknownRecord) {
+    failedStarts += 1;
+    const prompt = blockText(asTestSubagentRequest(request).prompt[0]);
+    assert.match(prompt, /kinds: test-failed/u);
+    assert.match(prompt, /tests 14 pass 13 fail 1 exit code: 1/u);
+    return {
+      localAgent: { session: childSession({ provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" }) },
+      result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "The failing test is reviewable; A1 has not passed." }] }),
+      async dispose() {},
+    };
+  } } });
   apply(failedCtx, {
     skillPath,
     routing: { roles: { reviewer: { provider: "openai", model: "gpt-5.6-terra", reasoningEffort: "max" } } },
@@ -4336,16 +4354,20 @@ test("reviewer starts a child only from a complete hash-addressed evidence packe
   ];
   const failedAgent = { session: { header: {}, events: failedEvents, snapshotEvents: () => failedEvents, append(type: string, data: RuntimeEventData) { failedEvents.push({ type, data }); } } };
   seedCurrentEvidence(failedCtx, failedAgent, failedEvents);
-  await failedCtx.captured.handlers.get("agent/pre-step")(
+  const failedReview = await failedCtx.captured.handlers.get("agent/pre-step")(
     { agent: failedAgent, turn: 1, step: 1, signal: new AbortController().signal },
     async () => ({ kind: "enter", messages: [userMessage("请独立审查这次实现")] }),
   );
-  assert.equal(failedStarts, 0);
+  assert.equal(failedStarts, 1);
   const failedContext = findEvent(failedEvents, (event) => event.type === "odai/route-context").data;
-  assert.equal(failedContext.sufficient, false);
-  assert.equal(failedContext.mode, "controller-local");
+  assert.equal(failedContext.sufficient, true);
+  assert.equal(failedContext.mode, "bounded-packet");
+  assert.equal(failedContext.testCount, 0);
   assert.equal(failedEvents.some((event) => event.type === "odai/route-upgrade"), false);
-  assert.equal(findEvent(failedEvents, (event) => event.type === "odai/route-result").data.independent, false);
+  const failedReceipt = findEvent(failedEvents, (event) => event.type === "odai/route-result").data;
+  assert.equal(failedReceipt.status, "completed");
+  assert.equal(failedReceipt.routeReceiptStatus, "applied");
+  assert.match(messageText(failedReview.messages[1]), /A1 has not passed/u);
 });
 
 test("a bound gap waits for native admission and cannot cross a same-turn task revision", async () => {
@@ -4433,12 +4455,13 @@ test("a revised user task cannot resume a deferred reviewer with a stale require
       append(type: string, data: RuntimeEventData) { events.push({ type, data }); },
     },
   };
+  // Replay prior-runtime deferral without reproducing the retired test-success gate.
+  events.push({ type: "odai/responsibility-gap-deferred", data: {
+    turn: 1, step: 1, responsibility: "reviewer", stateDigest: "c".repeat(64), reasonCode: "REVIEWER_EVIDENCE_PACKET_PENDING",
+  } });
+  const legacyEventCount = events.length;
+  const legacyEvents = JSON.stringify(events);
   seedCurrentEvidence(ctx, agent, events);
-  await ctx.captured.handlers.get("agent/pre-step")(
-    { agent, turn: 1, step: 1, signal: new AbortController().signal },
-    async () => ({ kind: "enter", messages: [original] }),
-  );
-  assert.equal(events.some((event) => event.type === "odai/responsibility-gap-deferred"), true);
 
   const correction = { ...userMessage("继续，但 alpha.5 不需要单独验证。"), id: "user-correction" };
   events.push(
@@ -4454,6 +4477,7 @@ test("a revised user task cannot resume a deferred reviewer with a stale require
     event.type === "odai/responsibility-gap-consumed"
     && event.data?.reason === "SUPERSEDED_BY_DIRECT_USER_TASK"
   )), true);
+  assert.equal(JSON.stringify(events.slice(0, legacyEventCount)), legacyEvents, "historical evidence must not be rewritten");
 });
 
 test("reviewer child accepts a current read-only check without relabeling it as a test", async () => {
@@ -4805,7 +4829,7 @@ test("a new authenticated task clears preserved interruption even when a plugin 
   assert.equal(events.some((event) => event.type === "odai/responsibility-interruption-resume-requested"), false);
 });
 
-test("same-turn route mismatch emits an actual receipt and fails closed before tools", async () => {
+test("same-turn route mismatch records failure without imposing whole-turn write protection", async () => {
   const ctx = fakeContext();
   apply(ctx, {
     skillPath,
@@ -4856,10 +4880,7 @@ test("same-turn route mismatch emits an actual receipt and fails closed before t
   assert.equal(receipt.fallbackUsed, true);
   assert.deepEqual(receipt.actualRoute, actualHeader.config);
   assert.match(requiredString(receipt.error), /same-turn provider mismatch/u);
-  assert.match(
-    ctx.captured.guards[0]({ callId: "mismatched-route-write", agent, name: "write" }),
-    /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u,
-  );
+  assert.equal(ctx.captured.guards[0]({ callId: "mismatched-route-write", agent, name: "write" }), undefined);
   const tool = ctx.captured.tools.find((candidate: TestTool) => candidate.name === "odai_routing_config");
   const shown = await tool.execute({ action: "show" }, { agent });
   assert.equal(shown.latestRoute.status, "mismatch");
@@ -5356,7 +5377,7 @@ test("invalid researcher output is discarded before the controller sees it", asy
   assert.match(requiredString(researchResult.data.error), /source\.path does not exist/u);
 });
 
-test("high-impact execute routing fails closed when the planner is unavailable", async () => {
+test("unavailable planner preserves unresolved high-impact evidence without locking the controller", async () => {
   const ctx = fakeContext({
     subagents: {
       async start() {
@@ -5395,23 +5416,17 @@ test("high-impact execute routing fails closed when the planner is unavailable",
     messages: [userMessage("checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。")],
   }));
 
-  assert.deepEqual(events.slice(0, 5).map((event) => event.type), [
-    "odai/route-decided",
-    "odai/responsibility-gap-consumed",
-    "odai/route-context",
-    "odai/route-result",
-    "odai/route-protection",
+  assert.deepEqual(events.map((event) => event.type), [
+    "odai/route-decided", "odai/responsibility-gap-consumed", "odai/route-context", "odai/route-result",
   ]);
   assert.equal(events[1].data.responsibility, "planner");
   assert.equal(events[2].data.mode, "bounded-packet");
   assert.equal(events[3].data.status, "fallback");
-  assert.equal(events[4].data.source, "route-failure");
-  assert.equal(events[4].data.failure, "provider unavailable");
-  assert.match(messageText(result.messages[1]), /High-impact fail-closed protection is active/u);
-  assert.doesNotMatch(messageText(result.messages[1]), /continue directly/u);
-
+  assert.match(messageText(result.messages[1]), /provider unavailable/u);
+  assert.match(messageText(result.messages[1]), /Continue authorized work as controller/u);
+  assert.match(messageText(result.messages[1]), /necessary high-impact protections/u);
   const guard = ctx.captured.guards[0];
-  assert.match(guard({ callId: "write-failed-route", agent, name: "write" }), /^ODAI_HIGH_IMPACT_ROUTE_BLOCKED:/u);
+  assert.equal(guard({ callId: "write-failed-route", agent, name: "write" }), undefined);
   assert.equal(guard({ callId: "read-failed-route", agent, name: "read" }), undefined);
 });
 
@@ -5454,7 +5469,7 @@ test("ordinary state-backed planner route failure still permits controller fallb
   }));
 
   assert.equal(events.some((event) => event.type === "odai/route-protection"), false);
-  assert.match(messageText(result.messages[1]), /continue directly as controller/u);
+  assert.match(messageText(result.messages[1]), /Continue authorized work as controller/u);
   assert.equal(ctx.captured.guards[0]({ callId: "write-normal-fallback", agent, name: "write" }), undefined);
 });
 

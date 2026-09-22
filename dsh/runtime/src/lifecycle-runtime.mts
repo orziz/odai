@@ -8,7 +8,6 @@ import {
   renderMissingRouteConfigNotice,
   renderRouteFailureNotice,
   renderRouteNotice,
-  requiresFailClosedProtection,
 } from "./router.mjs";
 import type { RouteDecision } from "./router.mjs";
 import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
@@ -319,9 +318,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           throw error;
         }
         stopResponsibilityScope(agent, "route-validation-failed", { step });
-        if (scope?.decision && requiresFailClosedProtection(scope.decision)) {
-          protectController(agent, turn, step, scope.decision, "route-validation", validation.failure.message);
-        }
         roleRoute = undefined;
         routeMode = "same-turn";
         scopedResponsibilityMaxTokens = undefined;
@@ -423,9 +419,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     if (childRole) return next();
     if (agent?.session) pendingRouteReceipts.delete(agent.session);
     stopResponsibilityScope(agent, classified.kind === "cancelled" ? "request-cancelled" : "route-request-failed", { step });
-    if (scope?.decision && requiresFailClosedProtection(scope.decision)) {
-      protectController(agent, turn, step, scope.decision, "route-request-failure", classified.message);
-    }
     if (classified.kind === "cancelled") return next();
 
     let attempts = routeFallbackAttempts.get(agent);
@@ -640,17 +633,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           ...(actualRoute ? { actualRoute } : {}),
           ...(mismatch ? { error: mismatch } : {}),
         });
-        if (mismatch) {
-          protectController(
-            pendingRestoration.agent,
-            pendingRestoration.turn,
-            pendingRestoration.step,
-            { reasonCode: "RESPONSIBILITY_BASE_ROUTE_RESTORATION_MISMATCH" },
-            "scope-restoration-mismatch",
-            mismatch,
-            pendingRestoration.scopeId,
-          );
-        }
         pendingScopeRestorations.delete(session);
       }
     }
@@ -716,16 +698,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       });
     }
     pendingRouteReceipts.delete(session);
-    if (mismatch && pending.routeMode === "same-turn") {
-      protectController(
-        pending.agent,
-        pending.turn,
-        pending.step,
-        { reasonCode: `${pending.responsibility.toUpperCase()}_ROUTE_MISMATCH` },
-        "route-mismatch",
-        mismatch,
-      );
-    }
   });
 
   ctx.on("agent/turn-stopping", ({ agent, turn }: AgentTurnEvent) => {
@@ -1151,12 +1123,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             ...routedDownstream.messages,
             pluginMessage(
               [
-                `An independent reviewer was not started because the bounded packet is incomplete (${JSON.stringify(localReviewerCoverage)}).`,
+                `An independent reviewer was not started because the bounded packet lacks an authenticated, identifiable review task (${JSON.stringify(localReviewerCoverage)}).`,
                 `Evidence diagnostics: ${JSON.stringify(roleContext.diagnostics)}.`,
                 responsibilityGap?.responsibility === "reviewer"
-                  ? "The recorded reviewer gap remains pending and will be reassessed once new acceptance, write, diff, test, check, failure, or host-evidence diagnostics change the evidence state; do not resubmit it unchanged."
-                  : "Gather project-available acceptance, diff, tests or read-only checks, and matching native tool evidence before submitting a reviewer gap.",
-                "Remain on the current controller route only to gather or fix that evidence. A controller-local read-only check is not independent acceptance; do not claim reviewer approval or release on its basis.",
+                  ? "The recorded reviewer gap remains pending until its task binding is established; do not repeatedly resubmit it unchanged."
+                  : "Establish an authenticated user task and a clear delegated review scope before submitting a reviewer gap.",
+                "Independent review remains incomplete. Continue authorized work that does not depend on it and repair the task binding from available sources. A controller-local check is not independent acceptance. Missing or failed tests do not prevent a reviewer from investigating them.",
               ].join("\n"),
               "odai reviewer evidence is incomplete; controller continues locally",
             ),
@@ -1165,9 +1137,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       }
 
       if (config.routing.mode === "observe") {
-        if (requiresFailClosedProtection(decision)) {
-          protectController(agent, turn, step, decision, "observe");
-        }
         return {
           kind: "enter",
           messages: [
@@ -1193,15 +1162,6 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           status: invalidConfig ? "invalid" : "unconfigured",
           ...(invalidConfig ? { error: roleState.detail } : {}),
         });
-        if (requiresFailClosedProtection(decision)) {
-          protectController(
-            agent,
-            turn,
-            step,
-            decision,
-            invalidConfig ? "route-config-invalid" : "route-config-missing",
-          );
-        }
         if (routeRole === "frontend") return routedDownstream;
         return {
           kind: "enter",
@@ -1327,12 +1287,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             ...routedDownstream.messages,
             pluginMessage(
               [
-                `odai reviewer child was not started because the bounded packet is incomplete (${JSON.stringify(roleContext.coverage)}).`,
+                `odai reviewer child was not started because the bounded packet lacks an authenticated, identifiable review task (${JSON.stringify(roleContext.coverage)}).`,
                 `Evidence diagnostics: ${JSON.stringify(roleContext.diagnostics)}.`,
                 responsibilityGap?.responsibility === "reviewer"
-                  ? "The recorded reviewer gap remains pending for reassessment after the evidence state changes; do not resubmit it unchanged."
-                  : "Gather acceptance, an actual patch diff, successful tests or read-only checks, and matching native tool evidence before submitting a reviewer gap.",
-                "Do not claim independent acceptance.",
+                  ? "The recorded reviewer gap remains pending until its task binding is established; do not repeatedly resubmit it unchanged."
+                  : "Establish an authenticated user task and a clear delegated review scope before submitting a reviewer gap.",
+                "Independent review remains incomplete. Continue other authorized work that does not depend on it. Do not claim independent acceptance.",
               ].join("\n"),
               "odai reviewer evidence packet is incomplete",
             ),
@@ -1372,7 +1332,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           ...(routeRole === "reviewer" ? { independent: false } : {}),
         });
         const contextBoundary = routeRole === "reviewer"
-          ? `The bounded packet is not independently reviewable (${JSON.stringify(roleContext.coverage)}). Perform a same-turn read-only check and do not claim independent acceptance.`
+          ? "This is a same-turn read-only check. It does not establish independent acceptance, regardless of the packet's evidence coverage."
           : "Retain the current controller conversation and workspace context; do not reconstruct it through a child handoff.";
         return {
           kind: "enter",
@@ -1452,18 +1412,13 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       }
 
       const failure = result.error ?? result.stopReason;
-      if (requiresFailClosedProtection(delegationDecision)) {
-        protectController(agent, turn, step, delegationDecision, "route-failure", failure);
-      }
       return {
         kind: "enter",
         messages: [
           ...routedDownstream.messages,
           pluginMessage(
             renderRouteFailureNotice(delegationDecision, failure),
-            requiresFailClosedProtection(delegationDecision)
-              ? `odai blocked high-impact ${routeRole} fallback`
-              : `odai fell back from ${routeRole} route`,
+            `odai ${routeRole} route unavailable; controller retains ownership`,
           ),
         ],
       };

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 5,
   "name": "odai",
-  "skillVersion": "0.6.0",
+  "skillVersion": "0.6.1",
   "runtimeContract": 8,
   "referenceFiles": {
     "dao": "references/dao.md",

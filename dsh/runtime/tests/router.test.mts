@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   OUTPUT_LIMIT_CONTINUATION_REASON,
-  classifyImplementationAuthorization,
   classifyPendingReviewerText,
   classifyResponsibilityInterruptionText,
   decideResearchPrefetch,
@@ -11,12 +10,10 @@ import {
   extractLatestUserText,
   extractRoutingText,
   hasExplicitRequestRevision,
-  isExecutionContinuation,
   renderDelegationPrompt,
   renderMissingRouteConfigNotice,
   renderRouteFailureNotice,
   renderRouteNotice,
-  requiresFailClosedProtection,
 } from "../build/router.mjs";
 import type { Responsibility, ResponsibilityGapProposal } from "../build/responsibility-gap.mjs";
 import type { DshEvent, DshMessage } from "../build/runtime-types.mjs";
@@ -34,52 +31,6 @@ function gap(
     ...overrides,
   };
 }
-
-test("implementation authorization distinguishes delivery, plan-only, and unknown requests", () => {
-  assert.equal(classifyImplementationAuthorization("把这个修复完成并跑测试").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("把按钮文案改清楚并运行现有测试").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("把这些问题一起校验并处理了").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Please implement and verify the fix").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("只做规划，不要改文件").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("只做代码审查，不要改文件").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review only; do not implement or make changes").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review the code, then implement the required fixes").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Review the code and implement the necessary fix").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Review the code and update me on the findings").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review the code and update the team on the findings").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review the code and update stakeholders on the findings").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review the code and update management about the findings").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review the existing fix and update stakeholders on the findings").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Can you update customers on the findings?").status, "unknown");
-  assert.equal(classifyImplementationAuthorization("Review the code, implement the fix, and update stakeholders on the findings").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("审查代码并更新一下进展").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Review only the failing test, then implement the fix").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("只审查失败的测试，然后修复问题").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Do not modify the existing tests; implement the production fix").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Do not modify the lockfile; update the package manifest").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("不要修改测试，只修复生产代码").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Do not modify tests; do not implement the fix").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Do not modify tests; no need to implement the fix").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("不要修改测试，同时无需执行修复").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Do not modify anything; implement the fix").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("只帮我分析一下这次更新的影响").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("帮我分析一下这次更新的影响").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("just analyze the update impact").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Analyze the update impact").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("列一下需要修改的地方").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("给我一份需要新增的接口清单").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("Explain what the fix would look like").status, "plan-only");
-  assert.equal(classifyImplementationAuthorization("列一下需要修改的地方，然后按清单修改代码").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("给我一份需要新增的接口清单，然后实现这些接口").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Explain what the fix would look like, then implement it").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("这次更新有什么变化？").status, "unknown");
-  assert.equal(classifyImplementationAuthorization("What changed in this update?").status, "unknown");
-  assert.equal(classifyImplementationAuthorization("Can you update me on the impact of this change?").status, "unknown");
-  assert.equal(classifyImplementationAuthorization("帮我更新这个依赖").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("Please update the dependency").status, "authorized");
-  assert.equal(classifyImplementationAuthorization("你做了吗？").status, "unknown");
-  assert.equal(classifyImplementationAuthorization("你觉得这个方向怎么样").status, "unknown");
-});
 
 test("output-limit interruption text only resumes on a pure continuation", () => {
   for (const text of ["继续", "请继续完成刚才的任务", "resume the interrupted work", "keep going"]) {
@@ -108,21 +59,6 @@ test("pending reviewer text distinguishes continuation, supersession, and dorman
   }
   for (const text of ["继续", "补充验收证据：目标测试已经通过"]) {
     assert.equal(hasExplicitRequestRevision(text), false, text);
-  }
-});
-
-test("execution continuation rejects target or scope revisions", () => {
-  for (const text of ["继续", "按上述计划执行", "continue with the previous plan", "go ahead with it", "go ahead with that change"]) {
-    assert.equal(isExecutionContinuation(text), true, text);
-  }
-  for (const text of [
-    "继续这个计划，但改成只处理文档",
-    "按上述计划执行，同时加上发布",
-    "continue with the plan, but change the scope",
-    "continue with the plan; change the target to documentation",
-    "go ahead with it and also remove the compatibility layer",
-  ]) {
-    assert.equal(isExecutionContinuation(text), false, text);
   }
 });
 
@@ -280,12 +216,10 @@ test("high-impact causal claims require evidence without inventing a capability 
     assert.equal(decision.action, "direct");
     assert.equal(decision.targetRole, undefined);
     assert.equal(decision.reasonCode, "HIGH_IMPACT_EVIDENCE_REQUIRED");
-    assert.equal(requiresFailClosedProtection(decision), false);
     assert.ok(decision.signals.includes("risk-present"));
     const supported = decideRoute({ text, proposal: gap("planner") });
     assert.equal(supported.targetRole, "planner");
     assert.equal(supported.reasonCode, "PLANNER_EVIDENCE_STATE_GAP");
-    assert.equal(requiresFailClosedProtection(supported), true);
   }
 });
 
@@ -295,84 +229,47 @@ test("quoted risk examples and evaluation requests do not trigger roles or prote
     const decision = decideRoute({ text });
     assert.equal(decision.action, "direct");
     assert.equal(decision.targetRole, undefined);
-    assert.equal(requiresFailClosedProtection(decision), false);
     assert.equal(decision.signals.includes("risk-present"), false);
   }
 });
 
-test("high-impact observe and route failure notices require a read-only decision path", () => {
+test("route availability notices preserve unresolved independence and action boundaries without whole-turn lockout", () => {
   const decision = decideRoute({
     text: "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
     proposal: gap("planner"),
   });
-  assert.equal(requiresFailClosedProtection(decision), true);
-
   const observe = renderRouteNotice(decision, "observe");
   assert.match(observe, /No independent role was run/u);
-  assert.match(observe, /concrete evidence-gathering steps and explicit decision criteria/u);
-  assert.match(observe, /do not implement, persist, or publish/u);
-  assert.match(observe, /Use read-only evidence only/u);
-  assert.match(observe, /unavailable environments, tools, owners, thresholds, and protections as missing conditions/u);
-
-  const upgrade = renderRouteNotice(decision, "auto", {
-    provider: "openai",
-    model: "gpt-5.6-sol",
-    reasoningEffort: "high",
-  });
+  assert.match(observe, /independence as incomplete/u);
+  assert.match(observe, /necessary high-impact protections/u);
+  assert.doesNotMatch(observe, /Use read-only evidence only|do not implement, persist, or publish/u);
+  const upgrade = renderRouteNotice(decision, "auto", { provider: "openai", model: "gpt-5.6-sol", reasoningEffort: "high" });
   assert.match(upgrade, /action: upgrade/u);
   assert.match(upgrade, /no child was started/u);
   assert.match(upgrade, /requested controller route: openai\/gpt-5\.6-sol \(reasoning: high, maxTokens: inherited from Controller policy\)/u);
-
   const failure = renderRouteFailureNotice(decision, "provider unavailable");
-  assert.match(failure, /High-impact fail-closed protection is active/u);
+  assert.match(failure, /no verified delegated result was obtained/u);
   assert.match(failure, /provider unavailable/u);
-  assert.doesNotMatch(failure, /continue directly/u);
-
-  const stateBackedHighImpact = decideRoute({
-    text: "这是生产发布，审批已经完成，按方案上线。",
-    proposal: gap("planner", { gap: "The release protection path is unresolved." }),
-  });
-  assert.equal(stateBackedHighImpact.reasonCode, "PLANNER_EVIDENCE_STATE_GAP");
-  assert.equal(requiresFailClosedProtection(stateBackedHighImpact), true);
-  assert.doesNotMatch(renderRouteFailureNotice(stateBackedHighImpact, "provider unavailable"), /continue directly/u);
-
-  const lexicalOnly = decideRoute({ text: "请独立规划一下架构方案" });
-  assert.equal(requiresFailClosedProtection(lexicalOnly), false);
-  assert.match(renderRouteFailureNotice(lexicalOnly, "provider unavailable"), /continue directly/u);
+  assert.match(failure, /Continue authorized work as controller/u);
+  assert.match(failure, /independence as incomplete/u);
+  assert.match(failure, /necessary high-impact protections/u);
+  assert.doesNotMatch(failure, /High-impact fail-closed protection is active|Use read-only evidence only/u);
 });
 
-test("every missing responsibility asks for a natural-language model choice", () => {
+test("missing responsibility mappings do not require configuration before unrelated authorized work", () => {
   for (const role of ["planner", "reviewer"] as const) {
-    const notice = renderMissingRouteConfigNotice({
-      role,
-      mode: "delegate",
-      action: "delegate",
-      reasonCode: `${role.toUpperCase()}_TEST_GAP`,
-      reason: "test responsibility mapping",
-      signals: [],
-    }, "auto");
-    assert.match(notice, new RegExp(`required responsibility: ${role}`, "u"));
-    assert.match(notice, /Ask them to name the provider, model, and optional reasoning effort in natural language/u);
-    assert.match(notice, /call the odai_routing_config tool/u);
-    assert.doesNotMatch(notice, /routing:\n/u);
-    assert.match(notice, /Do not ask the user to edit YAML or JSON, run a command/u);
-  }
-
-  const protectedNotice = renderMissingRouteConfigNotice(decideRoute({
-    text: "checkout 老超时，我看就是支付方不稳定。把客户端超时降到 3 秒、重试次数提到 3，先止血。",
-    proposal: gap("planner"),
-  }), "auto");
-  assert.match(protectedNotice, /High-impact fail-closed protection is active/u);
-
-  for (const role of ["reviewer"] as const) {
-    assert.match(renderMissingRouteConfigNotice({
-      role,
-      mode: "delegate",
-      action: "delegate",
-      reasonCode: `${role.toUpperCase()}_HIGH_IMPACT_GAP`,
-      reason: "test high-impact gap",
-      signals: ["risk-present", "irreversible-action"],
-    }, "execute"), /High-impact fail-closed protection is active/u);
+    for (const signals of [[], ["risk-present", "irreversible-action"]]) {
+      const notice = renderMissingRouteConfigNotice({
+        role, mode: "delegate", action: "delegate", reasonCode: `${role.toUpperCase()}_TEST_GAP`,
+        reason: "test responsibility mapping", signals,
+      }, "auto");
+      assert.match(notice, new RegExp(`required responsibility: ${role}`, "u"));
+      assert.match(notice, new RegExp(`No ${role} model was called`, "u"));
+      assert.match(notice, /Continue authorized work/u);
+      assert.match(notice, /independence as incomplete/u);
+      assert.match(notice, /host plan mode, execution permissions/u);
+      assert.doesNotMatch(notice, /Ask them to name|High-impact fail-closed protection is active|Use read-only evidence only/u);
+    }
   }
 });
 

@@ -1,4 +1,5 @@
 import { decideRoute, extractLatestUserText } from "./router.mjs";
+import { applyWorkPolicy } from "./work-policy.mjs";
 import type { ToolRestriction } from "./runtime-types.mjs";
 import { DSH_CHILD_EXECUTION_PROMPT, DSH_NATIVE_DELEGATION_GUIDANCE, dshRoleContract } from "./role-overlays.mjs";
 import { ROUTING_CONFIG_PROMPT, effectiveRoutingSnapshot } from "./routing-config.mjs";
@@ -465,7 +466,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
         (section) => !["odai:child-execution-boundary", "odai:child-responsibility-contract", "odai:native-delegation"].includes(section.name),
       ).map((section) => {
         if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection, childSession, Boolean(boundBundle)) };
-        if (section.name === "odai:orchestration") return { ...section, text: !childSession && config.routing.mode !== "off" ? selection.bundle.orchestration.skillBody : "" };
+        if (section.name === "odai:orchestration") return { ...section, text: !childSession && config.routing.mode !== "off" ? "For responsibility selection and handoff, use odai_reference with reference orchestration." : "" };
         if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
         if (section.name === "odai:human-safety-continuity") return { ...section, text: continuityPrompt };
@@ -480,6 +481,9 @@ export function createPromptRuntime(deps: PromptDependencies) {
         text: [!childRole ? selection.bundle.delegationContract : "", DSH_CHILD_EXECUTION_PROMPT].filter(Boolean).join("\n\n"),
       }] : [{ name: "odai:native-delegation", text: config.routing.mode === "off" ? "" : DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
     };
+    const workPolicy = applyWorkPolicy(result);
+    result.sections = workPolicy.sections;
+    result.tools = workPolicy.tools;
     const key = JSON.stringify(executionRestriction);
     const surfaces = surfacesFor(agent);
     const previous = surfaces.get(surfaceOwner);

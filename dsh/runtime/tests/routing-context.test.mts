@@ -87,7 +87,7 @@ function completeReviewEvents(options: {
   ];
 }
 
-test("reviewer packets require requirements, acceptance, diff, tests, and tool evidence", () => {
+test("reviewer packets preserve authenticated tasks and execution records without an acceptance verdict", () => {
   const agent = agentFor(completeReviewEvents());
   const packet = buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现");
 
@@ -119,7 +119,6 @@ test("reviewer packets require requirements, acceptance, diff, tests, and tool e
     latestFailedTestIndex: -1,
     latestCheckIndex: -1,
     latestFailedCheckIndex: -1,
-    currentEvidence: true,
   });
   assert.match(packet.digest, /^[a-f0-9]{64}$/u);
   assert.equal(buildRoleContextPacket(agent, "reviewer", "请独立审查这次实现").digest, packet.digest);
@@ -165,7 +164,8 @@ test("task-bound packets exclude evidence from previous direct-user tasks", () =
   });
   assert.equal(stalePacket.coverage.diffCount, 0);
   assert.equal(stalePacket.coverage.testCount, 0);
-  assert.equal(stalePacket.sufficient, false);
+  assert.equal(stalePacket.coverage.toolEvidenceCount, 0);
+  assert.equal(stalePacket.sufficient, true, "the current task is reviewable without borrowing prior-task validation");
   assert.equal(stalePacket.entries.some((entry) => entry.text.includes("OLD-")), false);
 
   const events = [
@@ -220,7 +220,8 @@ test("latest fallback uses the current direct-user event even when it has no mes
   assert.equal(packet.coverage.acceptanceCount, 1);
   assert.equal(packet.coverage.diffCount, 0);
   assert.equal(packet.coverage.testCount, 0);
-  assert.equal(packet.sufficient, false);
+  assert.equal(packet.coverage.toolEvidenceCount, 0);
+  assert.equal(packet.sufficient, true, "review entry does not satisfy the requested diff and test requirements");
 });
 
 test("duplicate explicit task ids fail closed instead of selecting the older task", () => {
@@ -384,7 +385,7 @@ test("user acceptance, namespaced tools, and external workspace paths produce cu
   assert.equal(packet.coverage.writeCount, 1);
   assert.equal(packet.coverage.diffCount, 1);
   assert.equal(packet.coverage.testCount, 1);
-  assert.equal(packet.coverage.currentEvidence, true);
+  assert.equal(Object.hasOwn(packet.coverage, "currentEvidence"), false);
   assert.equal(packet.sufficient, true);
 });
 
@@ -503,7 +504,7 @@ test("quoted test filters do not become shell mutations", () => {
 
   assert.equal(packet.coverage.testCount, 1);
   assert.equal(packet.coverage.writeCount, 0);
-  assert.equal(packet.coverage.currentEvidence, true);
+  assert.equal(Object.hasOwn(packet.coverage, "currentEvidence"), false);
   assert.equal(packet.sufficient, true);
 });
 
@@ -514,6 +515,8 @@ test("read-only validators provide check evidence without masquerading as tests"
     "git diff --check",
     "npx prettier --check packages/core/src/hooks/useXStream.ts",
     "node --check scripts/verify.mjs",
+    "node --check scripts/verify.mjs && git diff --check",
+    "git diff --check && pnpm exec eslint packages/core/src/hooks/useXStream.ts",
   ].entries()) {
     const events: DshEvent[] = [
       { type: "user/message", data: userMessage("验收条件：保持原格式和范围，并通过对应静态检查。") },
@@ -541,29 +544,40 @@ test("read-only validators provide check evidence without masquerading as tests"
   }
 });
 
-test("failed read-only checks block reviewer readiness", () => {
-  const events: DshEvent[] = [
-    { type: "user/message", data: userMessage("验收条件：保持原格式和范围，并通过静态检查。") },
-    ...nativeToolEvents(
-      "failed-check-diff",
-      "functions.bash",
-      { command: "git diff -- dsh/runtime/src/routing-context.mts" },
-      "diff --git a/dsh/runtime/src/routing-context.mts b/dsh/runtime/src/routing-context.mts\n+bounded change",
-      { callSeq: 400 },
-    ),
-    ...nativeToolEvents(
-      "failed-check",
-      "functions.bash",
-      { command: "pnpm exec eslint dsh/runtime/src/routing-context.mts" },
-      "lint failed\nexit code: 1",
-      { callSeq: 410 },
-    ),
-  ];
-  const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
-  assert.equal(packet.coverage.checkCount, 0);
-  assert.equal(packet.coverage.failedCheckCount, 1);
-  assert.equal(packet.coverage.currentEvidence, false);
-  assert.equal(packet.sufficient, false);
+test("failed read-only checks remain failed evidence available to reviewers", () => {
+  for (const command of [
+    "pnpm exec eslint dsh/runtime/src/routing-context.mts",
+    "git diff --check && pnpm exec eslint dsh/runtime/src/routing-context.mts",
+    "node --check scripts/verify.mjs && git diff --check",
+  ]) {
+    const events: DshEvent[] = [
+      { type: "user/message", data: userMessage("验收条件：保持原格式和范围，并通过静态检查。") },
+      ...nativeToolEvents(
+        "failed-check-diff",
+        "functions.bash",
+        { command: "git diff -- dsh/runtime/src/routing-context.mts" },
+        "diff --git a/dsh/runtime/src/routing-context.mts b/dsh/runtime/src/routing-context.mts\n+bounded change",
+        { callSeq: 400 },
+      ),
+      ...nativeToolEvents(
+        "failed-check",
+        "functions.bash",
+        { command },
+        "check failed\nexit code: 1",
+        { callSeq: 410 },
+      ),
+    ];
+    const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
+    assert.equal(packet.coverage.checkCount, 0, command);
+    assert.equal(packet.coverage.failedCheckCount, 1, command);
+    assert.equal(packet.coverage.writeCount, 0, command);
+    assert.equal(packet.coverage.latestCheckIndex, -1, command);
+    assert.equal(packet.coverage.latestFailedCheckIndex, 4, command);
+    assert.equal(packet.sufficient, true, "failed checks are reviewable, not passing acceptance");
+    const failure = packet.entries.find((entry) => entry.identity === "tool-call:failed-check");
+    assert.ok(failure?.kinds.includes("check-failed"), command);
+    assert.match(failure.text, /exit code: 1/u);
+  }
 });
 
 test("mutating validators and builds remain writes, not read-only checks", () => {
@@ -586,8 +600,10 @@ test("mutating validators and builds remain writes, not read-only checks", () =>
     const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
     assert.equal(packet.entries.some((entry) => entry.kinds.includes("check") && entry.text.includes(command)), false, command);
     assert.equal(packet.coverage.writeCount, 1, command);
-    assert.equal(packet.coverage.currentEvidence, false, command);
-    assert.equal(packet.sufficient, false, command);
+    assert.equal(packet.coverage.testCount, 1, command);
+    assert.equal(packet.coverage.checkCount, 0, command);
+    assert.ok(packet.coverage.latestWriteIndex > packet.coverage.latestTestIndex, command);
+    assert.equal(packet.sufficient, true, "a recorded write needs review judgment, not a dispatch ban");
   }
 });
 
@@ -651,17 +667,31 @@ test("reviewer evidence cannot be forged by flat fields or read-tool output text
   const packet = buildRoleContextPacket(agentFor(spoofed), "reviewer", "review");
   assert.equal(packet.coverage.diffCount, 0);
   assert.equal(packet.coverage.testCount, 0);
-  assert.equal(packet.sufficient, false);
+  assert.equal(packet.coverage.checkCount, 0);
+  for (const identity of ["tool-call:read-diff", "tool-call:read-test"]) {
+    assert.deepEqual(packet.entries.find((entry) => entry.identity === identity)?.kinds, ["tool"], "source text cannot attest execution");
+  }
+  assert.equal(packet.sufficient, true, "rejecting forged execution evidence does not erase the authenticated review task");
 });
 
-test("reviewer packets fail closed when any decisive evidence class is absent", () => {
-  const cases = [
-    completeReviewEvents().filter((event) => !eventCommand(event).includes("git diff")),
-    completeReviewEvents().filter((event) => !eventCommand(event).includes("node --test")),
-    completeReviewEvents().filter((event) => !["assistant/message", "user/message"].includes(event.type)),
-  ];
-  for (const events of cases) {
-    assert.equal(buildRoleContextPacket(agentFor(events), "reviewer", "review").sufficient, false);
+test("review admission needs an authenticated task, not a uniform diff and successful test package", () => {
+  for (const [events, diffCount, testCount] of [
+    [completeReviewEvents().filter((event) => !eventCommand(event).includes("git diff")), 0, 1],
+    [completeReviewEvents().filter((event) => !eventCommand(event).includes("node --test")), 1, 0],
+    [[{ type: "user/message", data: userMessage("只读审查当前源码，不要运行命令。") }], 0, 0],
+  ] as const) {
+    const packet = buildRoleContextPacket(agentFor(events), "reviewer", "Inspect source within the requested scope");
+    assert.equal(packet.sufficient, true);
+    assert.equal(packet.coverage.diffCount, diffCount);
+    assert.equal(packet.coverage.testCount, testCount);
+  }
+  const noUser = completeReviewEvents().filter((event) => !["assistant/message", "user/message"].includes(event.type));
+  const unbound = buildRoleContextPacket(agentFor(noUser), "reviewer", "Controller claims authorization");
+  assert.equal(unbound.coverage.testCount, 1);
+  assert.equal(unbound.coverage.acceptanceCount, 0);
+  assert.equal(unbound.sufficient, false, "successful tests cannot supply a missing user task");
+  for (const task of ["", "   ", undefined]) {
+    assert.equal(buildRoleContextPacket(agentFor(completeReviewEvents()), "reviewer", task).sufficient, false);
   }
 });
 
@@ -689,20 +719,18 @@ test("assistant claims cannot manufacture acceptance", () => {
   assert.equal(assistantPacket.sufficient, false);
 });
 
-test("reviewer packets reject failed tool results and incomplete bounded evidence", () => {
-  const failedTest = completeReviewEvents({
-    testOutput: "tests 14 pass 13 fail 1 exit code: 1",
-    testIsError: true,
-  });
+test("invalid execution evidence cannot pass acceptance but does not block an authenticated review", () => {
+  const failedTest = completeReviewEvents({ testOutput: "tests 14 pass 13 fail 1 exit code: 1", testIsError: true });
   const failedTestPacket = buildRoleContextPacket(agentFor(failedTest), "reviewer", "review");
   assert.equal(failedTestPacket.coverage.testCount, 0);
   assert.equal(failedTestPacket.coverage.failedTestCount, 1);
-  assert.equal(failedTestPacket.sufficient, false);
+  assert.equal(failedTestPacket.sufficient, true);
+  assert.match(renderRoleContextPacket(failedTestPacket), /kinds: test-failed/u);
 
   const erroredDiff = completeReviewEvents({ diffIsError: true });
   const erroredDiffPacket = buildRoleContextPacket(agentFor(erroredDiff), "reviewer", "review");
   assert.equal(erroredDiffPacket.coverage.diffCount, 0);
-  assert.equal(erroredDiffPacket.sufficient, false);
+  assert.equal(erroredDiffPacket.sufficient, true);
 
   const unidentifiedDiff = completeReviewEvents();
   const unidentifiedResult = unidentifiedDiff.find((event) => event.type === "tool/result"
@@ -714,7 +742,8 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
   delete unidentifiedContent.toolCallId;
   const unidentifiedDiffPacket = buildRoleContextPacket(agentFor(unidentifiedDiff), "reviewer", "review");
   assert.equal(unidentifiedDiffPacket.coverage.diffCount, 0);
-  assert.equal(unidentifiedDiffPacket.sufficient, false);
+  assert.equal(unidentifiedDiffPacket.diagnostics.malformedToolResultCount, 1);
+  assert.equal(unidentifiedDiffPacket.sufficient, true);
 
   const unlinkedDiff = completeReviewEvents();
   const unlinkedResult = unlinkedDiff.find((event) => event.type === "tool/result"
@@ -723,19 +752,20 @@ test("reviewer packets reject failed tool results and incomplete bounded evidenc
   delete unlinkedResult.sourceEventSeqs;
   const unlinkedPacket = buildRoleContextPacket(agentFor(unlinkedDiff), "reviewer", "review");
   assert.equal(unlinkedPacket.coverage.diffCount, 0);
-  assert.equal(unlinkedPacket.sufficient, false);
+  assert.equal(unlinkedPacket.diagnostics.unlinkedToolResultCount, 1);
+  assert.equal(unlinkedPacket.sufficient, true);
 
-  const truncatedPacket = buildRoleContextPacket(
-    agentFor(completeReviewEvents()),
-    "reviewer",
-    "review",
-    { maxChars: 80, maxEvents: 80 },
-  );
+  const truncatedPacket = buildRoleContextPacket(agentFor(completeReviewEvents()), "reviewer", "review", { maxChars: 80, maxEvents: 80 });
   assert.equal(truncatedPacket.truncated, true);
+  assert.equal(truncatedPacket.coverage.acceptanceCount, 0);
   assert.equal(truncatedPacket.sufficient, false);
+  const clippedTask = buildRoleContextPacket(agentFor(completeReviewEvents()), "reviewer", "Review this bounded scope. ".repeat(100), { maxChars: 1_000 });
+  assert.equal(clippedTask.truncated, true);
+  assert.match(clippedTask.currentTask, /packet truncated/u);
+  assert.equal(clippedTask.sufficient, false, "a clipped delegation scope cannot define the complete review");
 });
 
-test("viewing a diff after successful checks does not require repeating checks on unchanged code", () => {
+test("review admission preserves scoped execution records without a global freshness verdict", () => {
   const events: DshEvent[] = [
     { type: "user/message", data: userMessage("验收条件：保持默认行为并通过目标测试。") },
     ...nativeToolEvents("edit-before-test", "edit", { file_path: "dsh/runtime/src/router.mts" }, "updated", { callSeq: 120 }),
@@ -743,57 +773,32 @@ test("viewing a diff after successful checks does not require repeating checks o
     ...nativeToolEvents("diff-after-test", "pwsh", { command: "git diff -- dsh/runtime/src/router.mts" }, "diff --git a/router.mjs b/router.mjs\n+tested patch", { callSeq: 140 }),
   ];
   const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
-  assert.equal(packet.coverage.currentEvidence, true);
+  const originalEntries = JSON.stringify(packet.entries);
   assert.equal(packet.sufficient, true);
-  events.splice(5, 0, ...nativeToolEvents("edit-after-test", "edit", { file_path: "dsh/runtime/src/router.mts" }, "changed again", { callSeq: 135 }));
+  assert.equal(packet.coverage.latestTestIndex, 4);
+  assert.equal(packet.coverage.latestDiffIndex, 6);
+  assert.equal(Object.hasOwn(packet.coverage, "currentEvidence"), false);
+
+  events.push(...nativeToolEvents("unrelated-write", "edit", { file_path: "unrelated/notes.md" }, "updated", { callSeq: 150 }));
   const changed = buildRoleContextPacket(agentFor(events), "reviewer", "review");
-  assert.equal(changed.coverage.currentEvidence, false);
-  assert.equal(changed.sufficient, false);
-});
+  assert.equal(changed.sufficient, true);
+  assert.equal(changed.coverage.writeCount, 2);
+  assert.equal(changed.coverage.latestTestIndex, 4);
+  assert.notEqual(changed.evidenceDigest, packet.evidenceDigest);
 
-test("reviewer evidence must be current after the last write and latest test attempt", () => {
-  const staleAfterWrite = completeReviewEvents();
-  staleAfterWrite.push(...nativeToolEvents(
-    "edit-1",
-    "pwsh",
-    { command: "Set-Content dsh/runtime/src/router.mts updated" },
-    "updated router.mjs",
-    { callSeq: 30 },
-  ));
-  const stalePacket = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
-  assert.equal(stalePacket.coverage.writeCount, 1);
-  assert.equal(stalePacket.coverage.currentEvidence, false);
-  assert.equal(stalePacket.sufficient, false);
-
-  staleAfterWrite.push(...nativeToolEvents(
-    "diff-2",
-    "pwsh",
-    { command: "git diff -- dsh/runtime/src/router.mts" },
-    "diff --git a/dsh/runtime/src/router.mts b/dsh/runtime/src/router.mts\n+current change",
-    { callSeq: 40 },
-  ));
-  staleAfterWrite.push(...nativeToolEvents(
-    "test-2",
-    "pwsh",
-    { command: "node --test dsh/runtime/tests/router.test.mts" },
-    "tests 15\npass 15\nfail 0\nexit code: 0",
-    { callSeq: 50 },
-  ));
-  const refreshed = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
-  assert.equal(refreshed.coverage.currentEvidence, true);
-  assert.equal(refreshed.sufficient, true);
-
-  staleAfterWrite.push(...nativeToolEvents(
-    "test-3",
-    "pwsh",
-    { command: "node --test dsh/runtime/tests/router.test.mts" },
-    "tests 15 pass 14 fail 1 exit code: 1",
-    { callSeq: 60, isError: true },
-  ));
-  const regressed = buildRoleContextPacket(agentFor(staleAfterWrite), "reviewer", "review");
-  assert.equal(regressed.coverage.failedTestCount, 1);
-  assert.equal(regressed.coverage.currentEvidence, false);
-  assert.equal(regressed.sufficient, false);
+  events.push(...nativeToolEvents("failed-router-test", "pwsh", { command: "node --test dsh/runtime/tests/router.test.mts" },
+    "tests 15 pass 14 fail 1 exit code: 1", { callSeq: 160, isError: true }));
+  events.push(...nativeToolEvents("unrelated-check", "pwsh", { command: "node --check unrelated/script.mjs" }, "", { callSeq: 170 }));
+  const failed = buildRoleContextPacket(agentFor(events), "reviewer", "Investigate the failed router test");
+  assert.equal(failed.sufficient, true);
+  assert.equal(failed.coverage.testCount, 1);
+  assert.equal(failed.coverage.failedTestCount, 1, "an unrelated successful check cannot erase a failure");
+  assert.equal(failed.coverage.checkCount, 1);
+  assert.equal(failed.coverage.latestFailedTestIndex, 10);
+  assert.equal(failed.coverage.latestCheckIndex, 12);
+  assert.ok(failed.entries.find((entry) => entry.identity === "tool-call:failed-router-test")?.kinds.includes("test-failed"));
+  assert.equal(Object.hasOwn(failed.coverage, "currentEvidence"), false);
+  assert.equal(JSON.stringify(packet.entries), originalEntries, "later events cannot rewrite earlier evidence");
 });
 
 test("read-only process and formatter checks do not stale reviewer evidence", () => {
@@ -821,11 +826,11 @@ test("read-only process and formatter checks do not stale reviewer evidence", ()
   ));
   const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
   assert.equal(packet.coverage.writeCount, 0);
-  assert.equal(packet.coverage.currentEvidence, true);
+  assert.equal(Object.hasOwn(packet.coverage, "currentEvidence"), false);
   assert.equal(packet.sufficient, true);
 });
 
-test("unknown shell mutations and redirects invalidate earlier reviewer evidence", () => {
+test("unknown shell mutations and redirects remain recorded writes for review judgment", () => {
   for (const [index, command] of [
     "echo changed > dsh/runtime/src/router.mts",
     "ls > dsh/runtime/src/router.mts",
@@ -843,8 +848,10 @@ test("unknown shell mutations and redirects invalidate earlier reviewer evidence
     ));
     const packet = buildRoleContextPacket(agentFor(events), "reviewer", "review");
     assert.equal(packet.coverage.writeCount, 1, command);
-    assert.equal(packet.coverage.currentEvidence, false, command);
-    assert.equal(packet.sufficient, false, command);
+    assert.equal(packet.coverage.testCount, 1, command);
+    assert.equal(packet.coverage.checkCount, 0, command);
+    assert.ok(packet.coverage.latestWriteIndex > packet.coverage.latestTestIndex, command);
+    assert.equal(packet.sufficient, true, "a recorded write needs review judgment, not a dispatch ban");
   }
 
   const failedWrite = completeReviewEvents();
@@ -857,8 +864,10 @@ test("unknown shell mutations and redirects invalidate earlier reviewer evidence
   ));
   const failedWritePacket = buildRoleContextPacket(agentFor(failedWrite), "reviewer", "review");
   assert.equal(failedWritePacket.coverage.writeCount, 1);
-  assert.equal(failedWritePacket.coverage.currentEvidence, false);
-  assert.equal(failedWritePacket.sufficient, false);
+  assert.equal(failedWritePacket.coverage.latestWriteIndex, 7);
+  assert.equal(failedWritePacket.coverage.testCount, 1);
+  assert.equal(failedWritePacket.coverage.failedTestCount, 0);
+  assert.equal(failedWritePacket.sufficient, true);
 });
 
 test("role context packets bound task and evidence text", () => {

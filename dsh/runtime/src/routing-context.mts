@@ -197,7 +197,6 @@ export interface RoleContextCoverage {
   readonly latestFailedTestIndex: number;
   readonly latestCheckIndex: number;
   readonly latestFailedCheckIndex: number;
-  readonly currentEvidence: boolean;
 }
 
 export interface RoleContextDiagnostics {
@@ -508,9 +507,14 @@ function eventEvidence(
         || matchesAny(segment, DIFF_COMMAND_PATTERNS)
         || matchesAny(segment, TEST_COMMAND_PATTERNS))
     )));
-    const checkCommand = simpleCommand
+    // A successful && chain proves every check ran; an unsuccessful chain
+    // remains failed evidence. Mixed or mutating chains cannot attest checks.
+    const checkCommand = (simpleCommand
       && matchesAny(command, CHECK_COMMAND_PATTERNS)
-      && !matchesAny(command, CHECK_MUTATION_PATTERNS);
+      && !matchesAny(command, CHECK_MUTATION_PATTERNS))
+      || Boolean(andChain && andChain.length > 1 && andChain.every((segment) => (
+        matchesAny(segment, CHECK_COMMAND_PATTERNS) && !matchesAny(segment, CHECK_MUTATION_PATTERNS)
+      )));
     const diffCommand = simpleCommand && !checkCommand && matchesAny(command, DIFF_COMMAND_PATTERNS);
     const testCommand = simpleCommand && matchesAny(command, TEST_COMMAND_PATTERNS);
     const explicitWrite = WRITE_TOOL_NAMES.has(toolName) || matchesAny(command, WRITE_COMMAND_PATTERNS);
@@ -583,20 +587,12 @@ function coverageFor(
   const failedTestEntries = matching("test-failed");
   const checkEntries = matching("check");
   const failedCheckEntries = matching("check-failed");
-  const verificationEntries = [...testEntries, ...checkEntries];
   const latestWriteIndex = latestIndex("write");
   const latestDiffIndex = latestIndex("diff");
   const latestTestIndex = latestIndex("test");
   const latestFailedTestIndex = latestIndex("test-failed");
   const latestCheckIndex = latestIndex("check");
   const latestFailedCheckIndex = latestIndex("check-failed");
-  const latestVerificationIndex = Math.max(latestTestIndex, latestCheckIndex);
-  const latestFailedVerificationIndex = Math.max(latestFailedTestIndex, latestFailedCheckIndex);
-  const currentEvidence = acceptanceCount > 0
-    && latestDiffIndex >= 0 && latestVerificationIndex >= 0
-    && latestDiffIndex > latestWriteIndex && latestVerificationIndex > latestWriteIndex
-    && latestVerificationIndex > latestFailedVerificationIndex
-    && diffEntries.some((diff) => verificationEntries.some((verification) => diff.identity !== verification.identity));
   return Object.freeze({
     requirements: Boolean(currentTask) || matching("requirement").length > 0,
     requirementDecisionCount: requirements.length,
@@ -607,7 +603,7 @@ function coverageFor(
     failedTestCount: failedTestEntries.length, checkCount: checkEntries.length,
     failedCheckCount: failedCheckEntries.length, writeCount: matching("write").length,
     toolEvidenceCount: matching("tool").length, latestWriteIndex, latestDiffIndex,
-    latestTestIndex, latestFailedTestIndex, latestCheckIndex, latestFailedCheckIndex, currentEvidence,
+    latestTestIndex, latestFailedTestIndex, latestCheckIndex, latestFailedCheckIndex,
   });
 }
 
@@ -759,7 +755,6 @@ export function buildRoleContextPacket(
       latestFailedTestIndex: evidenceCoverage.latestFailedTestIndex,
       latestCheckIndex: evidenceCoverage.latestCheckIndex,
       latestFailedCheckIndex: evidenceCoverage.latestFailedCheckIndex,
-      currentEvidence: evidenceCoverage.currentEvidence,
     },
     markers: evidenceMarkers,
     diagnostics: {
@@ -787,9 +782,10 @@ export function buildRoleContextPacket(
     ...(snapshot ? { reviewEvidenceDigest: snapshot.digest } : {}),
   });
   const digest = digestPacket(packetBody);
-  const reviewerSufficient = coverage.requirements && coverage.acceptanceCount > 0
-    && coverage.diffCount > 0 && coverage.testCount + coverage.checkCount > 0
-    && coverage.toolEvidenceCount > 0 && coverage.currentEvidence;
+  // Review entry is not an acceptance verdict: failed or missing checks are reviewable.
+  const reviewerSufficient = Boolean(taskTextBound.text) && !taskTextBound.truncated
+    && (taskBoundary.source === "bound" || taskBoundary.source === "latest")
+    && coverage.acceptanceCount > 0;
   const packet = Object.freeze({
     ...packetBody, digest, evidenceCount: entries.length, toolEvidenceCount: coverage.toolEvidenceCount,
     sufficient: taskBoundary.source !== "unresolved"
@@ -815,7 +811,7 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
   return [
     ...(snapshot ? [
       `Immutable tool evidence snapshot: ${snapshot.digest}; entries=${snapshot.count}; omitted=${snapshot.omitted}; retainedChars=${snapshot.retainedChars}.`,
-      "Managed reviewer child only: use odai_review_evidence with this digest to list captured sources or read needed pages by snapshotSourceId and offset. Retrieve missing/truncated implementation evidence before making a finding based on its absence. This restores packet clipping only, not content missing from the original tool capture. Stay within the delegated review; do not dump all sources, rerun checks, or infer complete validation from page availability. Exhausted or missing evidence remains unjudged and returns to the controller.",
+      "Managed reviewer child: use odai_review_evidence with this digest to retrieve immutable captured results by snapshotSourceId and offset. Use read, glob, and grep within the delegated scope to inspect missing source. Current files may differ from the captured version; identify relevant differences. Source reads do not prove command execution. Review entry is not acceptance: report missing execution evidence or unresolved acceptance properties as unjudged.",
     ] : []),
     "# Odai bounded role context packet",
     `role: ${packet.role}`,

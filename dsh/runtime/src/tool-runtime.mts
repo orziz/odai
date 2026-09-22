@@ -23,7 +23,7 @@ import { createSemanticMemoryTool, latestDirectUserMessage } from "./semantic-me
 import { readSkillBundleFile } from "./skill-bundle.mjs";
 import type { SkillBundle } from "./skill-bundle.mjs";
 import { currentAgentTurn, sharedSkillSelection } from "./skill-selection-state.mjs";
-import { currentAgentStep, isSubagentSession, latestRouteReceipt, pluginMessage, managedReviewEvidenceReader } from "./runtime-support.mjs";
+import { currentAgentStep, isSubagentSession, isManagedRoleChild, routedRoleOf, latestRouteReceipt, pluginMessage, managedReviewEvidenceReader } from "./runtime-support.mjs";
 import { createReviewEvidenceTool } from "./review-evidence.mjs";
 import type { SkillSelection } from "./runtime-support.mjs";
 import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
@@ -53,7 +53,7 @@ interface ToolRuntimeDependencies {
 }
 
 export function installToolRuntime(deps: ToolRuntimeDependencies): void {
-  const { appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityScopes, routeProtections, selectOutputForAgent } = deps;
+  const { appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityScopes, selectOutputForAgent } = deps;
   const { stop: stopResponsibilityScope } = responsibilityScopes;
   const onDenied = (execution: ToolExecution & { agent: DshAgent }, reason: string) => {
     appendEvent(execution.agent, "odai/governance-denied", {
@@ -71,12 +71,15 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
   // gap or a matching word in the user's request cannot change permissions.
   const isReadOnlyResponsibility = (agent: DshAgent | undefined): boolean => Boolean(agent
     && responsibilityScopes.get(agent)?.continuationPolicy === "read-only-tool-chain");
+  const reviewerAllowedTools = Object.freeze(["odai_review_evidence", "read", "glob", "grep"]);
+  const isManagedReviewer = (agent: DshAgent): boolean =>
+    isManagedRoleChild(agent) && routedRoleOf(agent) === "reviewer";
   const protectionFor = (agent: DshAgent) => config.routing.mode === "off"
     ? undefined
-    : routeProtections.get(agent) ?? activeRouteProtection(agent, evidence.events(agent));
+    : activeRouteProtection(agent, evidence.events(agent));
   const executionRestrictionFor = (agent: DshAgent): ExecutionRestriction => {
     const allow = isSubagentSession(agent)
-      ? managedReviewEvidenceReader(agent) ? ["odai_review_evidence"] : DEFAULT_CHILD_ALLOWED_TOOLS
+      ? isManagedReviewer(agent) ? reviewerAllowedTools : DEFAULT_CHILD_ALLOWED_TOOLS
       : isReadOnlyResponsibility(agent) || protectionFor(agent) ? DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS : undefined;
     return allow ? { allow, deny: config.governance.additionalDeniedTools } : {};
   };
@@ -260,8 +263,8 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     },
   });
   ctx.tools.guard?.((execution: ToolExecution) => {
-    if (execution.agent && managedReviewEvidenceReader(execution.agent) && execution.name !== "odai_review_evidence") {
-      const reason = "ODAI_REVIEW_EVIDENCE_ONLY: managed snapshot review may only page its captured evidence";
+    if (execution.agent && isManagedReviewer(execution.agent) && !reviewerAllowedTools.includes(execution.name)) {
+      const reason = "ODAI_REVIEW_READ_ONLY: managed reviewers may only inspect delegated source with read, glob, grep, and immutable evidence with odai_review_evidence";
       onDenied({ ...execution, agent: execution.agent }, reason);
       return reason;
     }

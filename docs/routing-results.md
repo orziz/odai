@@ -1,6 +1,6 @@
 # Odai DSH 路由验证
 
-当前已发布双包为 DSH `0.2.33`，采用 rc.2 合同；源码候选为未发布 `0.2.35`，治理 `0.6.0` / runtime contract `8`，编排 `0.1.0`，仅支持精确 DSH `0.1.5-rc.2`。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，当前任务评分见 [`evaluation-results.md`](evaluation-results.md)。本页只保留当前有用的证据及限制；旧版本实验过程由 Git 历史承载。
+当前已发布双包为 DSH `0.2.35`，采用 rc.2 合同；源码候选为未发布 `0.2.36`，治理 `0.6.1` / runtime contract `8`，编排 `0.1.0`，仅支持精确 DSH `0.1.5-rc.2`。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，当前任务评分见 [`evaluation-results.md`](evaluation-results.md)。本页只保留当前有用的证据及限制；旧版本实验过程由 Git 历史承载。
 
 ## 当前结构与验证边界
 
@@ -8,7 +8,9 @@
 
 Markdown 不再做逐句、关键词、词序或语义反转测试，也不设篇幅审定基线。基本检查只确认元数据、文件、引用和合同可以加载；内容是否合适须结合用户目标与全文判断。DSH 可执行行为继续由对应测试验证，不能把这些结果写成模型理解或协作收益证明。
 
-已发布 `0.5.0` 的 rc.2 隔离加载、权限、安装与制品记录按原版本保留在 CHANGELOG 和 Git 历史中，不自动转为当前候选验收。当前候选已通过制品校验，并在补齐 Agent 加载验证夹具的编排技能后完成 `node scripts/verify-dsh-release-matrix.mjs`：231 个 rc.2 包构成纯依赖图，Plugin 加载、Agent 权限保护与双包共存均通过。2026-09-21 的 plain 治理定向结果见 [`evaluation-results.md`](evaluation-results.md)：C01、C04、C05、C26、C32 当前均采用 4/4，其中 C04 为用户裁定，其余为独立裁判；不作为编排收益或全量评测证明。
+当前 `0.2.36` / 治理 `0.6.1` 已通过受影响的 142 项运行时用例，并完成 `node scripts/verify-dsh-release-matrix.mjs`：231 个 rc.2 包构成纯依赖图，Plugin 加载、Agent 权限保护、双包打包与共存均通过。真实宿主验证了可选 goal/todo/Ralph 的提示适配、编排按需入口、reviewer 补读源码与不可变证据并存，以及写入和 shell 禁止；运行时用例覆盖任务来源、失败证据保留、真实只读职责与路由失败后的总控恢复。canonical 资源与双包版本校验同时通过。
+
+旧版本的隔离加载与制品记录保留在 CHANGELOG 和 Git 历史中，不自动转为当前验收。2026-09-21 的治理 `0.6.0` 定向结果见 [`evaluation-results.md`](evaluation-results.md)；这些历史评分不证明 `0.6.1` 的模型效果。
 
 协作相对收益仍需同版本、同题面、同宿主与模型条件下的 B/C 对照及实际调用、usage 证据；单独成功的 C 臂或没有发生委派的样本均不能证明收益。当前没有据此宣称 token、延迟、费用或长期模型质量改善。
 

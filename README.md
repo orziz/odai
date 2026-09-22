@@ -96,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The published `0.2.33` Plugin and Agent release and the current `0.2.35` source candidate target exactly `dsh@0.1.5-rc.2`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
+The published `0.2.33` Plugin and Agent release and the current `0.2.36` source candidate target exactly `dsh@0.1.5-rc.2`. Previous SDK versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its existing capabilities without requiring a copy of Standard or automatically adding Standard's new tools. Control Center declares the new Web transport dependency while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
@@ -306,7 +306,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.2.35` / governance `0.6.0` / orchestration `0.1.0`; the published DSH release is `0.2.33`. The latest directed model evaluation used frozen canonical `0.3.15`, GPT-6 Astra / xhigh and an independent GPT-5.6 Terra / xhigh judge. The subsequent review-evidence paging fix is verified separately through capture replay and isolated host checks; it does not inherit those scores.
+The current source candidate is DSH `0.2.36` / governance `0.6.1` / orchestration `0.1.0`; the published DSH release is `0.2.35`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

@@ -104,6 +104,9 @@ export function createChildToolGuard(options: ToolGuardOptions = {}): (execution
 function asRouteProtection(event: DshEvent, turn: number): RouteProtection | undefined {
   const { data } = event;
   if (data.turn !== turn || data.mode !== "read-only") return undefined;
+  // Role availability is not execution authority; only a real scope is restorable.
+  if (typeof data.scopeId !== "string" || !data.scopeId
+    || !["responsibility-scope-researcher", "responsibility-scope-planner", "responsibility-scope-reviewer"].includes(String(data.source))) return undefined;
   return {
     turn,
     mode: "read-only",

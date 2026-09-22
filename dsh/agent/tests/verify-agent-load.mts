@@ -193,6 +193,23 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
       const sendMessage = assembly.tools.find((tool) => tool.name === "send_message");
       const sendProperties = sendMessage?.parameters?.properties;
       if (preset === "odai") {
+        const goalPolicy = assembly.sections.find((section) => section.name === "tool:goal")?.text;
+        const createGoal = assembly.tools.find((tool) => tool.name === "create_goal");
+        const todo = assembly.tools.find((tool) => tool.name === "todo_write");
+        assert.match(goalPolicy ?? "", /human explicitly requests/);
+        assert.doesNotMatch(goalPolicy ?? "", /may infer goal intent/);
+        assert.match(createGoal?.description ?? "", /human explicitly requests/);
+        assert.doesNotMatch(todo?.description ?? "", /add one todo per concrete step before you start/);
+        assert.match(todo?.description ?? "", /multi-step work alone does not require a list/);
+        assert.doesNotMatch(todo?.description ?? "", /do not batch completions/);
+        assert.match(todo?.description ?? "", /completed items may be reported together/);
+        const ralph = assembly.tools.find((tool) => tool.name === "ralph");
+        assert.match(ralph?.description ?? "", /explicitly asks for Ralph/);
+        assert.doesNotMatch(ralph?.description ?? "", /belongs to goal tools/);
+        assert.doesNotMatch(assembly.sections.find((section) => section.name === "tool:ralph")?.text ?? "", /Use same-session goal tools/);
+        const orchestration = assembly.sections.find((section) => section.name === "odai:orchestration")?.text ?? "";
+        assert.match(orchestration, /odai_reference/);
+        assert.doesNotMatch(orchestration, /build-routing|install-routing/);
         if (!sendProperties?.agent_id || sendProperties.subagent_id) {
           throw new Error(\`modern Odai preset did not expose bidirectional send_message: \${JSON.stringify(sendMessage)}\`);
         }

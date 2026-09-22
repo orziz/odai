@@ -72,7 +72,7 @@ export function createReviewEvidenceSnapshot(entries: readonly RoleContextEntry[
 export function createReviewEvidenceTool(readerFor: (agent: DshAgent) => ReviewEvidenceReader | undefined): RuntimeTool<unknown, UnknownRecord> {
   return {
     name: "odai_review_evidence",
-    description: "Read captured evidence from this managed review's immutable snapshot. List entries newest first (optionally by literal query), then read necessary 4000-character pages by id and offset. No file access or execution; missing captures must return to the controller.",
+    description: "Read captured evidence from this managed review's immutable snapshot. List entries newest first (optionally by literal query), then read necessary 4000-character pages by id and offset. This tool does not access files or execute commands. Inspect missing source with permitted read, glob, or grep; missing execution receipts remain unjudged.",
     parameters: { type: "object", additionalProperties: false, required: ["digest", "action"], properties: {
       digest: { type: "string" }, action: { type: "string", enum: ["list", "read"] },
       id: { type: "string" }, offset: { type: "integer", minimum: 0 }, query: { type: "string", maxLength: 160 },

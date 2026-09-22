@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：DSH `0.2.33` / canonical `0.5.0` 已发布，包含完整技能入口与统一投影组合；当前源码候选为 DSH `0.2.35` / 治理 `0.6.0` / 编排 `0.1.0`，拆分独立治理与可选编排并退役重复规则和文案测试，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
+状态：DSH 双包 `0.2.35` / canonical `0.6.0` 已发布；当前源码候选为 DSH `0.2.36` / 治理 `0.6.1` / 编排 `0.1.0`，整理完整执行主线并移除默认推断 goal 和强制 todo 的提示要求，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 
@@ -14,7 +14,11 @@
 
 可选宿主能力路由单列于 [`routing-results.md`](routing-results.md)，不混入普通模型成绩。GPT-6 Astra、Gemini 3.7 Flash High 与 DeepSeek V4 Pro（DSH）按 `odai-canary-isolation/v1` 运行，其余七个 runner 形成于该隔离契约生效前，只能作为历史能力与成本记录；旧 off 没有逐题证明隔离用户级 skill、Hooks、memory、父仓库指令和既往会话，不再作为“绝对未加载 odai”的正式基线。
 
-## 0.6.0 候选治理定向结果（2026-09-21）
+## 0.6.1 当前候选的证据边界
+
+执行主线和 DSH 机制的验证见 [`routing-results.md`](routing-results.md)。本轮 C05/C11 尝试分别遇到请求等待超时或隔离启动配置问题，没有取得可采用的模型结果；不计分，也不据此判断模型质量。当前没有同条件前后对照，不宣称质量、耗时、token 或费用改善。
+
+## 0.6.0 历史治理定向结果（2026-09-21）
 
 当前采用结果如下。runner 为 `openai/gpt-5.6-sol/xhigh`，DSH plain Web / standard、skill on、不启用编排；自动裁判为同模型的独立只读会话。
 

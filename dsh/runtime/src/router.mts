@@ -53,10 +53,6 @@ export interface FrontendSpecializationSignals {
   readonly substantial: boolean;
 }
 
-export interface ImplementationAuthorization {
-  readonly status: "authorized" | "plan-only" | "unknown";
-}
-
 function isContinuationRole(value: unknown): value is "planner" | "frontend" {
   return value === "planner" || value === "frontend";
 }
@@ -65,13 +61,6 @@ export const HIGH_IMPACT_PLANNER_REASON = "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE
 export const RESEARCHER_EVIDENCE_REASON = "RESEARCHER_MULTI_SOURCE_DECISION_EVIDENCE";
 export const FRONTEND_SPECIALIST_REASON = "FRONTEND_SUBSTANTIAL_INTERFACE_WORK";
 export const OUTPUT_LIMIT_CONTINUATION_REASON = "RESPONSIBILITY_OUTPUT_LIMIT_CONTINUATION";
-
-const RESPONSIBILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  researcher: "事实调查",
-  planner: "规划",
-  reviewer: "验收",
-  frontend: "前端设计与制作",
-});
 
 const PLANNER_PATTERNS = [
   /独立(?:判断|规划|分析|决定|决策)/iu,
@@ -152,72 +141,14 @@ const LOW_RISK_TRANSFORM_PATTERNS = [
   /\b(?:restate|summari[sz]e|translate|shorten|rewrite|format|explain)\b/iu,
 ];
 
-const EXPLICIT_EXECUTION_CONTINUATION_PATTERNS = [
-  /(?:继续|接着|就按|按(?:照)?(?:(?:这个|该|上述|上面|前面|刚才)的?)?(?:方案|计划|卡片))/iu,
-  /\b(?:continue|proceed|go ahead|follow the plan)\b/iu,
-];
 const EXECUTION_REVISION_PATTERNS = [
   /(?:但(?:是)?|不过|然而|改(?:成|为)|换(?:成|为)|不要|别|去掉|删除|新增|加上|追加|同时|还(?:要|必须|需)|也(?:要|必须|需)|范围)/iu,
   /\b(?:but|however|instead|switch|replace|remove|drop|add|also|scope)\b|\bchange\s+(?:the|this|that|its|to|from)\b/iu,
-];
-const IMPLEMENTATION_AUTHORIZATION_PATTERNS = [
-  /(?:^|[，；。！？\n])(?:请)?把[^，；。！？\n]{1,48}(?:(?:处理|修改|更新|替换|删除)(?:一下|掉|好|了)?|改(?:成|为|好|掉|清楚))(?=$|[，；。！？\n]|并|然后|再|后)/iu,
-  /(?:做(?:完|好|掉|这个|这项|这次|一个)|实现|修复|完成|落地|开发|添加|新增|替换|删除|执行|全都做好)/iu,
-  /(?:请|麻烦|直接|开始|继续)(?:帮我)?(?:处理|修改|更新)|帮我(?:处理|修改|更新)|需要(?:处理|修改|更新)|可以(?:帮我)?(?:处理|修改|更新)|^(?:处理|修改|更新)(?:一下|这个|该|文件|代码|配置|依赖|问题|功能|实现|文档|测试)/iu,
-  /\b(?:do it|implement|fix|complete|build|add|replace|remove|execute|ship)\b/iu,
-  /^(?:please\s+)?(?:(?:change|modify)\b|update\b(?!\s+(?:me|us|them|everyone|the team)\b))|\b(?:please|can you|could you|would you|go ahead and|start to|continue to)\s+(?:(?:change|modify)\b|update\b(?!\s+(?:me|us|them|everyone|the team)\b))|\bi (?:need|want) you to\s+(?:(?:change|modify)\b|update\b(?!\s+(?:me|us|them|everyone|the team)\b))/iu,
-];
-const PLAN_ONLY_PATTERNS = [
-  /(?:只|仅).{0,16}(?:规划|计划|分析|评估|建议|方案|审查|复核|评审|检查)/iu,
-  /(?:先|帮我)(?:规划|计划|分析|评估)(?:一下)?[^。！？\n]{0,40}(?:$|[。！？])/iu,
-  /^\s*(?:请)?(?:规划|计划|分析|评估|建议|审查|复核|评审|检查)/iu,
-  /^\s*(?:请)?(?:列一下|列出|整理(?:一份)?|给我(?:一份)?)[^。！？\n]{0,64}(?:地方|清单|列表|说明|建议|方案|示例|影响|步骤)(?:$|[。！？])/iu,
-  /\b(?:review|audit|inspect)\s+only\b/iu,
-  /\b(?:just|only)\s+(?:plan|analy[sz]e|assess|evaluate|review|audit|inspect|recommend|explain|describe|outline|list)\b/iu,
-  /^\s*(?:please\s+)?(?:plan|analy[sz]e|assess|evaluate|review|audit|inspect|recommend|explain|describe|outline|list)\b/iu,
-];
-const PLAN_THEN_IMPLEMENT_PATTERNS = [
-  /(?:规划|计划|分析|评估|建议|审查|复核|评审|检查)[^。！？\n]{0,48}(?:然后|再|之后|接着|并(?:且)?)[^。！？\n]{0,24}(?:实现|修复|完成|落地|开发|添加|新增|修改|更新(?![^。！？\n]{0,8}(?:我|我们|团队|进展|结果|情况|发现|消息|状态))|替换|删除|执行)/iu,
-  /(?:列一下|列出|整理(?:一份)?|给我(?:一份)?)[^。！？\n]{0,64}(?:然后|再|之后|接着|并(?:且)?)[^。！？\n]{0,24}(?:实现|修复|完成|落地|开发|添加|新增|修改|更新|替换|删除|执行)/iu,
-  /\b(?:plan|analy[sz]e|assess|evaluate|review|audit|inspect|recommend|explain|describe|outline|list)\b[^.!?\n]{0,64}\b(?:then|and(?: then)?|after that)\b[^.!?\n]{0,24}\b(?:implement|fix|complete|build|add|change|update(?!\s+(?:me|us|them|everyone|the team)\b)|modify|replace|remove|execute|ship)\b/iu,
-];
-const STATUS_UPDATE_PATTERNS = [
-  /(?:更新|同步)[^。！？\n]{0,24}(?:进展|结果|情况|发现|消息|状态)/iu,
-  /\bupdate\b[^.!?\n]{1,48}\b(?:on|about|regarding)\b/iu,
-  /\bupdate\b[^.!?\n]{1,48}\bwith\s+(?:the\s+)?(?:findings|progress|results|status|details|news|outcome)\b/iu,
-];
-const UNAMBIGUOUS_DELIVERY_PATTERNS = [
-  /(?:^|[，；。]|然后|再|之后|接着|并(?:且)?|请|帮我)(?:做(?:完|好|掉)|实现|修复|完成|落地|开发|添加|新增|修改|替换|删除|执行)/iu,
-  /更新(?:代码|项目|依赖|包|清单|文档|测试|配置|文件|运行时|服务|应用|界面|数据库|架构)/iu,
-  /\b(?:do it|implement|execute|ship)\b/iu,
-  /(?:^|\b(?:then|and|to|please)\s+)\b(?:fix|complete|build|add|change|modify|replace|remove)\b/iu,
-  /\bupdate\s+(?:the\s+)?(?:code|project|dependencies?|packages?|manifest|docs?|documentation|tests?|config(?:uration)?|files?|runtime|services?|app(?:lication)?|ui|interface|schema|database|architecture)\b/iu,
 ];
 const NON_IMPLEMENTATION_QUERY_PATTERNS = [
   /(?:有什么|有何|哪些|是什么|为何|为什么|怎么样|怎么看|发生了什么|有变化吗|影响(?:是|有)?什么)[^。！？\n]*[？?]?$/iu,
   /^\s*(?:what|why|how)\b[^.!?\n]*[?]\s*$/iu,
   /\b(?:what changed|what changes|what impact|which changes|difference between)\b[^.!?\n]*[?]?$/iu,
-];
-const NO_IMPLEMENTATION_PATTERNS = [
-  /(?:不要|别|请勿|禁止|无需|不用|不需要|不能)[^。！？\n]{0,28}(?:改|修改|编辑|写入|实现|执行|落地|动文件|动代码)/iu,
-  /\b(?:do not|don't|never|without)\b[^.!?\n]{0,48}\b(?:implement|modify|edit|change|write|execute|apply|make changes?)\b/iu,
-  /\b(?:plan|analyze|assess|evaluate|recommend)(?: only)?\b[^.!?]{0,30}\b(?:do not|don't|without) (?:implementing|changes?)\b/iu,
-];
-const GLOBAL_NO_EDIT_PATTERNS = [
-  /(?:不要|别|请勿|禁止)[^，；。！？\n]{0,12}(?:改|修改|编辑|写入)[^，；。！？\n]{0,12}(?:任何|全部|所有|整个)[^，；。！？\n]{0,12}(?:文件|代码|内容|实现|东西)/iu,
-  /\b(?:do not|don't|never)\b[^,;.!?\n]{0,12}\b(?:modify|edit|change|write)\b[^,;.!?\n]{0,16}\b(?:anything|any (?:files?|code|changes?)|all (?:files?|code|changes?)|the (?:whole|entire) codebase)\b/iu,
-];
-const SCOPED_NO_EDIT_WITH_EXECUTION_PATTERNS = [
-  /(?:不要|别|请勿)[^，；。！？\n]{0,12}(?:改|修改|编辑|写入)(?![^，；。！？\n]{0,12}(?:任何|全部|所有|整个))[^，；。！？\n]{1,28}[，；。](?![^，；。！？\n]{0,20}(?:不要|别|请勿|禁止|无需|不用|不需要|不能))[ \t]*[^，；。！？\n]{0,20}(?:实现|修复|修改|更新|执行|落地)/iu,
-  /\b(?:do not|don't|never)\b[^,;.!?\n]{0,12}\b(?:modify|edit|change|write)\b(?![^,;.!?\n]{0,16}\b(?:anything|any (?:files?|code|changes?)|all (?:files?|code|changes?)|the (?:whole|entire) codebase)\b)[^,;.!?\n]{1,36}[,;.](?![^,;.!?\n]{0,24}\b(?:do not|don't|never|no need to|without|skip)\b)\s*[^,;.!?\n]{0,24}\b(?:implement|fix|change|update|execute|apply)\b/iu,
-];
-const EXECUTION_ACTION_PATTERNS = [
-  /(?:开始|执行|实施|落实|动手)/iu,
-  /\b(?:start|execute|implement|apply)\b/iu,
-];
-const IMPLEMENTATION_REFERENCE_PATTERNS = [
-  /(?:(?:这个|该|上述|上面|前面|刚才)的?(?:方案|计划|实现|改动|工作))/iu,
-  /\b(?:(?:this|that|the|above|previous)\s+(?:plan|proposal|implementation|change)|(?:it|that))\b/iu,
 ];
 const NEW_TASK_PATTERNS = [
   /(?:另一个|另一项|另一件|另外(?:一个|一项|一件)|新(?:的)?(?:问题|任务|需求|工作))/iu,
@@ -302,37 +233,6 @@ export function classifyPendingReviewerText(text: unknown): "continue" | "supers
 export function hasExplicitRequestRevision(text: unknown): boolean {
   const explicit = stripQuotedMaterial(String(text ?? "")).trim();
   return explicit.length > 0 && matchesAny(explicit, EXECUTION_REVISION_PATTERNS);
-}
-
-export function isExecutionContinuation(text: string): boolean {
-  const explicit = stripQuotedMaterial(text).trim();
-  if (!explicit || matchesAny(explicit, NEW_TASK_PATTERNS) || matchesAny(explicit, EXECUTION_REVISION_PATTERNS)) return false;
-  if (matchesAny(explicit, EXPLICIT_EXECUTION_CONTINUATION_PATTERNS)) return true;
-  return matchesAny(explicit, EXECUTION_ACTION_PATTERNS)
-    && matchesAny(explicit, IMPLEMENTATION_REFERENCE_PATTERNS);
-}
-
-export function classifyImplementationAuthorization(text: unknown): Readonly<ImplementationAuthorization> {
-  const explicit = stripQuotedMaterial(String(text ?? "")).trim();
-  if (!explicit) return Object.freeze({ status: "unknown" });
-  if (matchesAny(explicit, GLOBAL_NO_EDIT_PATTERNS)) return Object.freeze({ status: "plan-only" });
-  if (matchesAny(explicit, SCOPED_NO_EDIT_WITH_EXECUTION_PATTERNS)) return Object.freeze({ status: "authorized" });
-  if (matchesAny(explicit, NO_IMPLEMENTATION_PATTERNS)) return Object.freeze({ status: "plan-only" });
-  if (matchesAny(explicit, STATUS_UPDATE_PATTERNS)
-    && !matchesAny(explicit, UNAMBIGUOUS_DELIVERY_PATTERNS)
-    && !matchesAny(explicit, CONCRETE_CHANGE_PATTERNS)) {
-    return Object.freeze({ status: matchesAny(explicit, PLAN_ONLY_PATTERNS) ? "plan-only" : "unknown" });
-  }
-  if (isExecutionContinuation(explicit) || matchesAny(explicit, PLAN_THEN_IMPLEMENT_PATTERNS)) {
-    return Object.freeze({ status: "authorized" });
-  }
-  if (matchesAny(explicit, PLAN_ONLY_PATTERNS)) return Object.freeze({ status: "plan-only" });
-  if (matchesAny(explicit, NON_IMPLEMENTATION_QUERY_PATTERNS)) return Object.freeze({ status: "unknown" });
-  if (matchesAny(explicit, IMPLEMENTATION_AUTHORIZATION_PATTERNS)
-    || matchesAny(explicit, CONCRETE_CHANGE_PATTERNS)) {
-    return Object.freeze({ status: "authorized" });
-  }
-  return Object.freeze({ status: "unknown" });
 }
 
 function hasHighImpactEvidenceGap(text: string): boolean {
@@ -640,34 +540,13 @@ export function extractRoutingText(
   return latest;
 }
 
-export function requiresFailClosedProtection(decision: RouteDecision | undefined): boolean {
-  if (decision?.reasonCode === HIGH_IMPACT_PLANNER_REASON) return true;
-
-  if (!decision) return false;
-  const decisionRole = decision.targetRole ?? decision.role;
-  if (decisionRole !== "planner" && decisionRole !== "reviewer") return false;
-
-  const signals = new Set(decision.signals);
-  if (!signals.has("risk-present")) return false;
-  return signals.has("irreversible-action")
-    || (signals.has("concrete-change-request")
-      && (signals.has("specific-operational-parameter") || signals.has("urgency-pressure")));
-}
-
-function observeProtocol(decision: RouteDecision): string[] {
-  const shared = [
+function observeProtocol(_decision: RouteDecision): string[] {
+  return [
     "Observe-mode controller protocol:",
     "- No independent role was run. Do not claim independent planning or review.",
-    "- Perform the missing responsibility locally: separate facts from assumptions, inspect decisive project evidence, and state what remains unverified.",
-    "- Ground the path in capabilities and evidence that actually exist. Treat unavailable environments, tools, owners, thresholds, and protections as missing conditions, not facts.",
-    "- End with concrete evidence-gathering steps and explicit decision criteria that let the user safely continue; objection alone is not a complete delivery.",
-  ];
-  if (!requiresFailClosedProtection(decision)) return shared;
-
-  return [
-    ...shared,
-    "- High-impact fail-closed boundary: do not implement, persist, or publish the requested change in this turn. Use read-only evidence only.",
-    "- Explain the protection-chain gap and keep the current state unchanged until the decision basis and end-to-end safety dependency are verified.",
+    "- Continue authorized work with available evidence and capabilities. Local reasoning cannot satisfy explicitly required independence.",
+    "- Report missing independence as incomplete; hold only actions that depend on unresolved evidence, authorization, or necessary high-impact protections.",
+    "- Routing availability does not alter user authorization, host plan mode, or execution permissions.",
   ];
 }
 
@@ -710,40 +589,26 @@ export function renderMissingRouteConfigNotice(
   configFailure?: string,
 ): string {
   const routeRole = decision.targetRole ?? decision.role;
-  const naturalRole = RESPONSIBILITY_LABELS[routeRole] ?? routeRole;
   const invalidConfig = typeof configFailure === "string" && configFailure !== "";
   return [
     `odai routing capability is ${invalidConfig ? "invalid" : "not configured"}`,
     `required responsibility: ${routeRole}`,
     `runtime: ${runtimeMode}`,
-    `${invalidConfig ? "untrusted" : "missing"} responsibility mapping: ${routeRole}`,
     ...(invalidConfig ? [`configuration error: ${configFailure}`] : []),
     `No ${routeRole} model was called. Do not claim that this responsibility ran or that the controller was upgraded.`,
-    `Tell the user that the required ${routeRole} model is ${invalidConfig ? "unavailable because its saved configuration is invalid" : "not configured"}. Ask them to name the provider, model, and optional reasoning effort in natural language.`,
-    `Example: “把${naturalRole}模型设为 <provider>/<model>，推理档设为 <effort>。”`,
-    `When the user specifies that mapping, call the odai_routing_config tool to ${invalidConfig ? "repair and " : ""}persist it. Do not ask the user to edit YAML or JSON, run a command, or add routing terminology to future task prompts.`,
-
-    ...(requiresFailClosedProtection(decision) ? [
-      "High-impact fail-closed protection is active for this turn.",
-      "Do not implement, persist, or publish the requested change. Use read-only evidence only until the missing responsibility is configured or the decision gap is otherwise resolved.",
-    ] : [
-      "Continue only with parts that do not depend on the missing independent responsibility.",
-    ]),
+    "Continue authorized work with available capabilities. Report explicitly required independence as incomplete, and hold only outcomes that depend on it.",
+    "Do not require model configuration as a universal prerequisite for continuing the task. Change routing only when the user requests it and supplies the required values.",
+    "Routing availability does not alter user authorization, host plan mode, execution permissions, or necessary high-impact evidence and protections.",
   ].join("\n");
 }
 
 export function renderRouteFailureNotice(decision: RouteDecision, failure: unknown): string {
   const routeRole = decision.targetRole ?? decision.role;
-  if (!requiresFailClosedProtection(decision)) {
-    return `odai ${routeRole} route failed (${failure}); continue directly as controller and do not claim delegated evidence.`;
-  }
-
   return [
-    `odai ${routeRole} route failed (${failure}); no independent evidence was obtained.`,
-    "High-impact fail-closed protection is active for this turn.",
-    "Do not implement, persist, or publish the requested change. Use read-only evidence only.",
-    "Ground the path in capabilities and evidence that actually exist. Treat unavailable environments, tools, owners, thresholds, and protections as missing conditions, not facts.",
-    "Explain the unresolved decision-evidence and protection-chain gaps, then provide concrete evidence-gathering steps and explicit decision criteria. Objection alone is not a complete delivery.",
+    `odai ${routeRole} route failed (${failure}); no verified delegated result was obtained.`,
+    "Continue authorized work as controller with available capabilities. Do not claim the configured responsibility ran successfully.",
+    "Report explicitly required independence as incomplete. Hold only actions that depend on unresolved evidence, authorization, or necessary high-impact protections.",
+    "Routing failure does not impose a whole-turn read-only restriction and does not waive host plan mode or execution permissions.",
   ].join("\n");
 }
 

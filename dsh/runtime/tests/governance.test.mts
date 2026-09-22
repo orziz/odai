@@ -60,6 +60,7 @@ test("high-impact route protection denies controller mutations only for the acti
             step: 1,
             mode: "read-only",
             reasonCode: "PLANNER_UNVERIFIED_HIGH_IMPACT_CHANGE",
+            source: "responsibility-scope-planner",
             scopeId: "scope-1",
           },
         },
@@ -97,6 +98,17 @@ test("high-impact route protection denies controller mutations only for the acti
   });
   assert.equal(activeRouteProtection(protectedController), undefined);
   assert.equal(guard({ agent: protectedController, name: "write" }), undefined);
+});
+
+test("old route failures cannot restore whole-turn write protection", () => {
+  for (const source of ["route-failure", "route-config-missing", "route-mismatch", undefined]) {
+    const agent: DshAgent = { session: { header: {}, snapshotEvents: () => [
+      { type: "odai/route-decided", data: { turn: 1, step: 1 } },
+      { type: "odai/route-protection", data: { turn: 1, mode: "read-only", source, scopeId: "old-scope" } },
+    ], append() {} } };
+    assert.equal(activeRouteProtection(agent), undefined, source);
+    assert.equal(createRouteProtectionGuard()({ agent, name: "write" }), undefined, source);
+  }
 });
 
 test("read-only responsibility remains enforced without risk protection", () => {
