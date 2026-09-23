@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：DSH 双包 `0.2.35` / canonical `0.6.0` 已发布；当前源码候选为 DSH `0.2.36` / 治理 `0.7.0`（runtime contract `9`）/ 编排 `0.2.0`，按规则账本重构治理入口与 reference、恢复此前整理中丢失的有来源规则、退役 DSH 技能演进，并保留移除默认推断 goal 和强制 todo 的提示调整，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
+状态：DSH 双包 `0.2.36` / canonical `0.6.1` 已发布；当前源码候选为 DSH `0.2.37` / 治理 `0.7.0`（runtime contract `9`）/ 编排 `0.2.0`，按规则账本重构治理入口与 reference、恢复此前整理中丢失的有来源规则、退役 DSH 技能演进，并保留移除默认推断 goal 和强制 todo 的提示调整，仅支持宿主 `0.1.5-rc.2`。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 

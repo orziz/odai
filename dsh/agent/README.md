@@ -36,7 +36,7 @@ With DSH already installed, run the single Agent package command below. The pack
 npx odai-dsh-agent install
 ```
 
-The installer checks `dsh -V`; the current `0.2.36` candidate accepts only `0.1.5-rc.2`, while published `0.2.32` retains its exact rc.1 contract. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
+The installer checks `dsh -V`; the current `0.2.37` candidate accepts only `0.1.5-rc.2`, while published `0.2.32` retains its exact rc.1 contract. It records the detected version in the managed manifest and publishes Odai's own composition. In an interactive terminal it classifies the Control Center profile as absent, current, registry-upgrade, local-link, partial-drift, newer, or unknown-source. Every add, upgrade, replacement, or repair is shown at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, and other text leave the profile unchanged. Non-interactive and `--json` installs never infer consent: automation can use `--with-control-center` or `--without-control-center` explicitly, with `--profile <name>` selecting a profile other than `web`.
 
 `DSH_HOME` is honored. An explicit location can be supplied without changing the environment:
 
@@ -121,7 +121,7 @@ This candidate reads independent governance schema `5` / runtime contract `9` an
 
 ## Retired skill evolution
 
-Earlier releases could refine both governance and orchestration Markdown in `$DSH_HOME/odai/skill-evolution`. The `0.2.36` candidate retires that overlay together with `odai_skill_evolution`, `ODAI_DISABLE_EVOLUTION`, and `governance.evolutionRoot`: previously active refinements stop taking effect after upgrading and restarting DSH. The runtime no longer reads the store, no package install, update, repair, or removal deletes it, and a leftover `evolutionRoot` is ignored.
+Earlier releases could refine both governance and orchestration Markdown in `$DSH_HOME/odai/skill-evolution`. The `0.2.37` candidate retires that overlay together with `odai_skill_evolution`, `ODAI_DISABLE_EVOLUTION`, and `governance.evolutionRoot`: previously active refinements stop taking effect after upgrading and restarting DSH. The runtime no longer reads the store, no package install, update, repair, or removal deletes it, and a leftover `evolutionRoot` is ignored.
 
 To retain governance customizations, start with a complete schema `5` / contract `9` user-level bundle, review and apply the desired rules, assign a distinct valid SemVer `skillVersion`, then ask Odai to set the source to `user`. Modified content retaining bundled version `0.7.0` falls back with `same-version-content-conflict`; changing only build metadata is insufficient. On the next turn verify the actual canonical source, version and governance digest, not just the saved setting. Explicit deployment paths take precedence.
 

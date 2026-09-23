@@ -10,7 +10,7 @@ The DSH integration has two independently installable user surfaces, released to
 
 The provider-neutral `cli/` remains a separate product and is not part of this subtree.
 
-The `0.2.36` candidate bundles independent governance (`skills/odai`, version `0.7.0`, schema `5`, runtime contract `9`) and optional orchestration (`skills/odai-orchestration`, version `0.2.0`, schema `1`). Governance loads without the orchestration compiler; the DSH adapter combines both immutable identities for a turn and its children. Setting routing mode to `off` omits orchestration instructions while retaining governance and host execution boundaries. External governance never supplies executable routing code. Incompatible older sources fall back visibly without rewriting user data. Other hosts can install the orchestration skill separately and supply `--governance-root` when the skills are not siblings.
+The `0.2.37` candidate bundles independent governance (`skills/odai`, version `0.7.0`, schema `5`, runtime contract `9`) and optional orchestration (`skills/odai-orchestration`, version `0.2.0`, schema `1`). Governance loads without the orchestration compiler; the DSH adapter combines both immutable identities for a turn and its children. Setting routing mode to `off` omits orchestration instructions while retaining governance and host execution boundaries. External governance never supplies executable routing code. Incompatible older sources fall back visibly without rewriting user data. Other hosts can install the orchestration skill separately and supply `--governance-root` when the skills are not siblings.
 
 The Odai runtime replaces the host's default encouragement to infer persistent goals or create a todo list for every multi-step task. Persistent autonomous goal rounds require an explicit human request; ordinary implementation and continuation proceed directly. Existing goal controls, tool schemas and execution authority remain available. This changes model-facing defaults, not the host goal engine, and does not cancel an already running goal.
 
@@ -32,7 +32,7 @@ Verified local child model receipts are mirrored into parent evidence with child
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; published `0.2.32` targets exactly `dsh@0.1.5-rc.1`, while the `0.2.36` source candidate targets only `dsh@0.1.5-rc.2`.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`; published `0.2.32` targets exactly `dsh@0.1.5-rc.1`, while the `0.2.37` source candidate targets only `dsh@0.1.5-rc.2`.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -169,6 +169,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The current `0.2.36` candidate targets exactly `@deepseek-ai/dsh@0.1.5-rc.2`; the published `0.2.32` release retains its exact rc.1 contract. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
+The current `0.2.37` candidate targets exactly `@deepseek-ai/dsh@0.1.5-rc.2`; the published `0.2.32` release retains its exact rc.1 contract. Runtime history uses the public immutable `snapshotEvents()` API. The release matrix pins the official dependency graph, publication cutoff, and upstream Standard artifact digest; that digest identifies the SDK artifact and does not require Odai to copy Standard. The Agent owns its composition. Published versions retain their historical compatibility entries. Loading the integration does not establish migration compatibility for old host data.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.
