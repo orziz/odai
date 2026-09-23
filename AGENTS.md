@@ -4,8 +4,8 @@
 
 - 本仓库中的每次用户请求都必须使用 canonical `skills/odai/SKILL.md` 治理。若宿主明确声明当前 `odai-dsh-agent` 或 `odai-dsh-plugin` 已把完整 canonical governance 注入系统提示，并给出 skill version、runtime contract 与 bundle digest，则该注入本身视为已完整加载；声明有效且本会话未改动 canonical bundle 期间，不得再调用 skill 或 `read` 重复载入同一正文。仅当注入声明缺失或不可信、任务直接审查或修改 Odai、或 manifest 声明的 canonical 文件在注入后发生变化时，才须在行动前完整读取当前 `SKILL.md`，并以新内容继续治理。其他宿主若当前任务尚未完整读取其当下版本，任何调查、判断、修改或测试前先完整读取。
 - 按 odai 的真实缺口决定是否读取支撑资料；使用 odai 不等于自动增加计划、路由、角色、文件、测试或流程，简单任务仍直接完成。
-- 对 odai 自身及其配套机制的新增、扩写、删减与压缩使用同一标准：明确当前问题、预期改善、必须保持的行为，并以相称行为证据决定保留或退役；没有具体收益依据或未验证保持项的新增同样不得合入或发布。优先复用现有检查，证据足够即停，不为满足此规则新造测试或审计设施；已有实现、历史方案、题本得分和文字增减量都不单独证明净收益。
-- 优化按实际影响选择证据，不因目标是减少 token、延迟或成本就统一要求测试。编辑去重与引用归位核对规则仍完整提供且适用条件不变；改变行为、权限或读取契约时验证对应保持项与主要反例。宣称效果或成本改善须有可比实测证据，不把文字缩短或模型自报当收益证明；未验证必要保持项或以删除能力换指标时，不得合入或发布。
+- 对 odai 自身及其配套机制的修改，明确要解决的问题及必须保持的行为，按实际影响选择已有证据。日常维护和发布不默认要求全量题本、A/B、弱模型或多模型裁判；结构调整和文字压缩本身不触发模型评测。只有具体未决问题会改变实现、保留或退役决定时才做最小实验；超时不自动产生重跑任务。
+- 保留保护用户数据、权限、安装恢复、发布契约和已发生缺陷的程序回归；删除只锁定提示措辞、内部排列或固定 token 估算值的断言。文字整理用全文审阅和完整性检查，执行逻辑改动验证受影响的真实行为，不为测试数量或覆盖率补设施。效果或成本改善的公开声明仍须有可比实测证据，未测的不宣称改善；旧结果不自动证明新版本质量。
 - 评测维护、题本设计、裁判与报告整理仍按上述要求治理；真正受测的 runner 则严格服从冻结的评测臂，不继承本节。`on` 只加载该臂声明的冻结 skill 与项目材料；`off` 必须在干净隔离环境运行，不读取或注入 odai、`.odai/local.md`、odai 路由或 Hooks、要求使用 odai 的仓库指令、其他臂输出、既往 runner 转录或其派生状态。
 
 ## 官方 skills 单一事实源
@@ -14,7 +14,8 @@
 - `cli/skills/` 不在仓库中常驻；它只由 npm `prepack` 临时生成，并在 `postpack` 清理。
 - 即使用户或 IDE 指向打包期间临时出现的 `cli/skills/`，也要把对应修改落到仓库根 `skills/<name>/`。
 - source 修改完成后，运行 `node scripts/validate-odai-skill.mjs` 验证 canonical skills。
-- canonical references 按单一所有权维护：`references/planning.md` 只负责正式计划、可执行合同与跨轮续作，`references/craft.md` 只负责已决定结果的制作工艺，治理 `references/leverage.md` 负责工具、资料与技能的选择；编排技能的 `references/orchestration.md` 负责职责选择、调度和交接；角色合同只引用对应 owner，不复制另一层的清单或宿主机制。
+- canonical references 按单一所有权维护：`references/planning.md` 只负责正式计划、可执行合同与跨轮续作，`references/craft.md` 只负责已决定结果的制作工艺，治理 `references/leverage.md` 负责工具、资料与技能的选择，`references/memory.md` 负责长期信息、项目叠加层与项目规则和技能的固化；reference 只写入口之外的增量，不复述 `SKILL.md`。编排技能的 `references/orchestration.md` 负责职责选择、调度和交接；角色合同只引用对应 owner，不复制另一层的清单或宿主机制。
+- 有来源的操作规则登记在 `docs/rule-ledger.md`。改写、压缩或重组治理正文时逐条核对账本规则仍在所列 owner 中成立；删改账本规则须在 CHANGELOG 写明问题与理由。
 - odai-cli 未冻结时，发布相关修改还需运行 `npm --prefix cli run pack:dry-run`，确认产物与当前声明的打包范围一致，且命令结束后没有遗留 `cli/skills/`；冻结期间遵循下节边界。
 
 ## odai-cli 冻结边界

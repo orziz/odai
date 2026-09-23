@@ -28,6 +28,10 @@ test("repository policy covers every current owned version carrier", () => {
       "dsh/agent/package.json#version",
       "skills/odai/manifest.json#skillVersion",
       "skills/odai/manifest.json#runtimeContract",
+      "skills/odai/manifest.json#schemaVersion",
+      "skills/odai-orchestration/manifest.json#version",
+      "skills/odai-orchestration/manifest.json#governanceContract",
+      "skills/odai-orchestration/manifest.json#schemaVersion",
     ],
   );
 });

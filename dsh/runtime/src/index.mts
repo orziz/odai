@@ -22,6 +22,7 @@ import {
   RUNTIME_NAME,
   loggerFor,
   routedRoleOf,
+  responsibilityRoutingAvailable,
   routeFromConfig,
   runRoutedRole,
   sameRequestModelRoute,
@@ -156,9 +157,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     logger,
   });
   const {
-    baseSelection,
     bundled,
-    evolutionDisabled,
     explicitSkillPath,
     memorySettingsFor,
     routingSnapshotFor,
@@ -286,8 +285,9 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     return invalidation;
   };
   installToolRuntime({
-    appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath,
+    appendEvent, bundled, config, ctx, evidence, explicitSkillPath,
     hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime,
+    responsibilityRoutingFor: (agent, turn = currentAgentTurn(agent)) => responsibilityRoutingAvailable(config.routing.mode, routingSnapshotFor(agent, turn)),
     responsibilityScopes, routeProtections, selectOutputForAgent,
   });
 

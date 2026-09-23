@@ -242,7 +242,6 @@ export interface RuntimeConfig {
     additionalDeniedTools: readonly string[];
     skillSource: "bundled" | "auto" | "user";
     skillConfigPath: string;
-    evolutionRoot: string;
   };
   output: { configPath: string };
   compaction: {

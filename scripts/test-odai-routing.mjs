@@ -17,6 +17,7 @@ const roles = ["controller", "planner", "reviewer"];
 try {
   testBuilds();
   testInstallLifecycle();
+  testDirectoryOwnership();
   testUninstallSettingsDriftIsAtomic();
   testManifestPathEscapeIsRejected();
   testParentSymlinkIsRejected();
@@ -126,6 +127,73 @@ function testInstallLifecycle() {
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
+}
+
+function testDirectoryOwnership() {
+  for (const host of ["codex", "claude", "copilot"]) {
+    for (const preexisting of [[], ["."], [".", "agents"], [".", "role-contracts"], [".", "agents", "role-contracts"]]) {
+      const project = temp("odai-routing-directories-");
+      const config = path.join(project, { codex: ".codex", claude: ".claude", copilot: ".github" }[host]);
+      try {
+        for (const dir of preexisting) mkdirSync(path.join(config, dir), { recursive: true });
+        const installed = runNode(installer, installArgs(project, host));
+        assert.equal(installed.status, 0, installed.stderr);
+        const created = json(path.join(config, "odai-routing.json")).createdDirectories;
+        for (const dir of preexisting) assert.equal(created.includes(dir), false);
+        const updated = runNode(installer, installArgs(project, host));
+        assert.equal(updated.status, 0, updated.stderr);
+        assert.deepEqual(json(path.join(config, "odai-routing.json")).createdDirectories, created);
+        const uninstallArgs = ["--host", host, "--scope", "project", "--target", project, "--uninstall", "--yes"];
+        assert.equal(runNode(installer, uninstallArgs).status, 0);
+        for (const dir of preexisting) assert.ok(existsSync(path.join(config, dir)), `preserve ${dir}`);
+        for (const dir of created) assert.equal(existsSync(path.join(config, dir)), false, `remove ${dir}`);
+        assert.equal(JSON.parse(runNode(installer, uninstallArgs).stdout).status, "not-installed");
+        assert.ok(existsSync(project));
+      } finally { rmSync(project, { recursive: true, force: true }); }
+    }
+  }
+  for (const legacy of [false, true]) {
+    const project = temp("odai-routing-preserve-");
+    const config = path.join(project, ".codex");
+    try {
+      mkdirSync(config);
+      const original = Buffer.from('# keep CRLF\r\nmodel = "original"\r\n[features]\r\nmulti_agent = false\r\n');
+      writeFileSync(path.join(config, "config.toml"), original);
+      const result = runNode(installer, installArgs(project));
+      assert.equal(result.status, 0, result.stderr);
+      if (legacy) {
+        const manifestPath = path.join(config, "odai-routing.json");
+        const manifest = json(manifestPath);
+        delete manifest.createdDirectories;
+        writeFileSync(manifestPath, JSON.stringify(manifest));
+      }
+      for (const dir of [".", "agents", "role-contracts"]) writeFileSync(path.join(config, dir, "unmanaged.txt"), `keep ${dir}`);
+      assert.equal(runNode(installer, installArgs(project)).status, 0);
+      assert.equal(runNode(installer, ["--host", "codex", "--target", project, "--uninstall", "--yes"]).status, 0);
+      assert.deepEqual(readFileSync(path.join(config, "config.toml")), original);
+      for (const dir of [".", "agents", "role-contracts"]) assert.equal(readFileSync(path.join(config, dir, "unmanaged.txt"), "utf8"), `keep ${dir}`);
+    } finally { rmSync(project, { recursive: true, force: true }); }
+  }
+  const userRoot = temp("odai-routing-user-root-");
+  try {
+    const args = installArgs(userRoot);
+    args[args.indexOf("--scope") + 1] = "user";
+    assert.equal(runNode(installer, args).status, 0);
+    const manifestPath = path.join(userRoot, "odai-routing.json");
+    const manifest = json(manifestPath);
+    for (const invalid of [["../outside"], [path.resolve(userRoot, "outside")], ["unknown"], "."]) {
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, createdDirectories: invalid }));
+      const rejected = runNode(installer, ["--host", "codex", "--scope", "user", "--target", userRoot, "--uninstall", "--yes"]);
+      assert.notEqual(rejected.status, 0);
+      assert.match(rejected.stderr, /无效的托管目录记录/u);
+      for (const file of Object.keys(manifest.files)) assert.ok(existsSync(path.join(userRoot, file)));
+    }
+    delete manifest.createdDirectories;
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    assert.equal(runNode(installer, ["--host", "codex", "--scope", "user", "--target", userRoot, "--uninstall", "--yes"]).status, 0);
+    assert.ok(existsSync(path.join(userRoot, "agents")), "legacy ownership is unknown and must remain untouched");
+    assert.ok(existsSync(userRoot));
+  } finally { rmSync(userRoot, { recursive: true, force: true }); }
 }
 
 function testUninstallSettingsDriftIsAtomic() {
@@ -274,7 +342,16 @@ function installArgs(project, host = "codex") {
 }
 
 function runNode(file, args) {
-  return spawnSync(process.execPath, [file, ...args], { cwd: repo, encoding: "utf8" });
+  const scratch = temp("odai-routing-child-temp-");
+  try {
+    const result = spawnSync(process.execPath, [file, ...args], {
+      cwd: repo, encoding: "utf8", env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch },
+    });
+    assert.deepEqual(readdirSync(scratch), [], `temporary routing generation must be cleaned after ${path.basename(file)}: ${result.stderr}`);
+    return result;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 function json(file) { return JSON.parse(readFileSync(file, "utf8")); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }

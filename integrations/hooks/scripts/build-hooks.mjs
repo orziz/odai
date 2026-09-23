@@ -222,6 +222,7 @@ function codexPluginManifest() {
 function writeMatcher(host) {
   if (host === "copilot") return "create|edit|str_replace_editor|apply_patch";
   if (host === "gemini") return "write_file|replace|apply_patch|edit|create";
+  if (host === "claude") return "Edit|Write|NotebookEdit|apply_patch|create|edit|write_file|str_replace_editor";
   return "Edit|Write|apply_patch|create|edit|write_file|str_replace_editor";
 }
 

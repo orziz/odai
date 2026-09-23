@@ -176,7 +176,7 @@ Add support for an actual gap, then remove it when stable;
 persist state for resumption and delegate for a distinct contribution.
 ```
 
-The framework owns the task from understanding through delivery. Eight on-demand references own boundaries, planning, craft, verification, recovery support, external capabilities, everyday care, and crisis safety. Each addresses only the current gap.
+The framework owns the task from understanding through delivery. Eight on-demand references own boundaries, planning, craft, verification, state and memory, external capabilities, everyday care, and crisis safety. Each addresses only the current gap.
 
 odai's complete capability is not just its entry text. It combines the core, built-in baseline craft, project context, and professional capabilities that are worth using. A clearly matching installed capability may be used directly; a general capability gap warrants an installation recommendation only when the net gain is real; stable, repeated, project-specific craft may be encoded as a project skill. Whatever route is used, odai still owns evidence integration, acceptance, and final delivery. Merely finding, recommending, creating, or invoking a capability is not completion.
 
@@ -186,15 +186,15 @@ The internal structure is organized by responsibility, not by mandatory stages:
 
 | Layer | Purpose |
 | --- | --- |
-| Kernel | Core principle, adaptive progression, minimum boundaries, and loading map |
+| Kernel | Core principle, current judgment, action gates, main line, and loading map |
 | `care.md` | Non-crisis everyday support, reduced action burden, and user-controlled response styles |
 | `human-safety.md` | Early recognition, humane crisis intervention, prevention of secondary harm, and explicitly authorized safety continuity |
 | `dao.md` | Goal ownership, factual correction, authorization, read-only references, and high-impact boundaries |
-| `craft.md` | Implementation, design, UI and real-time interaction, writing, and review for an agreed result |
+| `craft.md` | Implementation and troubleshooting, design, UI and real-time interaction, writing, and review for an agreed result |
 | `planning.md` | Executable engineering plans, requirement coverage, work-package dependencies, durable handoffs, and recovery order |
-| `verification.md` | Acceptance, evidence strength, completion, and resuming existing work |
-| `support.md` | Minimal recovery support, restored autonomy, and memory boundaries; planning owns resumable task state |
-| `leverage.md` | Capability escalation and delegation, external capability discovery, net-benefit decisions, installation, creation, composition, and agent collaboration |
+| `verification.md` | Acceptance, evidence strength, and completion |
+| `memory.md` | Long-term information, the project overlay, and codifying project rules or skills; planning owns resumable task state |
+| `leverage.md` | Tool, resource, and skill selection; external capability discovery, net-benefit decisions, installation, creation, and composition |
 
 Domain depth is inferred from the task instead of selected as a package. Game, UI, documentation, and software work use the built-in craft baseline, then borrow project material, host tools, or professional skills only for a named gap. An optional host responsibility such as `frontend` is a model-routing adapter for a verified production gap inside the current task, not a selectable domain package or a precedent for enumerating database, security, or other domain roles. Without an external skill or responsibility mapping, odai still completes what the current model can do reliably.
 
@@ -281,7 +281,7 @@ Then open **Codex Settings → Pets**, refresh the list, and select `dai` or `od
 
 ## Optional Hook Guardrails
 
-The skill supplies judgment; hooks only turn already-explicit project boundaries into mechanical guardrails. They are not installed or enabled by default and do not change odai's main flow. Once a project defines `.odai/hooks.json`, they can protect explicit read-only paths and run explicitly declared acceptance commands that match the current change. With no policy file, they are silent no-ops.
+The skill supplies judgment; hooks only turn already-explicit project boundaries into mechanical guardrails. They are not installed or enabled by default and do not change odai's main flow. Once a project defines `.odai/hooks.json`, they can protect explicit read-only paths for supported structured write tools, including Claude Code's `NotebookEdit`, and run explicitly declared acceptance commands that match the current change. With no policy file, they are silent no-ops.
 
 These are the only per-turn hooks managed by odai. The capability-routing installer does not install hooks and cannot substitute for project guardrails.
 
@@ -302,11 +302,11 @@ Replace `all` with `codex`, `claude`, `copilot`, `gemini`, `grok`, or `kimi` whe
 | Grok Build | `PreToolUse` | — |
 | Kimi Code CLI | `PreToolUse` | `Stop` |
 
-Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapter does not pretend that Stop validation is enforceable. The runtime checks structured write tools and project-declared commands only. It does not parse arbitrary shell writes or infer user intent, target files, or test strategy. Hooks are a lightweight fuse alongside host permissions, sandboxing, and human confirmation—not a complete security boundary. Review the generated adapter and `.odai/hooks.json` before enabling them.
+Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapter does not pretend that Stop validation is enforceable. The runtime checks structured write tools and project-declared commands only. Ordinary shell writes are outside this path protection: the runtime does not parse arbitrary shell commands or infer user intent, target files, or test strategy. Hooks are a lightweight fuse alongside host permissions, sandboxing, and human confirmation—not a complete security boundary. Review the generated adapter and `.odai/hooks.json` before enabling them.
 
 ## Evaluation
 
-The current source candidate is DSH `0.2.36` / governance `0.6.1` / orchestration `0.1.0`; the published DSH release is `0.2.35`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
+The current source candidate is DSH `0.2.36` / governance `0.7.0` (runtime contract `9`) / orchestration `0.2.0`; the published DSH release is `0.2.35`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

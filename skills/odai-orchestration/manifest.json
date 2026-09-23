@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "name": "odai-orchestration",
-  "version": "0.1.0",
-  "governanceContract": 8,
+  "version": "0.2.0",
+  "governanceContract": 9,
   "delegationFile": "contracts/delegation.md",
   "roleFiles": {
     "controller": "assets/routing-roles/controller.md",
@@ -33,6 +33,7 @@
     "assets/claude-agents/agent.md",
     "assets/copilot-agents/agent.md",
     "references/orchestration.md",
+    "references/install.md",
     "scripts/build-routing.mjs",
     "scripts/install-routing.mjs",
     "scripts/run-role.mjs",

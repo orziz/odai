@@ -63,10 +63,10 @@
     "prepack": "npm run verify:version && node ../../scripts/validate-odai-skill.mjs",
     "postpack": "npm run clean:artifact",
     "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean runtime --clean skills --clean client -- --dry-run",
-    "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ../runtime/tests/*.test.mts ./tests/*.test.mts ../../scripts/dsh-web-rpc.test.mjs",
-    "verify:dsh": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/verify-legacy-session-repair.mts && npm --prefix ../.. exec -- tsx ./tests/verify-dsh-load.mts",
-    "smoke:live": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/live-routing-smoke.mts",
-    "smoke:compaction-cache": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/live-compaction-cache-smoke.mts"
+    "test": "npm run verify:version && npm run build:dsh && node --test ../runtime/tests/*.test.mjs ./tests/*.test.mjs ../../scripts/dsh-web-rpc.test.mjs",
+    "verify:dsh": "npm run build:dsh && node ./tests/verify-legacy-session-repair.mjs && node ./tests/verify-dsh-load.mjs",
+    "smoke:live": "npm run build:dsh && node ./tests/live-routing-smoke.mjs",
+    "smoke:compaction-cache": "npm run build:dsh && node ./tests/live-compaction-cache-smoke.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": "0.1.5-rc.2"

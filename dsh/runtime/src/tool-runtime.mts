@@ -18,7 +18,6 @@ import { createResponsibilityReturnTool } from "./responsibility-return.mjs";
 import type { ResponsibilityReturnResult } from "./responsibility-return.mjs";
 import type { ResponsibilityScopeOwner } from "./responsibility-scope.mjs";
 import { createSkillSourceConfigTool } from "./skill-source-config.mjs";
-import { createSkillEvolutionTool, applySkillEvolutionSelection } from "./skill-evolution.mjs";
 import { createSemanticMemoryTool, latestDirectUserMessage } from "./semantic-memory.mjs";
 import { readSkillBundleFile } from "./skill-bundle.mjs";
 import type { SkillBundle } from "./skill-bundle.mjs";
@@ -35,25 +34,24 @@ type ExecutionRestriction = import("./runtime-types.mjs").ToolRestriction;
 interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; executionRestrictionFor: (agent: DshAgent) => ExecutionRestriction; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
 interface ToolRuntimeDependencies {
   appendEvent(agent: DshAgent, type: string, data: object): void;
-  baseSelection: SkillSelection;
   bundled: SkillBundle;
   config: RuntimeConfig;
   ctx: DshRuntimeContext;
   evidence: { events(agent: DshAgent): DshEvent[] };
-  evolutionDisabled: boolean;
   explicitSkillPath: boolean;
   hasSessionEvent(agent: DshAgent, type: string, predicate: (data: RuntimeEventData) => boolean): boolean;
   humanSafetyContinuityStorePath: string;
   logger: RuntimeLogger;
   pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
   promptRuntime: PromptInstaller;
+  responsibilityRoutingFor(agent: DshAgent, turn?: number): boolean;
   responsibilityScopes: Pick<ResponsibilityScopeOwner, "get" | "has" | "stop">;
   routeProtections: WeakMap<DshAgent, RouteProtection>;
   selectOutputForAgent(): { policy: OutputPolicy };
 }
 
 export function installToolRuntime(deps: ToolRuntimeDependencies): void {
-  const { appendEvent, baseSelection, bundled, config, ctx, evidence, evolutionDisabled, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityScopes, selectOutputForAgent } = deps;
+  const { appendEvent, bundled, config, ctx, evidence, explicitSkillPath, hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime, responsibilityRoutingFor, responsibilityScopes, selectOutputForAgent } = deps;
   const { stop: stopResponsibilityScope } = responsibilityScopes;
   const onDenied = (execution: ToolExecution & { agent: DshAgent }, reason: string) => {
     appendEvent(execution.agent, "odai/governance-denied", {
@@ -205,16 +203,6 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       },
     },
   ));
-  ctx.tools.register(createSkillEvolutionTool(config.governance.evolutionRoot, {
-    disabled: evolutionDisabled,
-    currentSelectionFor(agent: DshAgent) {
-      return sharedSkillSelection(agent)
-        ?? applySkillEvolutionSelection(baseSelection, config.governance.evolutionRoot, { disabled: evolutionDisabled });
-    },
-    onChanged(agent, data) {
-      appendEvent(agent, `odai/evolution-${data.action}`, data);
-    },
-  }));
   ctx.tools.register(createOutputConfigTool(config.output.configPath, {
     isChild: isSubagent,
     responsibilityRoutesFor() {
@@ -283,6 +271,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       child,
       responsibilityReturn: options.responsibilityReturn === true || isReadOnlyResponsibility(agent),
       reviewEvidence: child && Boolean(managedReviewEvidenceReader(agent)),
+      responsibilityRouting: child || responsibilityRoutingFor(agent, options.turn),
     }).filter((name) => (!policy.allow || policy.allow.includes(name)) && !policy.deny?.includes(name));
     const deniedNames = [
       ...inactiveOdaiToolNames(activeNames),

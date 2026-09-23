@@ -17,7 +17,6 @@ import {
   renderSessionOutputControlPrompt,
 } from "./output-session.mjs";
 import { COMPACTION_CONFIG_PROMPT } from "./compaction-config.mjs";
-import { RESPONSIBILITY_GAP_PROMPT } from "./responsibility-gap.mjs";
 import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
 import { classifyContextActivation } from "./context-activation.mjs";
 import type { ContextActivation } from "./context-activation.mjs";
@@ -32,7 +31,6 @@ import { SKILL_SOURCE_CONFIG_PROMPT, effectiveSkillSource } from "./skill-source
 import { ODAI_RUNTIME_CONTRACT, loadSkillBundle } from "./skill-bundle.mjs";
 import { resolveSkillSelection } from "./skill-selector.mjs";
 import { currentAgentTurn, selectSharedSkillForTurn } from "./skill-selection-state.mjs";
-import { applySkillEvolutionSelection, skillEvolutionDisabled } from "./skill-evolution.mjs";
 import { MEMORY_PROMPT, currentDirectInput } from "./semantic-memory.mjs";
 import { effectiveMemorySettings } from "./semantic-memory-store.mjs";
 import { resolveSkillPath } from "./runtime-config.mjs";
@@ -45,6 +43,7 @@ import {
   managedRoleBundle,
   reconcileAdaptiveToolSchemas,
   renderEffectiveRoutingContext,
+  responsibilityRoutingAvailable,
 } from "./runtime-support.mjs";
 import type {
   RoutingSnapshotState,
@@ -151,7 +150,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     bundle: bundled,
     rejections: Object.freeze([]),
   });
-  const evolutionDisabled = explicitSkillPath || skillEvolutionDisabled();
 
   ctx.systemPrompt.section({
     name: "odai:canonical-governance",
@@ -159,11 +157,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     text: canonicalPrompt(baseSelection),
   });
   ctx.systemPrompt.section({ name: "odai:orchestration", order: -19.75, text: "" });
-  ctx.systemPrompt.section({
-    name: "odai:canonical-craft",
-    order: -19.5,
-    text: "",
-  });
   ctx.systemPrompt.section({
     name: "odai:routing-configuration",
     order: -19,
@@ -173,11 +166,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     name: "odai:human-safety-continuity",
     order: -18.875,
     text: HUMAN_SAFETY_CONTINUITY_PROMPT,
-  });
-  ctx.systemPrompt.section({
-    name: "odai:responsibility-gap",
-    order: -18.75,
-    text: RESPONSIBILITY_GAP_PROMPT,
   });
   ctx.systemPrompt.section({
     name: "odai:skill-source-configuration",
@@ -211,7 +199,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       return undefined;
     }
   };
-  const selectUpstreamForAgent = async (agent: DshAgent, context: PromptContext): Promise<SkillSelection> => {
+  const selectForAgent = async (agent: DshAgent, context: PromptContext): Promise<SkillSelection> => {
     if (explicitSkillPath) return baseSelection;
     let mode;
     try {
@@ -233,10 +221,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
       signal: context.signal,
       skills: optionalSkillRegistry(),
     });
-  };
-  const selectForAgent = async (agent: DshAgent, context: PromptContext): Promise<SkillSelection> => {
-    const upstream = await selectUpstreamForAgent(agent, context);
-    return applySkillEvolutionSelection(upstream, config.governance.evolutionRoot, { disabled: evolutionDisabled });
   };
   const selectOutputForAgent = (_agent?: DshAgent, _turn?: number): OutputSelection => {
     let selection: OutputSelection;
@@ -406,15 +390,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
       runtimeContract: selection.bundle.manifest.runtimeContract,
       digest: selection.bundle.digest,
       rejections: selection.rejections.map(({ source, reasonCode }) => ({ source, reasonCode })),
-      ...(selection.evolution?.generationId ? {
-        evolution: {
-          status: selection.evolution.status,
-          generationId: selection.evolution.generationId,
-          ...(selection.evolution.baseDigest ? { baseDigest: selection.evolution.baseDigest } : {}),
-          ...(selection.evolution.upstreamDigest ? { upstreamDigest: selection.evolution.upstreamDigest } : {}),
-          ...(selection.evolution.rebaseRequired === undefined ? {} : { rebaseRequired: selection.evolution.rebaseRequired }),
-        },
-      } : {}),
     };
     if (!hasSessionEvent(agent, "odai/skill-selected", (data) => data?.turn === turn && data?.digest === selection.bundle.digest)) {
       appendEvent(agent, "odai/skill-selected", selectionEvidence);
@@ -426,9 +401,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
       renderOutputPolicyPrompt(outputSelection.policy),
       renderSessionOutputControlPrompt(outputSelection),
     ].filter(Boolean).join("\n\n");
-    // Implementation authorization is not a craft capability gap. The full
-    // reference remains available through odai_reference when its guidance is needed.
-    const craftPrompt = "";
     const routingPrompt = !activation.routingConfig
       ? ""
       : childSession
@@ -467,10 +439,8 @@ export function createPromptRuntime(deps: PromptDependencies) {
       ).map((section) => {
         if (section.name === "odai:canonical-governance") return { ...section, text: canonicalPrompt(selection, childSession, Boolean(boundBundle)) };
         if (section.name === "odai:orchestration") return { ...section, text: !childSession && config.routing.mode !== "off" ? "For responsibility selection and handoff, use odai_reference with reference orchestration." : "" };
-        if (section.name === "odai:canonical-craft") return { ...section, text: craftPrompt };
         if (section.name === "odai:routing-configuration") return { ...section, text: routingPrompt };
         if (section.name === "odai:human-safety-continuity") return { ...section, text: continuityPrompt };
-        if (section.name === "odai:responsibility-gap") return { ...section, text: childSession || config.routing.mode === "off" ? "" : RESPONSIBILITY_GAP_PROMPT };
         if (section.name === "odai:skill-source-configuration") return { ...section, text: activation.skillSource ? SKILL_SOURCE_CONFIG_PROMPT : "" };
         if (section.name === "odai:controller-output-policy") return { ...section, text: outputPrompt };
         if (section.name === "odai:compaction-model-configuration") return { ...section, text: activation.compactionConfig ? COMPACTION_CONFIG_PROMPT : "" };
@@ -479,7 +449,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       }).concat(childSession ? [{
         name: "odai:child-execution-boundary",
         text: [!childRole ? selection.bundle.delegationContract : "", DSH_CHILD_EXECUTION_PROMPT].filter(Boolean).join("\n\n"),
-      }] : [{ name: "odai:native-delegation", text: config.routing.mode === "off" ? "" : DSH_NATIVE_DELEGATION_GUIDANCE }]).concat(childRoleSections),
+      }] : [{ name: "odai:native-delegation", text: responsibilityRoutingAvailable(config.routing.mode, routingSnapshotFor(agent, turn)) ? DSH_NATIVE_DELEGATION_GUIDANCE : "" }]).concat(childRoleSections),
     };
     const workPolicy = applyWorkPolicy(result);
     result.sections = workPolicy.sections;
@@ -501,7 +471,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     baseSelection,
     bundled,
     contextActivationFor,
-    evolutionDisabled,
     explicitSkillPath,
     install,
     refreshExecutionSurface,
@@ -509,7 +478,6 @@ export function createPromptRuntime(deps: PromptDependencies) {
     routingSnapshotFor,
     selectForAgent,
     selectOutputForAgent,
-    selectUpstreamForAgent,
     skillPath,
   };
 }

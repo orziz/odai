@@ -7,7 +7,6 @@ export const ODAI_CONTEXT_CAPABILITIES = Object.freeze([
   "human-care",
   "human-safety",
   "skill-source",
-  "skill-evolution",
   "output-config",
   "compaction-config",
   "memory",
@@ -23,7 +22,6 @@ const CAPABILITY_FIELDS: Readonly<Record<ContextCapability, ContextActivationFie
   "human-care": "care",
   "human-safety": "safety",
   "skill-source": "skillSource",
-  "skill-evolution": "skillEvolution",
   "output-config": "outputConfig",
   "compaction-config": "compactionConfig",
   memory: "memory",
@@ -77,7 +75,7 @@ export function createContextCapabilityTool(
   const onRequested = typeof options.onRequested === "function" ? options.onRequested : () => {};
   return {
     name: "odai_context_capability",
-    description: "Request one Odai capability when its specialized tool is not currently visible. Use this only as a discovery fallback for routing configuration, non-crisis care, crisis safety, skill source/evolution, output, compaction, memory, or safety continuity. The real tool and its complete constraints appear on the next step; this request performs no configuration, persistence, diagnosis, or model switch.",
+    description: "Request one Odai capability when its specialized tool is not currently visible. Use this only as a discovery fallback for routing configuration, non-crisis care, crisis safety, skill source, output, compaction, memory, or safety continuity. The real tool and its complete constraints appear on the next step; this request performs no configuration, persistence, diagnosis, or model switch.",
     parameters: {
       type: "object",
       additionalProperties: false,

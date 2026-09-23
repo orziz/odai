@@ -4,10 +4,6 @@ import { CONFIGURABLE_ROLES } from "./routing-config.mjs";
 import type { DshAgent, RuntimeTool, ToolExecution } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
-// Retain the section export for composition compatibility. Governance belongs to
-// the canonical owner; tool usage belongs to the tool, not an always-on protocol.
-export const RESPONSIBILITY_GAP_PROMPT = "";
-
 const RESPONSIBILITIES = Object.freeze([...CONFIGURABLE_ROLES, "user"]);
 const REQUIREMENT_STATUSES = Object.freeze(["active", "superseded"] as const);
 const REQUIREMENT_FIELDS = Object.freeze(["id", "statement", "status", "sourceExcerpt", "supersededBy"] as const);

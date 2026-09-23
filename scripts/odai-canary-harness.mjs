@@ -9,7 +9,6 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const CASE_ROW_RE = /^\|\s*(\d{1,2})(\s*★)?\s*\|/;
-const DEFAULT_SUITE = "full";
 const STRICT_SUITES = new Set(["intent", "verification"]);
 const CANONICAL_SUITES = Object.freeze({
   full: Object.freeze(Array.from({ length: 19 }, (_, index) => index + 1)),
@@ -95,7 +94,7 @@ function estimateTokens(value) {
   return Math.ceil(cjkChars + otherChars / 4);
 }
 
-function listSkillMarkdown(root) {
+function listSkillFiles(root, names = ["odai", "ribao"]) {
   const skillRoot = path.join(root, "skills");
   const files = [];
   function walk(dir) {
@@ -103,22 +102,33 @@ function listSkillMarkdown(root) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      } else if (entry.isFile()) {
         files.push(path.relative(skillRoot, fullPath).split(path.sep).join("/"));
+      } else {
+        throw new Error(`canary skill fingerprint rejects non-regular source: ${fullPath}`);
       }
     }
   }
-  for (const name of ["odai", "ribao"]) {
+  for (const name of names) {
     const directory = path.join(skillRoot, name);
     if (existsSync(directory)) walk(directory);
   }
   return files.sort();
 }
 
-function buildSkillBudget(root) {
+function listSkillMarkdown(root, names) {
+  return listSkillFiles(root, names).filter(file => file.endsWith(".md"));
+}
+
+export function fingerprintSkillBundle(root, { orchestration = false } = {}) {
+  const names = ["odai", "ribao", ...(orchestration ? ["odai-orchestration"] : [])];
+  const files = listSkillFiles(root, names);
+  return { contract: "odai-canary-skill-bundle/v1", files, sha256: fingerprintFiles(path.join(root, "skills"), files) };
+}
+
+function buildSkillBudget(root, names) {
   const skillRoot = path.join(root, "skills");
-  const files = listSkillMarkdown(root)
-    .filter((relativePath) => !/^odai\/assets\/(?:claude|copilot)-agents\//.test(relativePath))
+  const files = listSkillMarkdown(root, names)
     .map((relativePath) => {
     const fullPath = path.join(skillRoot, relativePath);
     const text = readText(fullPath);
@@ -482,6 +492,9 @@ function parseArgs(argv) {
   if (!Number.isInteger(args.passScore) || args.passScore < 1 || args.passScore > 4) {
     throw new Error("--pass-score must be an integer from 1 to 4");
   }
+  if (!args.cases && !args.suite && !args.smoke) {
+    throw new Error("Select --cases, --suite, or --smoke explicitly; no default full evaluation is run.");
+  }
   return args;
 }
 
@@ -499,7 +512,7 @@ Options:
   --out DIR         Output directory (default: temp dir)
   --smoke           Select only star-marked cases
   --suite NAME      Select full, ab, routing, ideation, defensive, intent, verification, or all
-                    (default: full unless --cases is explicit)
+                    (no default; explicitly choose --cases, --suite, or --smoke)
   --cases LIST      Case ids/ranges, e.g. 1,5,20-22
   --run             Invoke the runner
   --stop-on-fail    Stop after the first non-pass result (run mode only)
@@ -616,9 +629,7 @@ function parseCaseIds(spec) {
 
 function selectCases(cases, args) {
   const ids = parseCaseIds(args.cases);
-  const hasSuiteMetadata = cases.some((item) => item.suites.length > 0);
-  const suite = args.suite || (!ids && hasSuiteMetadata ? DEFAULT_SUITE : "");
-  const suiteIds = suite ? new Set(CANONICAL_SUITES[suite]) : null;
+  const suiteIds = args.suite ? new Set(CANONICAL_SUITES[args.suite]) : null;
   return cases.filter((item) => (!args.smoke || item.smoke)
     && (!suiteIds || suiteIds.has(item.id))
     && (!ids || ids.has(item.id)));
@@ -4424,16 +4435,22 @@ function writeReport(outRoot, results, dryRun, skillBudget, passScore) {
   writeText(path.join(outRoot, "report.md"), `${lines.join("\n")}\n`);
 }
 
-function main() {
+export function verifyCanaryHarness() {
+  const root = repoRoot();
+  pythonCommand = resolvePython3Command();
   assertTraceDetection();
   assertCliReportedTokenDetection();
   assertCodexRoutingTelemetryParsing();
   assertJudgeTimeoutRecoveryPolicy();
   assertIsolationContract();
   assertPassScorePolicy();
+  assertCanonicalCatalog(root);
+  assertDeterministicCanaryContracts(root);
+}
+
+function main() {
   const args = parseArgs(process.argv.slice(2));
   const root = repoRoot();
-  assertCanonicalCatalog(root);
   const planPath = path.resolve(root, args.plan);
   const allCases = parseCanary(planPath);
   const selected = selectCases(allCases, args);
@@ -4448,10 +4465,17 @@ function main() {
   if (selected.some((item) => item.id === 16) && !pythonCommand) {
     throw new Error("canary infrastructure unavailable: C16 requires Python 3; install it or set ODAI_PYTHON to a Python 3 executable");
   }
-  assertDeterministicCanaryContracts(root);
-  const skillFiles = listSkillMarkdown(root);
-  const skillBudget = buildSkillBudget(root);
+  const skillNames = ["odai", "ribao", ...(args.codexRoutingPlannerModel ? ["odai-orchestration"] : [])];
+  const skillFiles = listSkillMarkdown(root, skillNames);
+  const skillBudget = buildSkillBudget(root, skillNames);
   const skillFingerprint = fingerprintFiles(path.join(root, "skills"), skillFiles);
+  const skillBundle = fingerprintSkillBundle(root, { orchestration: Boolean(args.codexRoutingPlannerModel) });
+  const routingMapping = args.codexRoutingPlannerModel ? {
+    controller: { model: resolvedRunnerModel(args), reasoning_effort: resolvedRunnerEffort(args) || null },
+    planner: { model: args.codexRoutingPlannerModel, reasoning_effort: args.codexRoutingPlannerEffort || null },
+    reviewer: { model: args.codexRoutingReviewerModel || resolvedRunnerModel(args), reasoning_effort: args.codexRoutingReviewerEffort || null },
+  } : null;
+  const routingFingerprint = fingerprintText(JSON.stringify({ telemetry: args.codexRoutingTelemetry, mapping: routingMapping }));
   const planFingerprint = fingerprintText(readText(planPath));
   const harnessFingerprint = fingerprintText(readText(fileURLToPath(import.meta.url)));
   const outRoot = args.out ? path.resolve(args.out) : mkdtempSync(path.join(tmpdir(), "odai-canary-"));
@@ -4467,14 +4491,19 @@ function main() {
     runner_model: resolvedRunnerModel(args) || "inherit",
     runner_reasoning_effort: resolvedRunnerEffort(args) || "inherit",
   };
-  if (args.skillMode === "on") reuseCompatibility.skill_markdown_sha256 = skillFingerprint;
+  reuseCompatibility.routing_config_sha256 = routingFingerprint;
+  if (args.skillMode === "on") {
+    reuseCompatibility.skill_markdown_sha256 = skillFingerprint;
+    reuseCompatibility.skill_bundle_contract = skillBundle.contract;
+    reuseCompatibility.skill_bundle_sha256 = skillBundle.sha256;
+  }
   const reuseSources = loadReuseSources(args.rejudgeFrom, reuseCompatibility);
   writeText(
     path.join(outRoot, "manifest.json"),
     JSON.stringify(
       {
         plan: planPath,
-        suite: args.suite || (args.cases ? null : (allCases.some((item) => item.suites.length > 0) ? DEFAULT_SUITE : null)),
+        suite: args.suite || null,
         selected_cases: selected.map((item) => item.id),
         run: args.run,
         stop_on_fail: args.stopOnFail,
@@ -4484,20 +4513,11 @@ function main() {
         deferred_judge: args.deferJudge,
         reused_runner: reuseSources.length > 0,
         codex_routing_telemetry: args.codexRoutingTelemetry,
-        codex_routing_mapping: args.codexRoutingPlannerModel ? {
-          controller: {
-            model: resolvedRunnerModel(args),
-            reasoning_effort: resolvedRunnerEffort(args) || null,
-          },
-          planner: {
-            model: args.codexRoutingPlannerModel,
-            reasoning_effort: args.codexRoutingPlannerEffort || null,
-          },
-          reviewer: {
-            model: args.codexRoutingReviewerModel || resolvedRunnerModel(args),
-            reasoning_effort: args.codexRoutingReviewerEffort || null,
-          },
-        } : null,
+        codex_routing_mapping: routingMapping,
+        routing_config_sha256: routingFingerprint,
+        skill_bundle_contract: skillBundle.contract,
+        skill_bundle_sha256: skillBundle.sha256,
+        skill_bundle_files: skillBundle.files,
         reuse_sources: reuseSources.map((source) => source.root),
         skill_mode: args.skillMode,
         runner_sandbox: args.runnerCmd ? "custom-command" : args.runnerSandbox,

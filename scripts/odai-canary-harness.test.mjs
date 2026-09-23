@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { fingerprintSkillBundle } from "./odai-canary-harness.mjs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,42 @@ async function dryRun(args = []) {
   }
 }
 
+test("bundle identity covers manifests and installed orchestration without coupling plain runs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "odai-fingerprint-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const name of ["odai", "ribao", "odai-orchestration"]) {
+    await mkdir(join(root, "skills", name), { recursive: true });
+    await writeFile(join(root, "skills", name, "SKILL.md"), `${name} body`);
+    await writeFile(join(root, "skills", name, "manifest.json"), "{}");
+  }
+  const plain = fingerprintSkillBundle(root);
+  const routed = fingerprintSkillBundle(root, { orchestration: true });
+  assert.ok(plain.files.includes("odai/manifest.json"));
+  assert.ok(routed.files.includes("odai-orchestration/manifest.json"));
+  await writeFile(join(root, "skills", "odai-orchestration", "SKILL.md"), "changed orchestration");
+  assert.equal(fingerprintSkillBundle(root).sha256, plain.sha256);
+  const changed = fingerprintSkillBundle(root, { orchestration: true });
+  assert.notEqual(changed.sha256, routed.sha256);
+  await writeFile(join(root, "skills", "odai-orchestration", "manifest.json"), '{"changed":true}');
+  assert.notEqual(fingerprintSkillBundle(root, { orchestration: true }).sha256, changed.sha256);
+  await writeFile(join(root, "skills", "odai", "manifest.json"), '{"changed":true}');
+  assert.notEqual(fingerprintSkillBundle(root).sha256, plain.sha256);
+});
+
+test("rejudge refuses missing bundle identity, changed bundles, and changed routing configuration", async (t) => {
+  const baseline = await dryRun(["--cases", "1"]);
+  assert.equal(baseline.manifest.skill_bundle_contract, "odai-canary-skill-bundle/v1");
+  assert.match(baseline.manifest.skill_bundle_sha256, /^[a-f0-9]{64}$/u);
+  const source = await mkdtemp(join(tmpdir(), "odai-rejudge-source-"));
+  const out = await mkdtemp(join(tmpdir(), "odai-rejudge-output-"));
+  t.after(() => Promise.all([source, out].map(dir => rm(dir, { recursive: true, force: true }))));
+  await writeFile(join(source, "report.json"), JSON.stringify(baseline.report));
+  for (const [field, value] of [["skill_bundle_contract", undefined], ["skill_bundle_sha256", "changed"], ["routing_config_sha256", "changed"]]) {
+    await writeFile(join(source, "manifest.json"), JSON.stringify({ ...baseline.manifest, [field]: value }));
+    await assert.rejects(execFileAsync(process.execPath, [harness, "--run", "--judge-cmd", 'node -e "process.exit(99)"', "--cases", "1", "--out", out, "--rejudge-from", source], { cwd: repoRoot }), new RegExp(`incompatible ${field}`, "u"));
+  }
+});
+
 test("isolated canary rejects a reasoning effort that cannot actually inherit", async () => {
   await assert.rejects(
     execFileAsync(process.execPath, [
@@ -37,15 +74,10 @@ test("isolated canary rejects a reasoning effort that cannot actually inherit", 
   );
 });
 
-test("canonical suite selection preserves historical defaults and bypasses them for explicit cases", async () => {
-  const full = await dryRun();
-  assert.equal(full.manifest.suite, "full");
-  assert.deepEqual(full.manifest.selected_cases, Array.from({ length: 19 }, (_, index) => index + 1));
-
-  const ab = await dryRun(["--suite", "ab"]);
-  assert.equal(ab.manifest.suite, "ab");
-  assert.deepEqual(ab.manifest.selected_cases, [1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 17, 18, 19]);
-
+test("canary requires an explicit selection before preparing or running an experiment", async () => {
+  for (const args of [[], ["--run"]]) {
+    await assert.rejects(execFileAsync(process.execPath, [harness, ...args], { cwd: repoRoot }), /Select --cases, --suite, or --smoke explicitly/u);
+  }
   const explicit = await dryRun(["--cases", "20,34"]);
   assert.equal(explicit.manifest.suite, null);
   assert.deepEqual(explicit.manifest.selected_cases, [20, 34]);
@@ -62,14 +94,14 @@ test("strict canonical suites persist a 4-of-4 pass threshold", async () => {
     execFileAsync(process.execPath, [harness, "--suite", "intent", "--pass-score", "3"], { cwd: repoRoot }),
     /--suite intent requires --pass-score 4/u,
   );
-  const intent = await dryRun(["--suite", "intent"]);
+  const intent = await dryRun(["--suite", "intent", "--cases", "1,25"]);
   assert.equal(intent.manifest.suite, "intent");
-  assert.deepEqual(intent.manifest.selected_cases, [25, 26, 27, 28, 29, 30, 31]);
+  assert.deepEqual(intent.manifest.selected_cases, [25]);
   assert.equal(intent.manifest.pass_score, 4);
   assert.equal(intent.report.pass_score, 4);
 
-  const verification = await dryRun(["--suite", "verification"]);
-  assert.deepEqual(verification.manifest.selected_cases, [32, 33, 34]);
+  const verification = await dryRun(["--suite", "verification", "--cases", "32"]);
+  assert.deepEqual(verification.manifest.selected_cases, [32]);
   assert.equal(verification.manifest.pass_score, 4);
 });
 

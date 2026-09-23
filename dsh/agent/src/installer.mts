@@ -125,7 +125,6 @@ const requiredFiles = Object.freeze([
   "runtime/index.mjs",
   "runtime/session-evidence.mjs",
   "runtime/skill-bundle.mjs",
-  "runtime/skill-evolution.mjs",
   "runtime/skill-selection-state.mjs",
   "runtime/skill-selector.mjs",
   "runtime/skill-source-config.mjs",

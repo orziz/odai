@@ -1,8 +1,10 @@
 # odai 评测说明
 
+评测是按需实验，不是日常维护或发布门。先明确结果会改变哪项实现或取舍，再选最少案例；没有待裁决问题就不跑，不默认要求全量、A/B、弱模型或多模型裁判，超时不自动追加重跑。以下题本保留供有具体问题时取用，历史成绩不自动证明当前版本质量。
+
 ## 单一事实源
 
-所有活动案例只维护在 [`plans/odai-canary.md`](../plans/odai-canary.md)。该目录连续包含 C01-C34；题面、可观察验收、失败门、层级、权重和 suite 归属都以同一行数据为准，不再维护 A/B 或专项题本副本。
+所有案例只维护在 [`plans/odai-canary.md`](../plans/odai-canary.md)。该目录连续包含 C01-C34；题面、可观察验收、失败门、层级、权重和 suite 归属都以同一行数据为准，不再维护 A/B 或专项题本副本。
 
 | suite | 用例 | 权重 | 加权满分 | 默认 pass 门槛 |
 |---|---|---:|---:|---:|
@@ -15,10 +17,10 @@
 | `verification` | C32-C34 | 4 | 16 | 4 |
 | `all` | C01-C34 | 63 | 252 | 3 |
 
-不传 `--suite` 与 `--cases` 时，harness 保持历史默认 `full`。显式 `--cases` 且没有 `--suite` 时从 C01-C34 全目录选择，不受默认 `full` 裁剪；同时给出两者时取交集。`intent` 与 `verification` 固定使用严格 4/4 门槛；显式传入其他 `--pass-score` 会在运行前被拒绝。
+harness 要求显式指定 `--cases`、`--suite` 或 `--smoke`，不再默认全量。显式 `--cases` 且没有 `--suite` 时从 C01-C34 全目录选择；同时给出两者时取交集。`--smoke` 选择带星案例。`intent` 与 `verification` 固定使用严格 4/4 门槛；显式传入其他 `--pass-score` 会在运行前被拒绝。
 
 ```bash
-node scripts/odai-canary-harness.mjs
+node scripts/odai-canary-harness.mjs --cases 1
 node scripts/odai-canary-harness.mjs --suite ab --skill-mode on
 node scripts/odai-canary-harness.mjs --suite intent --skill-mode on
 node scripts/odai-canary-harness.mjs --cases 20,34 --skill-mode on
@@ -72,6 +74,6 @@ DSH 裁判复用同一个 adapter，使用 `--role judge --surface plain --promp
 
 ## 记录与变更
 
-每份原始报告记录 runner/judge、推理档、skill/plan/harness 指纹、suite、token、支撑读取、diff、status、确定性检查与逐题理由。仓库只在 [`evaluation-results.md`](evaluation-results.md) 保留采用的汇总；试跑和中间输出留在仓库外临时目录与 Git 历史。
+每份原始报告记录 runner/judge、推理档、skill/plan/harness 指纹、suite、token、支撑读取、diff、status、确定性检查与逐题理由。`skill_markdown_sha256` 保留为 Markdown 观测字段；`skill_bundle_contract` / `skill_bundle_sha256` / `skill_bundle_files` 记录实际安装技能的完整文件身份，覆盖 manifest、脚本和资源，显式安装编排时包含 `odai-orchestration`。重裁 on 臂须匹配完整包身份，所有臂须匹配 `routing_config_sha256`（遥测开关及显式模型/推理映射）；没有新字段的历史产物不自动复用，也不补填推测的指纹。需要重裁历史产物时使用对应冻结 harness 和原始环境，结果仍归原快照。仓库只在 [`evaluation-results.md`](evaluation-results.md) 保留采用的汇总；试跑和中间输出留在仓库外临时目录与 Git 历史。
 
-题本、fixture 与 judge 口径先冻结，再运行候选。结构性语义变化重跑受影响 suite；边界清楚的局部变化可建立显式影响关系并逐题替换完整证据。旧指纹结果可作为历史证据，但不会自动成为当前 canonical 的通过证明。
+决定开展实验后，先固定该实验的题面、fixture 与判断口径，再运行候选；只收集能裁决问题的证据，不自动扩展到 suite、A/B 或更多模型。旧指纹结果保留为历史证据，不自动成为当前 canonical 的通过证明。整套离线设施自检可显式执行 `npm run test:evaluation-tools`；普通案例运行不执行全套自检，实际 runner/judge 的隔离和重裁身份校验仍生效。

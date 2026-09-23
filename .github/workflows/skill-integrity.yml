@@ -3,6 +3,12 @@ name: Skill integrity
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      evaluation_tools:
+        description: Run optional offline evaluation-tool checks (no model calls)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,72 +24,34 @@ jobs:
       - name: Install runtime build dependencies
         run: npm ci
       - name: Typecheck and build all DSH packages
-        run: npm run typecheck:dsh
+        run: npm run check:dsh
       - name: Check skill files and loading
         run: node scripts/validate-odai-skill.mjs
-      - name: Test canary harness infrastructure
-        run: node --test scripts/odai-canary-harness.test.mjs
-      - name: Check maintenance scripts
+      - name: Test repository version policy
         run: |
-          node --check scripts/validate-odai-skill.mjs
-          node --check scripts/canary-isolation.mjs
-          node --check scripts/odai-canary-harness.mjs
-          node --check scripts/blind-verdict.mjs
-          node --check scripts/odai-blind-harness.mjs
-          node --check scripts/odai-blind-harness.test.mjs
-          node --check scripts/antigravity-canary-runner.mjs
-          node --check scripts/claude-canary-runner.mjs
-          node --check scripts/codex-canary-judge.mjs
-          node --check scripts/dsh-canary-runner.mjs
-          node --check scripts/dsh-canary-runner.test.mjs
-          node --check scripts/fixtures/fake-dsh-web-rc1.mjs
-          node --check scripts/grok-canary-judge.mjs
-          node --check scripts/grok-canary-runner.mjs
-          node --check scripts/kimi-canary-runner.mjs
-          node --check scripts/openai-compatible-canary-runner.mjs
-          node --check scripts/test-odai-hooks.mjs
-          node --check scripts/test-odai-routing.mjs
-          node --check integrations/hooks/scripts/odai-hook.mjs
-          node --check integrations/hooks/scripts/build-hooks.mjs
-          node --check skills/odai-orchestration/scripts/build-routing.mjs
-          node --check skills/odai-orchestration/scripts/install-routing.mjs
+          npm run test:version-policy
+          node scripts/verify-dsh-package-versions.mjs
+      - name: Test optional evaluation tools when explicitly requested
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.evaluation_tools }}
+        run: npm run test:evaluation-tools
+      - name: Check standalone routing entrypoints
+        run: |
           node --check skills/odai-orchestration/scripts/run-role.mjs
           node --check skills/odai-orchestration/scripts/verify-routing.mjs
-          node --check scripts/package-odai-artifact.mjs
-          node --check scripts/run-package-pack.mjs
-          node --check scripts/run-package-pack.test.mjs
-          node --check scripts/dsh-publish-entrypoint.test.mjs
-          node --check scripts/verify-dsh-packed-artifacts.mjs
-          node --check scripts/verify-dsh-release-matrix.mjs
-          node --check dsh/runtime/build/governance.mjs
-          node --check dsh/runtime/build/router.mjs
-          node --check dsh/runtime/build/index.mjs
-          node --check dsh/plugin/build/bin/odai-dsh-plugin.mjs
-          node --check dsh/agent/build/src/installer.mjs
-          node --check dsh/agent/build/bin/odai-dsh-agent.mjs
-          node --check dsh/build/npm-publish.mjs
-      - name: Test optional hook adapters
-        run: node scripts/test-odai-hooks.mjs
-      - name: Test optional capability-routing adapter
-        run: node scripts/test-odai-routing.mjs
-      - name: Test DSH runtime and Agent installer
+      - name: Test hook and routing boundaries
         run: |
-          node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs scripts/dsh-canary-runner.test.mjs scripts/odai-blind-harness.test.mjs
-          npm --prefix dsh/plugin test
+          node scripts/test-odai-hooks.mjs
+          node scripts/test-odai-routing.mjs
+      - name: Test package lifecycle and release guards
+        run: node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs
+      - name: Test built DSH runtime, Plugin, and Agent
+        run: |
           npm --prefix dsh/agent install --ignore-scripts --no-package-lock --legacy-peer-deps
-          npm --prefix dsh/agent test
+          node --test dsh/runtime/tests/*.test.mjs dsh/plugin/tests/*.test.mjs scripts/dsh-web-rpc.test.mjs dsh/agent/tests/*.test.mjs
       - name: Verify isolated DSH release contract
         run: node scripts/verify-dsh-release-matrix.mjs
-      - name: Build frozen full and A/B fixtures
+      - name: Verify packaged artifacts and cleanup
         run: |
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite full --skill-mode on --out /tmp/odai-full-on-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite full --skill-mode off --out /tmp/odai-full-off-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite ab --skill-mode on --out /tmp/odai-ab-on-dry-run
-          node scripts/odai-canary-harness.mjs --plan plans/odai-canary.md --suite ab --skill-mode off --out /tmp/odai-ab-off-dry-run
-      - name: Verify packaged artifacts
-        run: |
-          npm --prefix dsh/plugin run pack:dry-run
-          npm --prefix dsh/agent run pack:dry-run
           scratch=$(mktemp -d)
           trap 'rm -rf "$scratch"' EXIT
           npm pack ./dsh/plugin --pack-destination "$scratch"
@@ -93,5 +61,7 @@ jobs:
             "$scratch"/odai-dsh-agent-*.tgz
           test ! -e dsh/plugin/runtime
           test ! -e dsh/plugin/skills
+          test ! -e dsh/plugin/client
           test ! -e dsh/agent/preset/odai/runtime
           test ! -e dsh/agent/preset/odai/skills
+          test ! -e dsh/agent/client

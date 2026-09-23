@@ -62,13 +62,14 @@ export interface SkillSelection {
   detail?: string;
   bundle: SkillBundle;
   rejections: readonly { source: string; reasonCode: string }[];
-  evolution?: {
-    status?: string;
-    generationId?: string;
-    baseDigest?: string;
-    upstreamDigest?: string;
-    rebaseRequired?: boolean;
-  };
+}
+
+// A proposal can only route when some responsibility has a mapping. An invalid store
+// stays visible so its existing fail-closed notice still reaches the controller.
+export function responsibilityRoutingAvailable(mode: string, state: RoutingSnapshotState): boolean {
+  if (mode === "off") return false;
+  if (state.error || !state.snapshot) return true;
+  return Object.values(state.snapshot.roles).some((route) => route !== undefined);
 }
 
 export interface RoutingSnapshotState {
@@ -378,15 +379,11 @@ export function canonicalPrompt(selection: SkillSelection, child = false, coreIn
   const fallback = selection.status === "fallback"
     ? `Selection fallback: ${selection.reasonCode}${selection.detail ? ` (${selection.detail})` : ""}.`
     : undefined;
-  const evolution = selection.evolution?.status === "active"
-    ? `User evolution: generation ${selection.evolution.generationId}; base digest ${selection.evolution.baseDigest}; current upstream digest ${selection.evolution.upstreamDigest}; rebase required: ${String(selection.evolution.rebaseRequired)}.`
-    : undefined;
   return [
     "## odai canonical governance",
     `Canonical source: ${bundle.source} (${bundle.provider})`,
     `Canonical skill: ${bundle.manifest.skillVersion}; runtime contract: ${bundle.manifest.runtimeContract}; governance digest: ${bundle.governance.digest}.`,
     `Bundled orchestration: ${bundle.orchestration.manifest.version}; orchestration digest: ${bundle.orchestration.digest}; composition digest: ${bundle.digest}.`,
-    ...(evolution ? [evolution] : []),
     ...(fallback ? [fallback] : []),
     child
       ? "Governance is loaded from the authenticated task snapshot. Act within the supplied delegation scope and host permissions."

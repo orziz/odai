@@ -1,28 +1,6 @@
 import type { DshAgent, DshEvent, ToolExecution, ToolResult } from "./runtime-types.mjs";
 import { sessionEvents } from "./runtime-types.mjs";
 
-// Kept for API compatibility; child enforcement is fail-closed through DEFAULT_CHILD_ALLOWED_TOOLS.
-export const DEFAULT_CHILD_DENIED_TOOLS = Object.freeze([
-  "write",
-  "edit",
-  "str_replace_editor",
-  "bash",
-  "pwsh",
-  "ask_user_question",
-  "subagent",
-  "subagent_fork",
-  "subagent_codex",
-  "subagent_claude_code",
-  "send_message",
-  "interrupt_agent",
-  "list_agents",
-  "workflow",
-  "ralph",
-  "job_output",
-  "job_list",
-  "job_kill",
-] as const);
-
 export const DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS = Object.freeze([
   "read",
   "read_image",

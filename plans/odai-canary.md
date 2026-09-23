@@ -1,4 +1,6 @@
-# odai 通用任务能力题本（候选版）
+# odai 通用任务能力题本（按需实验）
+
+本题本保留为可选实验材料，不要求逐题维护当前成绩或在发布前跑完。只有具体问题需要模型结果来裁决时才选题；历史超时和未覆盖项不自动成为任务。
 
 ## 目标与口径
 
@@ -17,7 +19,7 @@
 
 | suite | 用例 | 权重 | 用途 |
 |---|---|---:|---|
-| `full` | C01-C19 | 36 | 历史主题本，默认选择 |
+| `full` | C01-C19 | 36 | 历史主题本，显式选择 |
 | `ab` | C01-C05、C10-C14、C17-C19 | 24 | with / without 代表集 |
 | `routing` | C20 | 3 | 路由架构真实任务 |
 | `ideation` | C21-C22 | 4 | 探索构想专项 |
@@ -29,7 +31,7 @@
 ## 跑法
 
 - 每题使用独立临时仓库与全新 runner 会话。
-- dry-run：`node scripts/odai-canary-harness.mjs`；实际运行追加 `--run`。默认运行 `full`；用 `--suite` 选择其他集合，也可用 `--cases`、`--runner-model`、`--judge-model` 或自定义 runner / judge。
+- dry-run 示例：`node scripts/odai-canary-harness.mjs --cases 1`；实际运行追加 `--run`。必须显式用 `--cases`、`--suite` 或 `--smoke` 选题，无默认全量；模型和 runner / judge 在实验需要时显式指定。
 - 显式 `--cases` 在未同时指定 `--suite` 时直接从 C01-C34 全目录选择；`--smoke` 只保留带 ★ 的案例。
 - 报告按层记录完成度、加权分、pass、token、耗时、支撑资料读取、diff、status 与裁判证据；不能只看总分。
 

@@ -62,8 +62,8 @@
     "prepack": "npm run verify:version && node ../../scripts/validate-odai-skill.mjs",
     "postpack": "npm run clean:artifact",
     "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean preset/odai/runtime --clean preset/odai/skills --clean client -- --dry-run",
-    "test": "npm run verify:version && npm run build:dsh && npm --prefix ../.. exec -- tsx --test ./tests/*.test.mts",
-    "verify:dsh": "npm run build:dsh && npm --prefix ../.. exec -- tsx ./tests/verify-agent-load.mts"
+    "test": "npm run verify:version && npm run build:dsh && node --test ./tests/*.test.mjs",
+    "verify:dsh": "npm run build:dsh && node ./tests/verify-agent-load.mjs"
   },
   "dependencies": {
     "semver": "^7.8.0",

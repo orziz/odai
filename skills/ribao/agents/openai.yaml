@@ -1,6 +1,6 @@
 interface:
   display_name: "Ribao"
   short_description: "基于真实证据生成可直接审阅的日报、周报与工作状态更新"
-  default_prompt: "Use $ribao to turn the available work evidence into a complete, review-ready daily report."
+  default_prompt: "使用 $ribao，根据现有工作证据和所需汇报周期，生成完整、可直接审阅的日报、周报或工作状态更新。"
 policy:
   allow_implicit_invocation: true

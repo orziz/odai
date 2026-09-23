@@ -1,14 +1,14 @@
 {
   "schemaVersion": 5,
   "name": "odai",
-  "skillVersion": "0.6.1",
-  "runtimeContract": 8,
+  "skillVersion": "0.7.0",
+  "runtimeContract": 9,
   "referenceFiles": {
     "dao": "references/dao.md",
     "planning": "references/planning.md",
     "craft": "references/craft.md",
     "verification": "references/verification.md",
-    "support": "references/support.md",
+    "memory": "references/memory.md",
     "leverage": "references/leverage.md",
     "care": "references/care.md",
     "human-safety": "references/human-safety.md"
@@ -21,7 +21,7 @@
     "references/planning.md",
     "references/craft.md",
     "references/verification.md",
-    "references/support.md",
+    "references/memory.md",
     "references/leverage.md",
     "references/care.md",
     "references/human-safety.md"

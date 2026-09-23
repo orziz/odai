@@ -38,6 +38,27 @@ const protectedEdit = runHook("pre-tool", "codex", editPayload("examples/referen
 assert.equal(protectedEdit.status, 2, "protected structured edit must be blocked");
 assert.match(protectedEdit.stderr, /命中项目只读路径/);
 
+for (const editMode of ["replace", "insert", "delete"]) {
+  const notebookPayload = target => ({
+    cwd: project,
+    hook_event_name: "PreToolUse",
+    tool_name: "NotebookEdit",
+    tool_input: { notebook_path: path.join(project, target), cell_id: "fixture-cell", cell_type: "code", edit_mode: editMode, new_source: "print('updated')" },
+  });
+  const blocked = runHook("pre-tool", "claude", notebookPayload("examples/reference/demo.ipynb"));
+  assert.equal(blocked.status, 2, `protected notebook ${editMode} must be blocked`);
+  assert.match(blocked.stderr, /命中项目只读路径/u);
+  assert.equal(runHook("pre-tool", "claude", notebookPayload("src/demo.ipynb")).status, 0);
+}
+const unresolvedNotebook = { cwd: project, tool_name: "NotebookEdit", tool_input: { new_source: "print('updated')" } };
+assert.equal(runHook("pre-tool", "claude", unresolvedNotebook).status, 0);
+writePolicy({ version: 1, protectedPaths: ["examples/reference/**"], blockUnresolvedWrites: true, checks: [] });
+assert.equal(runHook("pre-tool", "claude", unresolvedNotebook).status, 2);
+assert.equal(runHook("pre-tool", "claude", {
+  cwd: project, tool_name: "Bash", tool_input: { command: "printf changed > examples/reference/demo.ipynb" },
+}).status, 0, "ordinary shell writes remain outside structured path checks");
+writePolicy({ version: 1, protectedPaths: ["examples/reference/**"], blockUnresolvedWrites: false, checks: [] });
+
 const protectedPatch = runHook("pre-tool", "gemini", {
   cwd: project,
   tool_name: "apply_patch",
@@ -195,6 +216,8 @@ const kimiManifest = readJson("kimi/kimi.plugin.json");
 
 assert.ok(codexHooks.hooks.PreToolUse && codexHooks.hooks.Stop);
 assert.ok(claudeHooks.hooks.PreToolUse && claudeHooks.hooks.Stop);
+assert.ok(claudeHooks.hooks.PreToolUse.some(entry => new RegExp(`^(?:${entry.matcher})$`).test("NotebookEdit")),
+  "generated Claude adapter must dispatch NotebookEdit to the pre-tool hook");
 assert.ok(copilotHooks.hooks.preToolUse && copilotHooks.hooks.agentStop);
 assert.ok(geminiHooks.hooks.BeforeTool && geminiHooks.hooks.AfterAgent);
 assert.ok(grokHooks.hooks.PreToolUse);

@@ -6,8 +6,7 @@ import { CONFIGURABLE_ROLES, resolveRoleDispatch, resolveRoleRoute, resolveRouti
 import { resolveOutputConfigPath } from "./output-config.mjs";
 import { resolveCompactionConfigPath } from "./compaction-config.mjs";
 import { resolveSkillSourceConfigPath } from "./skill-source-config.mjs";
-import { SKILL_SOURCE_MODES, loadSkillBundle } from "./skill-bundle.mjs";
-import { resolveSkillEvolutionRoot } from "./skill-evolution.mjs";
+import { SKILL_SOURCE_MODES } from "./skill-bundle.mjs";
 import { MEMORY_MODES, resolveMemoryStorePath } from "./semantic-memory-store.mjs";
 import type { ModelRoute, RuntimeConfig, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord } from "./runtime-types.mjs";
@@ -71,7 +70,6 @@ export function resolveConfig(rawConfig: unknown = {}): RuntimeConfig {
   const additionalDeniedTools = governance.additionalDeniedTools ?? [];
   const skillSource = governance.skillSource ?? "bundled";
   const skillConfigPath = resolveSkillSourceConfigPath(governance.skillConfigPath);
-  const evolutionRoot = resolveSkillEvolutionRoot(governance.evolutionRoot);
   const outputConfigPath = resolveOutputConfigPath(output.configPath);
   const compactionConfigPath = resolveCompactionConfigPath(compaction.configPath);
   const memoryStorePath = resolveMemoryStorePath(memory.storePath);
@@ -151,7 +149,6 @@ export function resolveConfig(rawConfig: unknown = {}): RuntimeConfig {
       additionalDeniedTools: Object.freeze(deniedTools.map((tool) => tool.trim())),
       skillSource,
       skillConfigPath,
-      evolutionRoot,
     }),
     output: Object.freeze({ configPath: outputConfigPath }),
     compaction: Object.freeze({
@@ -214,8 +211,4 @@ export function resolveSkillPath(configuredPath?: string, env: NodeJS.ProcessEnv
   const found = candidates.find((candidate) => existsSync(candidate));
   if (found) return found;
   throw new Error(`Odai bundled canonical skill not found; checked: ${candidates.join(", ")}`);
-}
-
-export function loadRoleContracts(skillPath: string): unknown {
-  return loadSkillBundle(skillPath).roleContracts;
 }

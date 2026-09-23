@@ -1,9 +1,9 @@
 // Trusted, data-only orchestration compiler. Governance loads independently.
-export const RUNTIME_CONTRACT = 8;
+export const RUNTIME_CONTRACT = 9;
 export const MANIFEST_SCHEMA = 1;
 export const ORCHESTRATION_URL = new URL("../", import.meta.url);
 export const ROLE_NAMES = Object.freeze(["controller", "researcher", "planner", "reviewer", "frontend"]);
-export const REFERENCE_NAMES = Object.freeze(["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety", "orchestration"]);
+export const REFERENCE_NAMES = Object.freeze(["dao", "planning", "craft", "verification", "memory", "leverage", "care", "human-safety", "orchestration"]);
 const REQUIRED_REFERENCES = { controller: ["orchestration"], researcher: [], planner: ["planning"], reviewer: ["verification"], frontend: ["craft"] };
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object`);

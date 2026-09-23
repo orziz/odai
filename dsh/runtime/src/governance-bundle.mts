@@ -3,9 +3,9 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isUnknownRecord } from "./runtime-types.mjs";
 
-export const GOVERNANCE_CONTRACT = 8;
+export const GOVERNANCE_CONTRACT = 9;
 export const GOVERNANCE_SCHEMA = 5;
-export const GOVERNANCE_REFERENCE_NAMES = Object.freeze(["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety"] as const);
+export const GOVERNANCE_REFERENCE_NAMES = Object.freeze(["dao", "planning", "craft", "verification", "memory", "leverage", "care", "human-safety"] as const);
 export type GovernanceReferenceName = (typeof GOVERNANCE_REFERENCE_NAMES)[number];
 export interface ParsedSkillVersion { readonly core: readonly [string, string, string]; readonly prerelease: readonly string[] }
 export interface GovernanceManifest {

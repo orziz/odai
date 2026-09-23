@@ -93,9 +93,9 @@ try {
         ODAI_PLUGIN_PACKAGE_ROOT: resolve(root, "node_modules/odai-dsh-plugin"),
         ODAI_AGENT_PACKAGE_ROOT: resolve(root, "node_modules/odai-dsh-agent"),
       };
-      run(npm, ["exec", "--", "tsx", "dsh/plugin/tests/verify-legacy-session-repair.mts"], { env: packageEnv });
-      run(npm, ["exec", "--", "tsx", "dsh/plugin/tests/verify-dsh-load.mts"], { env: packageEnv });
-      run(npm, ["exec", "--", "tsx", "dsh/agent/tests/verify-agent-load.mts"], { env: packageEnv });
+      run(process.execPath, ["dsh/plugin/tests/verify-legacy-session-repair.mjs"], { env: packageEnv });
+      run(process.execPath, ["dsh/plugin/tests/verify-dsh-load.mjs"], { env: packageEnv });
+      run(process.execPath, ["dsh/agent/tests/verify-agent-load.mjs"], { env: packageEnv });
     } else {
       run(npm, ["--prefix", "dsh/plugin", "run", "verify:dsh"], { env });
       run(npm, ["--prefix", "dsh/agent", "run", "verify:dsh"], { env });

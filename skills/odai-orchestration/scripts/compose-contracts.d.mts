@@ -1,15 +1,15 @@
-export const RUNTIME_CONTRACT: 8;
+export const RUNTIME_CONTRACT: 9;
 export const MANIFEST_SCHEMA: 1;
 export const ORCHESTRATION_URL: URL;
 export const ROLE_NAMES: readonly ["controller", "researcher", "planner", "reviewer", "frontend"];
-export const REFERENCE_NAMES: readonly ["dao", "planning", "craft", "verification", "support", "leverage", "care", "human-safety", "orchestration"];
+export const REFERENCE_NAMES: readonly ["dao", "planning", "craft", "verification", "memory", "leverage", "care", "human-safety", "orchestration"];
 export type RoleName = typeof ROLE_NAMES[number];
 export type ReferenceName = typeof REFERENCE_NAMES[number];
 export interface OrchestrationManifest {
   readonly schemaVersion: 1;
   readonly name: "odai-orchestration";
   readonly version: string;
-  readonly governanceContract: 8;
+  readonly governanceContract: 9;
   readonly delegationFile: string;
   readonly roleFiles: Readonly<Record<RoleName, string>>;
   readonly referenceFiles: Readonly<Record<"orchestration", string>>;

@@ -2,7 +2,7 @@
 
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync,
-  rmSync, unlinkSync, writeFileSync,
+  rmdirSync, rmSync, unlinkSync, writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -52,60 +52,70 @@ const previous = loadManifest(manifestPath);
 assertSafeDestination(configRoot, layout, Object.keys(previous?.files || {}));
 assertManagedState(configRoot, layout, previous);
 
-if (args.uninstall) {
-  if (hasMappingArgs(args)) fail("--uninstall 不接受模型、推理档或 policy 参数");
-  if (!previous) returnResult({ status: "not-installed", host: args.host, scope: args.scope, target: targetRoot, configRoot, requiresNewSession: false });
-  const removed = uninstall(configRoot, manifestPath, previous);
-  returnResult({ status: "uninstalled", host: args.host, scope: args.scope, target: targetRoot, configRoot, removed, requiresNewSession: true });
-}
+returnResult(main());
 
-for (const role of requiredRoles) if (!args[`${role}Model`]) fail(`缺少 --${role}-model`);
-if (args.researcherEffort && !args.researcherModel) fail("--researcher-effort 需要同时提供 --researcher-model");
-if (args.frontendEffort && !args.frontendModel) fail("--frontend-effort 需要同时提供 --frontend-model");
-if (!existsSync(builder)) fail(`缺少路由生成器：${builder}`);
+function main() {
+  if (args.uninstall) {
+    if (hasMappingArgs(args)) fail("--uninstall 不接受模型、推理档或 policy 参数");
+    if (!previous) return { status: "not-installed", host: args.host, scope: args.scope, target: targetRoot, configRoot, requiresNewSession: false };
+    const removed = uninstall(configRoot, manifestPath, previous);
+    return { status: "uninstalled", host: args.host, scope: args.scope, target: targetRoot, configRoot, removed, requiresNewSession: true };
+  }
 
-const generatedRoot = mkdtempSync(path.join(tmpdir(), `odai-${args.host}-routing-install-`));
-const snapshots = new Map();
-try {
-  const generated = buildAdapter(generatedRoot, configRoot);
-  const files = collectGeneratedFiles(generatedRoot, layout);
-  const originalFiles = prepareOriginalFiles(configRoot, previous, files);
-  const settings = planSettings(configRoot, layout, previous);
-  const candidates = new Set([...layout.managedFiles, ...layout.retiredFiles, ...Object.keys(previous?.files || {}), manifestName]);
-  for (const relative of candidates) snapshot(configRoot, relative, snapshots);
-  if (settings) snapshot(configRoot, settings.file, snapshots);
-  for (const [relative, content] of files) atomicWrite(path.join(configRoot, relative), content);
-  if (settings) atomicWrite(path.join(configRoot, settings.file), Buffer.from(`${JSON.stringify(settings.value, null, 2)}\n`));
-  removeObsolete(configRoot, previous, files);
-  const manifest = {
-    version: 13,
-    id: "odai-routing-installation",
-    host: args.host,
-    scope: args.scope,
-    target: targetRoot,
-    installedAt: new Date().toISOString(),
-    generatedFrom: "skills/odai-orchestration/scripts/install-routing.mjs",
-    governance: generated.governance,
-    orchestration: generated.orchestration,
-    mapping: generated.mapping,
-    routingPolicy: generated.routing_policy,
-    activation: generated.activation,
-    files: Object.fromEntries([...files].map(([relative, content]) => [relative, sha256(content)])),
-    originalFiles,
-    settings: settings?.manifest || null,
-  };
-  atomicWrite(manifestPath, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));
-  assertManagedState(configRoot, layout, manifest);
-  returnResult({
-    status: previous ? "updated" : "installed", host: args.host, scope: args.scope,
-    target: targetRoot, configRoot, mapping: generated.mapping, routingPolicy: generated.routing_policy,
-    activation: generated.activation, requiresNewSession: true,
-  });
-} catch (error) {
-  restore(configRoot, snapshots);
-  throw error;
-} finally {
-  rmSync(generatedRoot, { recursive: true, force: true });
+  for (const role of requiredRoles) if (!args[`${role}Model`]) fail(`缺少 --${role}-model`);
+  if (args.researcherEffort && !args.researcherModel) fail("--researcher-effort 需要同时提供 --researcher-model");
+  if (args.frontendEffort && !args.frontendModel) fail("--frontend-effort 需要同时提供 --frontend-model");
+  if (!existsSync(builder)) fail(`缺少路由生成器：${builder}`);
+
+  const generatedRoot = mkdtempSync(path.join(tmpdir(), `odai-${args.host}-routing-install-`));
+  const snapshots = new Map();
+  const newDirectories = [];
+  try {
+    const generated = buildAdapter(generatedRoot, configRoot);
+    const files = collectGeneratedFiles(generatedRoot, layout);
+    const originalFiles = prepareOriginalFiles(configRoot, previous, files);
+    const settings = planSettings(configRoot, layout, previous);
+    for (const relative of directoryAncestors([...files.keys(), manifestName, ...(settings ? [settings.file] : [])])) {
+      if (!existsSync(path.join(configRoot, relative))) newDirectories.push(relative);
+    }
+    const candidates = new Set([...layout.managedFiles, ...layout.retiredFiles, ...Object.keys(previous?.files || {}), manifestName]);
+    for (const relative of candidates) snapshot(configRoot, relative, snapshots);
+    if (settings) snapshot(configRoot, settings.file, snapshots);
+    for (const [relative, content] of files) atomicWrite(path.join(configRoot, relative), content);
+    if (settings) atomicWrite(path.join(configRoot, settings.file), Buffer.from(`${JSON.stringify(settings.value, null, 2)}\n`));
+    removeObsolete(configRoot, previous, files);
+    const manifest = {
+      version: 13,
+      id: "odai-routing-installation",
+      host: args.host,
+      scope: args.scope,
+      target: targetRoot,
+      installedAt: new Date().toISOString(),
+      generatedFrom: "skills/odai-orchestration/scripts/install-routing.mjs",
+      governance: generated.governance,
+      orchestration: generated.orchestration,
+      mapping: generated.mapping,
+      routingPolicy: generated.routing_policy,
+      activation: generated.activation,
+      files: Object.fromEntries([...files].map(([relative, content]) => [relative, sha256(content)])),
+      originalFiles,
+      createdDirectories: [...new Set([...(previous?.createdDirectories || []), ...newDirectories])],
+      settings: settings?.manifest || null,
+    };
+    atomicWrite(manifestPath, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`));
+    assertManagedState(configRoot, layout, manifest);
+    return {
+      status: previous ? "updated" : "installed", host: args.host, scope: args.scope,
+      target: targetRoot, configRoot, mapping: generated.mapping, routingPolicy: generated.routing_policy,
+      activation: generated.activation, requiresNewSession: true,
+    };
+  } catch (error) {
+    restore(configRoot, snapshots);
+    removeCreatedDirectories(configRoot, newDirectories);
+    throw error;
+  } finally {
+    rmSync(generatedRoot, { recursive: true, force: true });
+  }
 }
 
 function buildAdapter(outputRoot, root) {
@@ -310,6 +320,14 @@ function assertManagedState(root, layoutValue, manifest) {
     fail("旧路由包含当前宿主不支持的设置记录");
   }
   const accepted = new Set([...(layoutValue.knownFiles || layoutValue.managedFiles), ...layoutValue.retiredFiles]);
+  if (manifest.createdDirectories !== undefined) {
+    const allowed = directoryAncestors([...accepted, manifestName, ...(expectedSetting ? [expectedSetting.file] : [])]);
+    if (!Array.isArray(manifest.createdDirectories)
+      || manifest.createdDirectories.some(relative => typeof relative !== "string" || !allowed.has(relative))) {
+      fail("旧路由包含无效的托管目录记录");
+    }
+    assertSafeDestination(root, layoutValue, manifest.createdDirectories);
+  }
   for (const [relative, expected] of Object.entries(manifest.files || {})) {
     if (!accepted.has(relative)) fail(`旧路由包含未知文件：${relative}`);
     const file = path.join(root, relative);
@@ -348,13 +366,16 @@ function uninstall(root, manifestPathValue, manifest) {
   for (const relative of files) snapshot(root, relative, snapshots);
   if (settingPlan) snapshot(root, settingPlan.relative, snapshots);
   snapshot(root, manifestName, snapshots);
+  const removedDirectories = [];
 
   try {
     for (const [relative, content] of plannedFiles) applyFileState(path.join(root, relative), content);
     if (settingPlan) applyFileState(path.join(root, settingPlan.relative), settingPlan.content);
     unlinkSync(manifestPathValue);
+    removeCreatedDirectories(root, manifest.createdDirectories || [], removedDirectories);
   } catch (error) {
     try {
+      for (const relative of [...removedDirectories].reverse()) mkdirSync(path.join(root, relative), { recursive: true });
       restore(root, snapshots);
     } catch (restoreError) {
       throw new AggregateError([error, restoreError], "路由卸载失败且无法完整回滚；请检查现有托管清单与文件状态");
@@ -374,6 +395,30 @@ function planSettingRestore(root, spec) {
       ? null
       : Buffer.from(`${JSON.stringify(current, null, 2)}\n`),
   };
+}
+
+function directoryAncestors(files) {
+  const directories = new Set(["."]);
+  for (const relative of files) {
+    let directory = path.dirname(relative);
+    while (directory !== ".") {
+      directories.add(directory);
+      directory = path.dirname(directory);
+    }
+  }
+  return directories;
+}
+
+function removeCreatedDirectories(root, directories, removed = []) {
+  const depth = relative => relative === "." ? 0 : relative.split(/[\\/]/u).length;
+  for (const relative of [...new Set(directories)].sort((a, b) => depth(b) - depth(a))) {
+    try {
+      rmdirSync(path.join(root, relative));
+      removed.push(relative);
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error?.code)) throw error;
+    }
+  }
 }
 
 function applyFileState(file, content) {
@@ -447,5 +492,5 @@ Usage:
 安装后用户只需正常使用 odai。总控是唯一持续任务线程并负责实施整合；planner、reviewer 以及可选 researcher、frontend 只在能改变结果时启动。researcher 与 frontend 映射默认不配置。更新会安全移除旧版 advisor、implementer、worker、executor 和 stage runner 托管文件。`);
 }
 
-function returnResult(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); process.exit(0); }
+function returnResult(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
 function fail(message) { throw new Error(message); }

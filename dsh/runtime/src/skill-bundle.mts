@@ -41,8 +41,8 @@ export interface SkillBundle extends Omit<GovernanceBundle, "digest" | "fileCont
 export interface LoadSkillBundleOptions {
   source?: string;
   provider?: string;
-  // Explicit trusted caller input, used for captured evolution snapshots only.
-  // External governance discovery never selects a neighboring orchestration.
+  // Explicit trusted caller input (composition tests). External governance
+  // discovery never selects a neighboring orchestration.
   orchestrationRoot?: string;
 }
 export interface SkillBundleSelection {
@@ -72,7 +72,7 @@ export function loadSkillBundle(skillPath: string, options: LoadSkillBundleOptio
   const orchestration = loadOrchestrationBundle(options.orchestrationRoot);
   const contents = Object.freeze(Object.fromEntries(Object.entries(orchestration.fileContents).map(([file, bytes]) => [file, Buffer.from(bytes, "base64").toString("utf8")])));
   const input = { runtimeContract: governance.manifest.runtimeContract, skillBody: governance.skillBody, referenceContracts: governance.referenceContracts };
-  const roleContracts = Object.freeze(Object.fromEntries(ODAI_ROLE_NAMES.map(role => [role, composeRoleContract(role, input, orchestration.manifest, contents, { embedded: true })])));
+  const roleContracts = Object.freeze(Object.fromEntries(ODAI_ROLE_NAMES.filter(role => role !== "controller").map(role => [role, composeRoleContract(role, input, orchestration.manifest, contents, { embedded: true })])));
   const delegationContract = contents[orchestration.manifest.delegationFile]?.trim();
   const orchestrationReference = contents[orchestration.manifest.referenceFiles.orchestration]?.trim();
   if (!delegationContract || !orchestrationReference) throw new Error("orchestration contract is empty");

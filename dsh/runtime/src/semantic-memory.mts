@@ -492,22 +492,30 @@ function suppressesGovernance(value: string): boolean {
   return matchesAny(value, GOVERNANCE_SUPPRESSING_PATTERNS);
 }
 
+function maskQuotedContent(value: string): string {
+  // Quoted examples can contain durable wording without expressing a user decision.
+  // Preserve offsets so segmentation can return the exact original excerpt.
+  return value.replace(/“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"|`[^`\n]*`|‘[^’]*’|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu,
+    (quoted) => " ".repeat(quoted.length));
+}
+
 function durableStatement(value: string): boolean {
-  return matchesAny(value, DURABLE_PATTERNS);
+  return matchesAny(maskQuotedContent(value), DURABLE_PATTERNS);
 }
 
 function correctionStatement(value: string): boolean {
-  return matchesAny(value, CORRECTION_PATTERNS);
+  return matchesAny(maskQuotedContent(value), CORRECTION_PATTERNS);
 }
 
 function inferredCategory(value: string): MemoryCategory {
-  if (/(?:必须|始终|禁止|不要再|不再|never|always)/iu.test(value)) return "constraint";
-  if (/(?:决定|采用|统一|固定使用|we (?:have )?decided|going forward)/iu.test(value)) return "decision";
+  const statement = maskQuotedContent(value);
+  if (/(?:必须|始终|禁止|不要再|不再|never|always)/iu.test(statement)) return "constraint";
+  if (/(?:决定|采用|统一|固定使用|we (?:have )?decided|going forward)/iu.test(statement)) return "decision";
   return "preference";
 }
 
 function inferredScope(value: string): "global" | "project" {
-  return matchesAny(value, GLOBAL_SCOPE_PATTERNS) ? "global" : "project";
+  return matchesAny(maskQuotedContent(value), GLOBAL_SCOPE_PATTERNS) ? "global" : "project";
 }
 
 function inferredSubject(value: string, category: MemoryCategory): string {
@@ -546,8 +554,8 @@ function sentenceSegments(text: string): string[] {
       quotedBlock = true;
       continue;
     }
-    for (const match of line.matchAll(/[^。！？!?；;]+[。！？!?；;]?/gu)) {
-      const value = match[0].trim();
+    for (const match of maskQuotedContent(line).matchAll(/[^。！？!?；;]+[。！？!?；;]?/gu)) {
+      const value = line.slice(match.index, match.index + match[0].length).trim();
       if (value) segments.push(value);
     }
   }
