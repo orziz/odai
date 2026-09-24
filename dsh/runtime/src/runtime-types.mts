@@ -25,6 +25,11 @@ export interface DshMessageSource extends UnknownRecord {
   summary?: string;
 }
 
+// Session format v4 refuses the retired `{ kind: "plugin", plugin }` wrapper.
+// DSH's own v3-to-v4 migration gives earlier Odai messages this kind, so new
+// and migrated history carry the same attribution.
+export const ODAI_MESSAGE_SOURCE_KIND = "plugin:odai-dsh-runtime";
+
 export interface DshMessage extends UnknownRecord {
   id?: string;
   role?: string;

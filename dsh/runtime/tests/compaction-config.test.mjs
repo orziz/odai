@@ -127,7 +127,7 @@ test("all compaction routes receive one integrity protocol without touching ordi
   assert.equal(configured.messages.length, 2);
   assert.equal(configured.messages[0], originalMessages[0]);
   assert.deepEqual(configured.messages[1].content, [{ type: "text", text: COMPACTION_STATE_PROTOCOL }]);
-  assert.deepEqual(configured.messages[1].source, { kind: "plugin", plugin: "odai-dsh-runtime", form: "instructions" });
+  assert.deepEqual(configured.messages[1].source, { kind: "plugin:odai-dsh-runtime", form: "instructions" });
   assert.match(COMPACTION_STATE_PROTOCOL, /SUPERSEDED.*REJECTED/iu);
   assert.match(COMPACTION_STATE_PROTOCOL, /byte-for-byte/iu);
   assert.match(COMPACTION_STATE_PROTOCOL, /self-check/iu);

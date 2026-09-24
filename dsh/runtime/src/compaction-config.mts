@@ -13,13 +13,12 @@ import { dirname, resolve } from "node:path";
 import { requireModelRoute, sameModelRoute, type ResolveCallConfig } from "./model-route.mjs";
 import { acquireOwnedStoreLock } from "./store-lock.mjs";
 import type { DshAgent, DshMessage, DshSessionsService, ModelRoute, RuntimeTool, UnknownRecord } from "./runtime-types.mjs";
-import { isUnknownRecord } from "./runtime-types.mjs";
+import { ODAI_MESSAGE_SOURCE_KIND, isUnknownRecord } from "./runtime-types.mjs";
 
 const STORE_SCHEMA_VERSION = 1;
 const TARGET_FIELDS = new Set<string>(["provider", "model", "reasoningEffort"]);
 const STATE_PROTOCOL_SOURCE = Object.freeze({
-  kind: "plugin",
-  plugin: "odai-dsh-runtime",
+  kind: ODAI_MESSAGE_SOURCE_KIND,
   form: "instructions",
 });
 
@@ -204,7 +203,6 @@ export function applyCompactionStateProtocol(
   }
   const alreadyApplied = options.messages.some((message) => (
     message?.source?.kind === STATE_PROTOCOL_SOURCE.kind
-    && message.source.plugin === STATE_PROTOCOL_SOURCE.plugin
     && message.source.form === STATE_PROTOCOL_SOURCE.form
     && Array.isArray(message.content)
     && message.content.some((block) => block?.type === "text" && block.text === COMPACTION_STATE_PROTOCOL)

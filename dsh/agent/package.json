@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-agent",
-  "version": "0.2.38",
+  "version": "0.2.39",
   "description": "独立维护的 odai 治理模式预设（DSH bundle），按任务需要提供治理与协作。",
   "license": "MIT",
   "repository": {

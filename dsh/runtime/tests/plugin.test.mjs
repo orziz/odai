@@ -686,7 +686,7 @@ test("managed compaction target overrides only summaries and restores inheritanc
   assert.equal(summary.maxTokens, 65_536);
   assert.equal(summary.cacheRetention, undefined);
   assert.equal(summary.messages.length, 2);
-  assert.deepEqual(last(summary.messages).source, { kind: "plugin", plugin: "odai-dsh-runtime", form: "instructions" });
+  assert.deepEqual(last(summary.messages).source, { kind: "plugin:odai-dsh-runtime", form: "instructions" });
   const summaryProtocol = last(summary.messages).content?.[0]?.text;
   assert.ok(summaryProtocol);
   assert.match(summaryProtocol, /SUPERSEDED.*REJECTED/iu);
@@ -942,7 +942,7 @@ test("repeated command outcomes inject one plugin notice without denying retries
     result(execution, { isError: false, value: { exitCode: 1 } });
   }
   assert.equal(notices.length, 1);
-  assert.equal(notices[0]?.source?.kind, "plugin");
+  assert.equal(notices[0]?.source?.kind, "plugin:odai-dsh-runtime");
   assert.equal(notices[0]?.source?.form, "notice");
   assert.match(JSON.stringify(notices[0]?.content), /does not block execution/u);
 });
@@ -2852,7 +2852,7 @@ test("global and preset runtime instances deduplicate durable evidence and routi
   const result = await globalRoute(payload, () => presetRoute(payload, base));
   assert.equal(events.filter((event) => event.type === "odai/route-decided").length, 1);
   assert.equal(events.filter((event) => event.type === "odai/route-protection").length, 0);
-  assert.equal(result.messages.filter((message) => message.source?.plugin === "odai-dsh-runtime").length, 1);
+  assert.equal(result.messages.filter((message) => message.source?.kind === "plugin:odai-dsh-runtime").length, 1);
   assert.equal(globalCtx.captured.guards[0]({ callId: "global-write", name: "write", agent }), undefined);
   assert.equal(presetCtx.captured.guards[0]({ callId: "preset-write", name: "write", agent }), undefined);
   const execution = { callId: "shared-call", rootCallId: "shared-call", name: "read", agent };
@@ -3149,7 +3149,7 @@ test("global and preset execute routing starts exactly one subagent", async () =
   assert.equal(disposals, 1);
   assert.equal(events.filter((event) => event.type === "odai/route-decided").length, 1);
   assert.equal(events.filter((event) => event.type === "odai/route-result").length, 1);
-  assert.equal(result.messages.filter((message) => message.source?.plugin === "odai-dsh-runtime").length, 1);
+  assert.equal(result.messages.filter((message) => message.source?.kind === "plugin:odai-dsh-runtime").length, 1);
 });
 test("execute routing disposes a successful provider run", async () => {
   let disposed = false;

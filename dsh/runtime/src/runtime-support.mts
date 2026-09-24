@@ -21,7 +21,7 @@ import type {
   ToolRestriction,
   UnknownRecord,
 } from "./runtime-types.mjs";
-import { sessionEvents } from "./runtime-types.mjs";
+import { ODAI_MESSAGE_SOURCE_KIND, sessionEvents } from "./runtime-types.mjs";
 
 interface RoutedRunResult {
   stopReason: string;
@@ -105,8 +105,7 @@ export function pluginMessage(
     role: "user",
     content: [{ type: "text", text }, ...extraBlocks],
     source: {
-      kind: "plugin",
-      plugin: RUNTIME_NAME,
+      kind: ODAI_MESSAGE_SOURCE_KIND,
       form: "notice",
       summary: summary.length <= 120 ? summary : `${summary.slice(0, 119)}…`,
     },

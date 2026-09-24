@@ -21,7 +21,7 @@ assert.ok(satisfies(dshMetadata.version, pluginMetadata.peerDependencies["@deeps
 const requireFromDsh = createRequire(resolve(dshRoot, "package.json"));
 const loadSdk = (specifier) => import(pathToFileURL(requireFromDsh.resolve(specifier)).href);
 const { Context } = await loadSdk("@deepseek-ai/cordis");
-const { SessionStore, SessionId } = await loadSdk("@deepseek-ai/dsh-session");
+const { SessionStore, SessionId, SESSION_FORMAT_VERSION } = await loadSdk("@deepseek-ai/dsh-session");
 const { default: JsonlSessionPersistence } = await loadSdk("@deepseek-ai/dsh-session-persistence-jsonl");
 const scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-legacy-boundary-"));
 const ctx = new Context();
@@ -73,8 +73,57 @@ try {
       "retired repair must not rewrite source messages, presets, or Odai events",
     );
   }
+  // Odai notices, memory packets and compaction instructions enter the durable
+  // log as inbox splices and user messages; the current format must admit them.
+  const runtimeModule = (name) => {
+    const candidates = [resolve(pluginRoot, "runtime", name), resolve(pluginRoot, "../runtime/build", name)];
+    const found = candidates.find((candidate) => existsSync(candidate));
+    if (!found) throw new Error(`cannot locate Odai runtime module ${name}; checked: ${candidates.join(", ")}`);
+    return import(pathToFileURL(found).href);
+  };
+  const [{ pluginMessage }, { memoryPacketMessage }, { applyCompactionStateProtocol }] = await Promise.all(
+    ["runtime-support.mjs", "semantic-memory.mjs", "compaction-config.mjs"].map(runtimeModule),
+  );
+  const compaction = { purpose: "compaction", messages: [] };
+  applyCompactionStateProtocol(compaction);
+  const odaiMessages = [pluginMessage("Odai notice", "Odai notice"), memoryPacketMessage("Odai memory packet"), ...compaction.messages];
+  const currentId = SessionId("odai-message-sources");
+  const writer = await backend.create({
+    version: SESSION_FORMAT_VERSION,
+    id: currentId,
+    createdAt: 1_790_000_000_000,
+    isSeeded: false,
+    delegationDepth: 0,
+    agentPreset: "odai",
+  });
+  try {
+    await writer.append([
+      { type: "turn/start", seq: 0, time: 1_790_000_000_001, data: { turn: 1 } },
+      { type: "agent/inbox/spliced", seq: 1, time: 1_790_000_000_002, data: { target: "next-turn", start: 0, inserted: odaiMessages } },
+      { type: "step/start", seq: 2, time: 1_790_000_000_003, data: { turn: 1, step: 1 } },
+      ...odaiMessages.map((message, index) => ({
+        type: "user/message",
+        seq: 3 + index,
+        time: 1_790_000_000_004 + index,
+        data: message,
+        surfaceOp: "append",
+      })),
+    ]);
+  } finally {
+    await writer.close();
+  }
+  const reader = await backend.open(currentId, "read");
+  try {
+    const stored = JSON.stringify(await reader.read());
+    for (const message of odaiMessages) {
+      assert.ok(stored.includes(message.id), `Odai ${message.source?.form} message was not persisted`);
+    }
+  } finally {
+    await reader.close();
+  }
   process.stdout.write(
-    "Verified SDK legacy refusal and non-mutating retirement; historical v0 Odai logs are not claimed migrated.\n",
+    "Verified SDK legacy refusal and non-mutating retirement; historical v0 Odai logs are not claimed migrated.\n"
+      + `Verified Odai notices, memory packets and compaction instructions persist in session format v${SESSION_FORMAT_VERSION}.\n`,
   );
 } finally {
   await ctx.fiber.dispose();

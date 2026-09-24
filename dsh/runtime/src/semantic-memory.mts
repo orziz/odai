@@ -37,7 +37,7 @@ import type {
   ToolExecution,
   UnknownRecord,
 } from "./runtime-types.mjs";
-import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
+import { ODAI_MESSAGE_SOURCE_KIND, isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 interface SemanticMemoryCandidate {
   readonly scope: "global" | "project";
@@ -1209,8 +1209,7 @@ export function memoryPacketMessage(text: string): Readonly<DshMessage> {
     role: "user",
     content: [{ type: "text", text }],
     source: Object.freeze({
-      kind: "plugin",
-      plugin: "odai-dsh-runtime",
+      kind: ODAI_MESSAGE_SOURCE_KIND,
       form: "semantic-memory",
     }),
   });
