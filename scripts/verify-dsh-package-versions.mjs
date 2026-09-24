@@ -106,7 +106,7 @@ function readReleaseContracts() {
   const versions = document.releases.map((release, index) => {
     const label = `${relativePath} releases[${index}]`;
     if (!release || !VERSION_PATTERN.test(release.version)
-      || !satisfies(release.version, document.dshRange)
+      || !satisfies(release.version, document.dshRange, { includePrerelease: true })
       || typeof release.publishedBefore !== "string"
       || !Number.isSafeInteger(release.expectedDshPackages)
       || release.expectedDshPackages <= 0
@@ -164,7 +164,7 @@ function readCompatibilityMatrix() {
     const dshRange = entry.dshRange ?? exactDshVersions.join(" || ");
     const sourceDshVersion = entry.sourceDshVersion ?? exactDshVersions.at(-1);
     if (typeof dshRange !== "string" || validRange(dshRange) === null
-      || exactDshVersions.some((version) => !satisfies(version, dshRange))) {
+      || exactDshVersions.some((version) => !satisfies(version, dshRange, { includePrerelease: true }))) {
       throw new Error(`${label} must declare a valid dshRange containing every matrix target`);
     }
     if (!exactDshVersions.includes(sourceDshVersion)) {

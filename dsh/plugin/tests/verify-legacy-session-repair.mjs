@@ -16,7 +16,8 @@ const dshRoot = process.env.DSH_PACKAGE_ROOT
   : findDshPackageRoot(process.env.DSH_BIN ?? "dsh");
 const pluginMetadata = JSON.parse(readFileSync(resolve(pluginRoot, "package.json"), "utf8"));
 const dshMetadata = JSON.parse(readFileSync(resolve(dshRoot, "package.json"), "utf8"));
-assert.equal(dshMetadata.version, pluginMetadata.peerDependencies["@deepseek-ai/dsh"]);
+const { satisfies } = await import("semver");
+assert.ok(satisfies(dshMetadata.version, pluginMetadata.peerDependencies["@deepseek-ai/dsh"], { includePrerelease: true }));
 const requireFromDsh = createRequire(resolve(dshRoot, "package.json"));
 const loadSdk = (specifier) => import(pathToFileURL(requireFromDsh.resolve(specifier)).href);
 const { Context } = await loadSdk("@deepseek-ai/cordis");

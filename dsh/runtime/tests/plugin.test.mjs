@@ -261,6 +261,39 @@ function researchPacketText(overrides = {}) {
     ...overrides,
   });
 }
+test("review proposals remain available after failed attempts and reviews of other properties", async () => {
+  const ctx = fakeContext();
+  apply(ctx, { skillPath });
+  const current = { ...userMessage("请修复并复核。"), id: "user-review-limit" };
+  const events = [
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: current },
+    { type: "step/start", seq: 3, data: { turn: 1, step: 1 } },
+  ];
+  const agent = {
+    phase: { turn: 1, step: 1 },
+    session: { header: {}, events, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } },
+  };
+  const gapTool = ctx.captured.tools.find((tool) => tool.name === "odai_responsibility_gap");
+  assert.ok(gapTool);
+  const review = { responsibility: "reviewer", gap: "Check the fix.", evidenceRefs: ["final-diff"], expectedChange: "Report violations." };
+  const planner = { responsibility: "planner", gap: "Route is open.", evidenceRefs: ["current-task"], expectedChange: "Choose a route." };
+  assert.equal((await gapTool.execute(review, { name: "odai_responsibility_gap", agent })).recorded, true);
+  seedCurrentEvidence(ctx, agent, [
+    { type: "odai/route-result", data: { turn: 1, step: 1, role: "reviewer", action: "direct", status: "fallback", stopReason: "evidence-packet-missing", independent: false } },
+    { type: "odai/route-result", data: { turn: 1, step: 2, role: "reviewer", action: "delegate", status: "fallback", stopReason: "evidence-packet-missing" } },
+  ]);
+  const retry = await gapTool.execute(review, { name: "odai_responsibility_gap", agent });
+  assert.equal(retry.recorded, true, "unstarted reviews must not block a task-bound proposal");
+  seedCurrentEvidence(ctx, agent, [
+    { type: "odai/route-result", data: { turn: 1, step: 3, role: "reviewer", status: "completed" } },
+    { type: "odai/route-result", data: { turn: 1, step: 4, role: "reviewer", status: "completed" } },
+  ]);
+  const nextProperty = await gapTool.execute({ ...review, gap: "Check the migration after the fix.", evidenceRefs: ["migration-diff"] }, { name: "odai_responsibility_gap", agent });
+  assert.equal(nextProperty.recorded, true, "earlier reviews must not veto a different necessary property");
+  assert.notEqual(nextProperty.stateDigest, retry.stateDigest);
+  assert.equal((await gapTool.execute(planner, { name: "odai_responsibility_gap", agent })).recorded, true);
+});
 test("responsibility gap tool source-verifies requirement ledgers against direct-user messages", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath });
@@ -1271,7 +1304,7 @@ test("managed children bind parent and session, avoid duplicate contracts, and k
   const boundEntry = resolve(boundRoot, "SKILL.md");
   writeFileSync(
     boundEntry,
-    readFileSync(boundEntry, "utf8").replace("## 精神内核\n", "## 精神内核\n\nPARENT_SNAPSHOT_CORE\n"),
+    `${readFileSync(boundEntry, "utf8")}\nPARENT_SNAPSHOT_CORE\n`,
   );
   const roleBundle = loadSkillBundle(boundEntry);
   apply(ctx, { skillPath, routing: { roles: { reviewer: route, researcher: route } } });

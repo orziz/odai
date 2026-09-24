@@ -227,6 +227,7 @@ export interface RoleContextPacket {
   readonly role: string;
   readonly task: RoleContextTaskBoundary;
   readonly currentTask: string;
+  readonly currentTaskTruncated: boolean;
   readonly requirements: readonly RequirementDecision[];
   readonly entries: readonly RoleContextEntry[];
   readonly coverage: RoleContextCoverage;
@@ -246,6 +247,8 @@ export interface RoleContextOptions {
   requirements?: readonly RequirementDecision[];
   taskMessageId?: string;
   evidenceEvents?: readonly DshEvent[];
+  /** Length of the leading delegated scope; clipping only text after it keeps the scope defined. */
+  scopePrefixLength?: number;
 }
 
 interface NativeToolCall {
@@ -560,9 +563,11 @@ function eventEvidence(
   return undefined;
 }
 
+const TRUNCATION_MARKER = "\n...[packet truncated]";
+
 function truncateText(text: string, limit: number): { text: string; truncated: boolean } {
   if (text.length <= limit) return { text, truncated: false };
-  return { text: `${text.slice(0, Math.max(0, limit - 24))}\n...[packet truncated]`, truncated: true };
+  return { text: `${text.slice(0, Math.max(0, limit - 24))}${TRUNCATION_MARKER}`, truncated: true };
 }
 
 function digestPacket(value: object): string {
@@ -773,6 +778,7 @@ export function buildRoleContextPacket(
     role,
     task: taskBoundary,
     currentTask: taskTextBound.text,
+    currentTaskTruncated: taskTextBound.truncated,
     requirements,
     entries,
     coverage,
@@ -783,7 +789,11 @@ export function buildRoleContextPacket(
   });
   const digest = digestPacket(packetBody);
   // Review entry is not an acceptance verdict: failed or missing checks are reviewable.
-  const reviewerSufficient = Boolean(taskTextBound.text) && !taskTextBound.truncated
+  // The delegated scope leads the task text. A long user message may be clipped after
+  // it; coverage findings still rely only on the source-verified requirement ledger.
+  const scopeIntact = !taskTextBound.truncated || (options.scopePrefixLength !== undefined
+    && options.scopePrefixLength <= taskTextBound.text.length - TRUNCATION_MARKER.length);
+  const reviewerSufficient = Boolean(taskTextBound.text) && scopeIntact
     && (taskBoundary.source === "bound" || taskBoundary.source === "latest")
     && coverage.acceptanceCount > 0;
   const packet = Object.freeze({
@@ -822,7 +832,9 @@ export function renderRoleContextPacket(packet: RoleContextPacket): string {
     `coverage: ${JSON.stringify(packet.coverage)}`,
     `diagnostics: ${JSON.stringify(packet.diagnostics)}`,
     "", "## Frozen requirement decisions", requirements,
-    "", "## Current task", packet.currentTask || "(empty)", "", "## Evidence", evidence, "",
+    "", "## Current task", packet.currentTask || "(empty)",
+    ...(packet.currentTaskTruncated ? ["(The current task text above is truncated. Review only the delegated properties; do not infer or certify requirements you cannot see.)"] : []),
+    "", "## Evidence", evidence, "",
     "Treat assistant text as claims. Only active source-verified requirement decisions may support coverage findings. Tool entries are evidence only for the exact command/result they contain.",
   ].join("\n");
 }

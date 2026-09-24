@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 import {
   inspectAgentControlCenter,
   installAgentControlCenter,
@@ -21,6 +22,16 @@ async function writeResolvedPackage(profileRoot, version, complete = true) {
   await writeFile(resolve(root, "package.json"), `${JSON.stringify({ name: "odai-dsh-agent", version })}\n`);
   await writeFile(resolve(root, "build/src/installer.mjs"), "export function apply() {}\n");
   if (complete) {
+    await mkdir(resolve(root, "preset/odai/skills/odai"), { recursive: true });
+    await writeFile(resolve(root, "preset.cordis.patch.yml"), "- insert: []\n");
+    await writeFile(resolve(root, "preset/odai/odai-governance.mjs"), "export * from \"./runtime/index.mjs\";\n");
+    await writeFile(resolve(root, "preset/odai/runtime/index.mjs"), "export function apply() {}\n");
+    await writeFile(resolve(root, "preset/odai/skills/odai/SKILL.md"), "---\nname: odai\n---\n");
+    await writeFile(resolve(root, "preset/odai/package.json"), JSON.stringify({ type: "module", imports: { "#odai-contracts": "./skills/odai-orchestration/scripts/compose-contracts.mjs" } }));
+    await writeFile(resolve(root, "preset/odai/skills/odai/manifest.json"), "{}\n");
+    await mkdir(resolve(root, "preset/odai/skills/odai-orchestration/scripts"), { recursive: true });
+    await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/manifest.json"), "{}\n");
+    await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs"), "export {};\n");
     await writeFile(resolve(root, "control-center.cordis.patch.yml"), "plugins:\n  - name: odai-dsh-agent\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-host.mjs"), "export function apply() {}\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-runtime.mjs"), "export const ok = true;\n");
@@ -79,7 +90,17 @@ async function writeProfile(dshHome, fixture) {
 }
 function registryExecutor(profileRoot, calls) {
   return (command, args, options) => {
-    if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+    if (args[0] === "-V") return "0.1.7-rc.1";
+    if (args.includes("--dump-config")) {
+      let config = { default: "standard" };
+      for (const path of [resolve(profileRoot, "cordis.patch.yml"), resolve(options.env.DSH_HOME, "cordis.patch.yml")]) {
+        try {
+          const rows = parseYaml(readFileSync(path, "utf8"));
+          for (const row of rows ?? []) if (row.id === "agent-preset-registry") config = { ...config, ...row.config };
+        } catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+      return JSON.stringify([{ name: "@deepseek-ai/dsh-agent-preset-registry", config }]);
+    }
     calls.push({ command, args, options });
     const packagePath = resolve(profileRoot, "package.json");
     const metadata = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -247,6 +268,41 @@ test("Control Center inspection distinguishes provenance, versions, and partial 
     await rm(scratch, { recursive: true, force: true });
   }
 });
+test("missing import map or orchestration entry triggers repair instead of unchanged", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-import-repair-"));
+  const dshHome = resolve(scratch, "home");
+  try {
+    const { rmSync } = await import("node:fs");
+    for (const [path, damage] of [
+      ["preset/odai/package.json", "missing"],
+      ["preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs", "missing"],
+      ["preset/odai/package.json", "invalid-map"],
+      ["preset/odai/package.json", "directory"],
+      ["preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs", "directory"],
+    ]) {
+      const profileRoot = await writeProfile(dshHome, { dependency: targetVersion, bundles: ["odai-dsh-agent"], resolvedVersion: targetVersion });
+      const file = resolve(profileRoot, "node_modules/odai-dsh-agent", path);
+      const original = await readFile(file);
+      await rm(file);
+      if (damage === "invalid-map") await writeFile(file, '{}');
+      if (damage === "directory") await mkdir(file);
+      assert.equal((await inspectAgentControlCenter({ dshHome })).status, "partial-drift", `${path}: ${damage}`);
+      const calls = [];
+      const registry = registryExecutor(profileRoot, calls);
+      const repaired = await installAgentControlCenter({ dshHome, execute(command, args, options) {
+        const output = registry(command, args, options);
+        if (args.includes("add")) {
+          rmSync(file, { recursive: true, force: true });
+          writeFileSync(file, original);
+        }
+        return output;
+      } });
+      assert.equal(repaired.operation, "repaired");
+      assert.equal(calls.filter((call) => call.args.includes("add")).length, 1);
+      assert.equal((await inspectAgentControlCenter({ dshHome })).status, "current");
+    }
+  } finally { await rm(scratch, { recursive: true, force: true }); }
+});
 test("missing Control Center bundle patch is drift and explicit install repairs it", async () => {
   const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-control-patch-"));
   const dshHome = resolve(scratch, "home");
@@ -342,7 +398,7 @@ test("failed local-source repair preserves changed profile state and captures re
     const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
     let attempts = 0;
     const execute = (_command, args) => {
-      if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+      if (args[0] === "-V") return "0.1.7-rc.1";
       attempts += 1;
       const packagePath = resolve(profileRoot, "package.json");
       const profile = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -383,7 +439,7 @@ test("failed Control Center command with unchanged profile performs no inverse c
       installAgentControlCenter({
         dshHome,
         execute: (_command, args) => {
-          if (args[0] === "-V") return packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+          if (args[0] === "-V") return "0.1.7-rc.1";
           attempts += 1;
           throw new Error("no mutation");
         },
@@ -436,6 +492,43 @@ test("Control Center refuses partial removal and silent downgrade", async () => 
       resolvedVersion: newerVersion,
     });
     await assert.rejects(installAgentControlCenter({ dshHome, execute: () => "" }), /refusing to downgrade/u);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("uninstall refuses while the profile chooses odai as the default preset", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-default-guard-"));
+  const dshHome = resolve(scratch, "home");
+  const calls = [];
+  try {
+    const profileRoot = await writeProfile(dshHome, {});
+    await writeResolvedPackage(profileRoot, targetVersion);
+    const execute = registryExecutor(profileRoot, calls);
+    await installAgentControlCenter({ dshHome, execute });
+    const patchPath = resolve(profileRoot, "cordis.patch.yml");
+    for (const config of [
+      { default: "standard", selectedDefault: "odai" },
+      { default: "odai" },
+      { default: "odai", selectedDefault: "standard", modeSelectionEnabled: false },
+    ]) {
+      await writeFile(patchPath, JSON.stringify([{ id: "agent-preset-registry", config }]));
+      await assert.rejects(uninstallAgentControlCenter({ dshHome, execute }), /refusing to remove the default agent preset odai/u);
+    }
+    await writeFile(patchPath, JSON.stringify([{ id: "agent-preset-registry", config: { default: "standard", selectedDefault: "standard" } }]));
+    await writeFile(resolve(dshHome, "cordis.patch.yml"), JSON.stringify([{ id: "agent-preset-registry", config: { selectedDefault: "odai" } }]));
+    await assert.rejects(uninstallAgentControlCenter({ dshHome, execute }), /refusing to remove the default agent preset odai/u);
+    assert.equal((await inspectAgentControlCenter({ dshHome })).status, "current");
+    assert.equal(calls.filter((call) => call.args.includes("remove")).length, 0);
+    await rm(resolve(dshHome, "cordis.patch.yml"));
+    for (const output of ["[]", "invalid: shape", "- name: '@deepseek-ai/dsh-agent-preset-registry'\n  config:\n    default: !!js process.env.DEFAULT_AGENT\n"]) {
+      await assert.rejects(uninstallAgentControlCenter({ dshHome, execute(command, args, options) {
+        return args.includes("--dump-config") ? output : execute(command, args, options);
+      } }), /cannot determine the effective default/);
+    }
+    assert.equal(calls.filter((call) => call.args.includes("remove")).length, 0);
+    await writeFile(patchPath, JSON.stringify([{ id: "agent-preset-registry", config: { default: "standard", selectedDefault: "odai", modeSelectionEnabled: false } }]));
+    assert.equal((await uninstallAgentControlCenter({ dshHome, execute })).operation, "uninstalled");
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }

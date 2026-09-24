@@ -15,7 +15,6 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { installAgentPreset } from "../dsh/agent/build/src/installer.mjs";
 import { readDshVersion, spawnDsh } from "../dsh/agent/build/src/dsh-version.mjs";
 import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
 
@@ -31,7 +30,6 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const scratch = await mkdtemp(resolve(tmpdir(), "odai-dsh-coexistence-"));
 const home = resolve(scratch, "home");
 const workspace = resolve(scratch, "workspace");
-const sourcePreset = resolve(scratch, "source-preset");
 const markerPath = resolve(scratch, "coexistence-results.json");
 const probePluginPath = resolve(scratch, "coexistence-probe.mjs");
 const patchPath = resolve(scratch, "coexistence.patch.yml");
@@ -130,16 +128,6 @@ async function prepareProjectSkill() {
     `${(await readFile(plannerPath, "utf8")).trimEnd()}\n\nCOEXISTENCE_PLANNER_MARKER\n`,
     "utf8",
   );
-}
-
-async function prepareAgent() {
-  await cp(resolve(agentRoot, "preset/odai"), sourcePreset, { recursive: true });
-  await Promise.all([
-    cp(runtimeRoot, resolve(sourcePreset, "runtime"), { recursive: true }),
-    cp(canonicalSkillRoot, resolve(sourcePreset, "skills/odai"), { recursive: true }),
-    cp(resolve(repoRoot, "skills/odai-orchestration"), resolve(sourcePreset, "skills/odai-orchestration"), { recursive: true }),
-  ]);
-  await installAgentPreset({ dshHome: home, sourceRoot: sourcePreset, dshVersion: targetDshVersion });
 }
 
 async function installPlugin() {
@@ -261,7 +249,6 @@ function assertResults(results) {
 try {
   await mkdir(workspace, { recursive: true });
   await prepareProjectSkill();
-  await prepareAgent();
   await mkdir(resolve(home, "odai"), { recursive: true });
   await writeFile(
     resolve(home, "odai/source.json"),
@@ -302,8 +289,8 @@ try {
   assertResults(results);
   finalReport = {
     profilePluginInstalled: true,
-    profileAgentControlCenterInstalled: true,
-    agentPresetInstalled: true,
+    profileAgentBundleInstalled: true,
+    agentPresetDeclaredByBundle: true,
     controlCenterClientIds,
     controlCenterRpcAvailable: true,
     presetIds,

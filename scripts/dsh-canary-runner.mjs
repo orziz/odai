@@ -55,6 +55,9 @@ try {
 
   if (args.surface === "agent") {
     const compositionPath = resolve(dshHome, ".agent-presets", args.agentPreset, "agent.cordis.yml");
+    if (!existsSync(compositionPath)) {
+      throw new Error(`DSH canary Agent surface needs a copied preset at ${compositionPath}; DSH 0.1.7 declares presets through profile bundles, which this runner does not configure yet`);
+    }
     const composition = await readFile(compositionPath, "utf8");
     await writeFile(compositionPath, configureAgentRouting(composition, args), "utf8");
   }

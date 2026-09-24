@@ -67,6 +67,8 @@ import type {
 } from "./runtime-types.mjs";
 import { sessionEvents } from "./runtime-types.mjs";
 
+const DIRECT_USER_TASK_HEADING = "\n# Direct user task";
+
 interface AgentRequestEvent { agent: DshAgent; turn: number; step: number; signal: AbortSignal }
 interface AgentRequestErrorEvent extends AgentRequestEvent { provider: string; failure: UnknownRecord }
 interface AgentTurnEvent { agent: DshAgent; turn: number }
@@ -880,10 +882,14 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               evidenceRefs: responsibilityGap.evidenceRefs,
             }, undefined, 2),
             "",
-            "# Direct user task",
+            DIRECT_USER_TASK_HEADING.trimStart(),
             taskText,
           ].join("\n")
         : taskText;
+      const scopePrefixFor = (text: string): { scopePrefixLength?: number } => {
+        const index = responsibilityGap ? text.indexOf(DIRECT_USER_TASK_HEADING) : -1;
+        return index > 0 ? { scopePrefixLength: index } : {};
+      };
       let routedDownstream = downstream;
       let researchPacketText = "";
       let sameTurnResearchDecision: RouteDecision | undefined;
@@ -1009,6 +1015,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         : buildRoleContextPacket(agent, routeRole, roleTaskText, {
             ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
             ...(responsibilityGap?.taskMessageId ? { taskMessageId: responsibilityGap.taskMessageId } : {}),
+            ...scopePrefixFor(roleTaskText),
             evidenceEvents: evidence.events(agent),
           });
       const reviewerAlreadyDeferred = responsibilityGap?.responsibility === "reviewer"
@@ -1230,6 +1237,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       roleContext ??= buildRoleContextPacket(agent, routeRole, roleTaskText, {
         ...(responsibilityGap?.requirements ? { requirements: responsibilityGap.requirements } : {}),
         ...(responsibilityGap?.taskMessageId ? { taskMessageId: responsibilityGap.taskMessageId } : {}),
+        ...scopePrefixFor(roleTaskText),
         evidenceEvents: evidence.events(agent),
       });
       const roleDispatch = effectiveRoleDispatch(routeRole, roleState.dispatch, config.routing.mode);

@@ -767,6 +767,22 @@ test("invalid execution evidence cannot pass acceptance but does not block an au
   assert.match(clippedTask.currentTask, /packet truncated/u);
   assert.equal(clippedTask.sufficient, false, "a clipped delegation scope cannot define the complete review");
 });
+test("a long user message clipped after an intact delegated scope still admits review", () => {
+  const scope = "# Evidence-grounded responsibility gap\n{\"gap\":\"Check the fix.\"}\n";
+  const taskText = `${scope}\n# Direct user task\n${"看看 Claude 的复核：".repeat(400)}`;
+  const intact = buildRoleContextPacket(agentFor(completeReviewEvents()), "reviewer", taskText, {
+    maxChars: 3_000,
+    scopePrefixLength: scope.length,
+  });
+  assert.equal(intact.currentTaskTruncated, true);
+  assert.equal(intact.sufficient, true);
+  assert.match(renderRoleContextPacket(intact), /current task text above is truncated/u);
+  const clippedScope = buildRoleContextPacket(agentFor(completeReviewEvents()), "reviewer", taskText, {
+    maxChars: 3_000,
+    scopePrefixLength: 5_000,
+  });
+  assert.equal(clippedScope.sufficient, false);
+});
 test("review admission preserves scoped execution records without a global freshness verdict", () => {
   const events = [
     { type: "user/message", data: userMessage("验收条件：保持默认行为并通过目标测试。") },

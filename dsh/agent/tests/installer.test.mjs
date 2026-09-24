@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   inspectAgentInstallation,
-  installAgentPreset,
-  renderAgentCompositionForDsh,
+  inspectLegacyAgentPreset,
+  moveLegacyAgentPreset,
   resolveDshHome,
   supportsDshVersion,
   SUPPORTED_DSH_RANGE,
   SUPPORTED_DSH_VERSIONS,
-  uninstallAgentPreset,
 } from "../build/src/installer.mjs";
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,145 +25,112 @@ function jsonRecord(text) {
   if (!isRecord(value)) throw new TypeError("expected a JSON object");
   return value;
 }
-test("Agent composition follows the exact rc.2 support contract", async () => {
-  assert.equal(SUPPORTED_DSH_RANGE, "0.1.5-rc.2");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.5-rc.2"]);
-  assert.equal(supportsDshVersion("0.1.5-rc.2"), true);
-  for (const unsupported of [
-    "0.1.1-rc.2",
-    "0.1.2-alpha.5",
-    "0.1.2-rc.2",
-    "0.1.2",
-    "0.1.3-alpha.1",
-    "0.1.3",
-    "0.1.5-rc.1",
-    "0.1.5",
-    "0.1.6-alpha.2",
-  ]) {
+test("Agent admits newer stable and prerelease hosts without extending a version list", () => {
+  assert.equal(SUPPORTED_DSH_RANGE, ">=0.1.7-rc.1");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.7-rc.1"]);
+  for (const admitted of ["0.1.7-rc.1", "0.1.7-rc.2", "0.1.7", "0.1.8-alpha.1", "0.2.0-rc.1", "1.0.0"]) {
+    assert.equal(supportsDshVersion(admitted), true, admitted);
+  }
+  for (const unsupported of ["0.1.5-rc.2", "0.1.7-alpha.2", "", "not-semver"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
-  const source = await readFile(resolve(import.meta.dirname, "../preset/odai/agent.cordis.yml"), "utf8");
-  const normalizedSource = source.replace(/\r\n/gu, "\n");
-  assert.equal(renderAgentCompositionForDsh(source, "0.1.5-rc.2"), normalizedSource);
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.1-rc.2"), /unsupported DSH version/u);
-  assert.throws(() => renderAgentCompositionForDsh(source, "0.1.3-alpha.1"), /unsupported DSH version/u);
 });
-test("managed preset rejects removed DSH releases before writing", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-unsupported-version-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    for (const dshVersion of ["0.1.1-rc.2", "0.1.2-alpha.5", "0.1.2", "0.1.3-alpha.1"]) {
-      await assert.rejects(installAgentPreset({ dshHome, sourceRoot, dshVersion }), /unsupported DSH version/u);
+test("published bundle declares the odai preset and Control Center through DSH patches", async () => {
+  const packageMetadata = jsonRecord(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
+  assert.equal(packageMetadata.engines.node, ">=22.15.0");
+  assert.equal(packageMetadata.peerDependencies["@deepseek-ai/dsh"], "*");
+  assert.equal(packageMetadata.exports["./governance"], "./preset/odai/odai-governance.mjs");
+  assert.equal(packageMetadata.exports["./client"], "./client/client.js");
+  assert.equal(packageMetadata.exports["./control-center-host"], "./preset/odai/runtime/control-center-host.mjs");
+  assert.deepEqual(packageMetadata.dsh.bundle.patch, ["./preset.cordis.patch.yml", "./control-center.cordis.patch.yml"]);
+  assert.ok(packageMetadata.files.includes("preset.cordis.patch.yml"));
+  assert.equal(packageMetadata.dsh.client.platform, "web");
+  const js = { tag: "!!js", resolve: (value) => value };
+  const presetPatch = parseYaml(await readFile(resolve(import.meta.dirname, "../preset.cordis.patch.yml"), "utf8"), { customTags: [js] });
+  const declaration = presetPatch[0].insert[0];
+  assert.equal(declaration.name, "@deepseek-ai/dsh-agent-preset");
+  assert.equal(declaration.config.id, "odai", "saved sessions resolve their preset by this id");
+  const rows = new Map();
+  const collect = (entries) => {
+    for (const entry of entries) {
+      rows.set(entry.id, entry);
+      if (Array.isArray(entry.config)) collect(entry.config);
     }
-    await assert.rejects(stat(resolve(dshHome, ".agent-presets/odai")), /ENOENT/u);
+  };
+  collect(declaration.config.plugins);
+  assert.equal(rows.get("odai-governance").name, "odai-dsh-agent/governance");
+  assert.equal(rows.get("workflow-ptc").name, "@deepseek-ai/dsh-workflow-ptc");
+  assert.equal([...rows.values()].some((row) => row.name === "@deepseek-ai/dsh-workflow-worker-thread"), false);
+  assert.equal(rows.get("tool-ralph").disabled, true);
+  assert.equal(rows.get("tool-plugin-manager").disabled, true);
+  const controlCenterPatch = await readFile(resolve(import.meta.dirname, "../control-center.cordis.patch.yml"), "utf8");
+  assert.match(controlCenterPatch, /^\s+name: odai-dsh-agent$/mu);
+});
+test("status reports an absent bundle and no legacy directory in an empty home", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-status-"));
+  try {
+    const status = await inspectAgentInstallation({ dshHome: resolve(scratch, "home") });
+    assert.equal(status.status, "absent");
+    assert.equal(status.presetId, "odai");
+    assert.equal(status.legacy.status, "absent");
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
 });
-test("managed preset installs, updates, reports status, and uninstalls", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-installer-"));
-  const sourceRoot = resolve(scratch, "source");
+test("legacy preset cleanup moves the directory into a backup and touches no user data", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-legacy-"));
   const dshHome = resolve(scratch, "home");
-  const evolutionSentinel = resolve(dshHome, "odai/skill-evolution/user-generation.sentinel");
+  const legacyRoot = resolve(dshHome, ".agent-presets/odai");
   const memorySentinel = resolve(dshHome, "odai/memory/store.json");
+  const sessionPath = resolve(dshHome, "sessions/project/legacy/session.jsonl");
   try {
-    await writeFixture(sourceRoot, "first runtime");
-    await mkdir(resolve(evolutionSentinel, ".."), { recursive: true });
-    await writeFile(evolutionSentinel, "user-owned evolution\n", "utf8");
+    await writeLegacyPreset(legacyRoot);
     await mkdir(resolve(memorySentinel, ".."), { recursive: true });
     await writeFile(memorySentinel, "user-owned semantic memory\n", "utf8");
-    const installed = await installAgentPreset({ dshHome, sourceRoot });
-    assert.equal(installed.operation, "installed");
-    assert.ok(SUPPORTED_DSH_VERSIONS.includes(installed.dshVersion));
-    assert.equal((await inspectAgentInstallation({ dshHome })).dshVersion, installed.dshVersion);
-    assert.equal(installed.trust, "user");
-    assert.match(installed.security, /same privileges as shell access/u);
-    assert.equal((await inspectAgentInstallation({ dshHome })).status, "installed");
-    const firstCompositionSize = Buffer.byteLength(await readFile(resolve(installed.target, "agent.cordis.yml")));
-    if (process.platform !== "win32") {
-      assert.equal((await stat(installed.target)).mode & 0o777, 0o700);
-      assert.equal((await stat(resolve(installed.target, "odai-governance.mjs"))).mode & 0o777, 0o600);
-      assert.equal((await stat(resolve(installed.target, "runtime/index.mjs"))).mode & 0o777, 0o600);
-      assert.equal((await stat(resolve(installed.target, ".odai-agent.json"))).mode & 0o777, 0o600);
-    }
-    await writeFile(resolve(sourceRoot, "runtime/index.mjs"), "export default 'second runtime';\n", "utf8");
-    const updated = await installAgentPreset({ dshHome, sourceRoot });
-    assert.equal(updated.operation, "updated");
-    assert.match(await readFile(resolve(updated.target, "runtime/index.mjs"), "utf8"), /second runtime/u);
-    const secondCompositionSize = Buffer.byteLength(await readFile(resolve(updated.target, "agent.cordis.yml")));
-    assert.notEqual(secondCompositionSize, firstCompositionSize);
-    assert.equal(await readFile(memorySentinel, "utf8"), "user-owned semantic memory\n");
-    const refreshed = await installAgentPreset({ dshHome, sourceRoot });
-    const thirdCompositionSize = Buffer.byteLength(await readFile(resolve(refreshed.target, "agent.cordis.yml")));
-    assert.notEqual(thirdCompositionSize, secondCompositionSize);
-    const removed = await uninstallAgentPreset({ dshHome });
-    assert.equal(removed.operation, "uninstalled");
-    assert.equal((await inspectAgentInstallation({ dshHome })).status, "absent");
-    assert.equal(await readFile(evolutionSentinel, "utf8"), "user-owned evolution\n");
-    assert.equal(await readFile(memorySentinel, "utf8"), "user-owned semantic memory\n");
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("normal lifecycle never inspects or rewrites historical session logs", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-session-boundary-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  const sessionPath = resolve(dshHome, "sessions/project/legacy/session.jsonl");
-  const session = [
-    JSON.stringify({ type: "session", version: 0, id: "legacy", createdAt: 1_700_000_000_000, delegationDepth: 0 }),
-    JSON.stringify({
-      type: "odai/unknown-historical-event",
-      seq: 0,
-      time: 1_700_000_000_001,
-      data: { retained: true },
-    }),
-    "",
-  ].join("\n");
-  try {
-    await writeFixture(sourceRoot, "first runtime");
     await mkdir(resolve(sessionPath, ".."), { recursive: true });
-    await writeFile(sessionPath, session, "utf8");
-    assert.equal((await installAgentPreset({ dshHome, sourceRoot })).operation, "installed");
-    assert.equal(await readFile(sessionPath, "utf8"), session);
-    await writeFile(resolve(sourceRoot, "runtime/index.mjs"), 'export default "updated runtime";\n', "utf8");
-    assert.equal((await installAgentPreset({ dshHome, sourceRoot })).operation, "updated");
-    assert.equal(await readFile(sessionPath, "utf8"), session);
-    assert.equal((await uninstallAgentPreset({ dshHome })).operation, "uninstalled");
-    assert.equal(await readFile(sessionPath, "utf8"), session);
+    await writeFile(sessionPath, '{"type":"session","version":0}\n', "utf8");
+    const inspected = await inspectLegacyAgentPreset({ dshHome });
+    assert.equal(inspected.status, "installed");
+    assert.equal(inspected.version, "0.2.36");
+    assert.equal((await inspectAgentInstallation({ dshHome })).legacy.status, "installed");
+    const moved = await moveLegacyAgentPreset({ dshHome });
+    assert.equal(moved.operation, "moved");
+    assert.equal(moved.previousStatus, "installed");
+    await assert.rejects(stat(legacyRoot), /ENOENT/u);
+    assert.match(await readFile(resolve(moved.backup, "agent.cordis.yml"), "utf8"), /odai-governance/u);
+    assert.equal((await inspectLegacyAgentPreset({ dshHome })).status, "absent");
+    assert.equal((await moveLegacyAgentPreset({ dshHome })).operation, "absent");
+    assert.equal(await readFile(memorySentinel, "utf8"), "user-owned semantic memory\n");
+    assert.equal(await readFile(sessionPath, "utf8"), '{"type":"session","version":0}\n');
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
 });
-test("managed preset refuses updates and removal after local drift", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-drift-"));
-  const sourceRoot = resolve(scratch, "source");
+test("a locally edited legacy preset is reported as drifted and its edits survive in the backup", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-legacy-drift-"));
   const dshHome = resolve(scratch, "home");
+  const legacyRoot = resolve(dshHome, ".agent-presets/odai");
   try {
-    await writeFixture(sourceRoot, "runtime");
-    const installed = await installAgentPreset({ dshHome, sourceRoot });
-    await writeFile(resolve(installed.target, "agent.cordis.yml"), "locally edited\n", "utf8");
-    const status = await inspectAgentInstallation({ dshHome });
-    assert.equal(status.status, "drifted");
-    assert.ok(status.issues.includes("modified managed file agent.cordis.yml"));
-    await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), /refusing to replace modified preset/u);
-    await assert.rejects(uninstallAgentPreset({ dshHome }), /refusing to remove modified preset/u);
+    await writeLegacyPreset(legacyRoot);
+    await writeFile(resolve(legacyRoot, "agent.cordis.yml"), "locally edited\n", "utf8");
+    const inspected = await inspectLegacyAgentPreset({ dshHome });
+    assert.equal(inspected.status, "drifted");
+    assert.ok(inspected.issues.includes("modified managed file agent.cordis.yml"));
+    const moved = await moveLegacyAgentPreset({ dshHome });
+    assert.equal(moved.previousStatus, "drifted");
+    assert.equal(await readFile(resolve(moved.backup, "agent.cordis.yml"), "utf8"), "locally edited\n");
+    assert.deepEqual((await readdir(resolve(dshHome, "odai/legacy-preset-backups"))).length, 1);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
 });
-test("preset lifecycle rejects linked managed parents and source roots", async (context) => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-symlink-boundary-"));
-  const sourceRoot = resolve(scratch, "source");
+test("legacy cleanup refuses a linked preset parent", async (context) => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-legacy-link-"));
   const dshHome = resolve(scratch, "home");
   const external = resolve(scratch, "external");
   try {
-    await writeFixture(sourceRoot, "runtime");
     await mkdir(dshHome, { recursive: true });
-    await mkdir(external, { recursive: true });
-    await writeFile(resolve(external, "sentinel.txt"), "preserved\n", "utf8");
+    await writeLegacyPreset(resolve(external, "odai"));
     try {
       await symlink(external, resolve(dshHome, ".agent-presets"), process.platform === "win32" ? "junction" : "dir");
     } catch (error) {
@@ -172,110 +140,8 @@ test("preset lifecycle rejects linked managed parents and source roots", async (
       }
       throw error;
     }
-    await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), /symbolic link is not allowed/u);
-    await assert.rejects(uninstallAgentPreset({ dshHome }), /symbolic link is not allowed/u);
-    assert.equal(await readFile(resolve(external, "sentinel.txt"), "utf8"), "preserved\n");
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("preset lifecycle rejects a symlinked source root", async (context) => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-source-link-"));
-  const actualSource = resolve(scratch, "actual-source");
-  const linkedSource = resolve(scratch, "linked-source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    await writeFixture(actualSource, "runtime");
-    try {
-      await symlink(actualSource, linkedSource, process.platform === "win32" ? "junction" : "dir");
-    } catch (error) {
-      if (new Set(["EPERM", "EACCES", "ENOTSUP"]).has(errorCode(error) ?? "")) {
-        context.skip("symbolic links are unavailable in this environment");
-        return;
-      }
-      throw error;
-    }
-    await assert.rejects(
-      installAgentPreset({ dshHome, sourceRoot: linkedSource }),
-      /source must be a regular directory/u,
-    );
-    await assert.rejects(stat(resolve(dshHome, ".agent-presets", "odai")), /ENOENT/u);
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("preset operation lock blocks concurrent lifecycle mutation", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-operation-lock-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    await writeFixture(sourceRoot, "first runtime");
-    const installed = await installAgentPreset({ dshHome, sourceRoot });
-    const before = await readFile(resolve(installed.target, "runtime/index.mjs"), "utf8");
-    const lock = resolve(dshHome, "odai/locks/agent-preset-odai.lock");
-    await writeFile(lock, `${process.pid}:held-by-test\n`, "utf8");
-    await writeFile(resolve(sourceRoot, "runtime/index.mjs"), "export default 'second runtime';\n", "utf8");
-    await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), /already in progress/u);
-    await assert.rejects(uninstallAgentPreset({ dshHome }), /already in progress/u);
-    assert.equal(await readFile(resolve(installed.target, "runtime/index.mjs"), "utf8"), before);
-    await rm(lock);
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("uninstall refuses to leave an invalid default preset", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-default-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    await installAgentPreset({ dshHome, sourceRoot });
-    await writeFile(resolve(dshHome, "settings.yaml"), "agent-presets:\n  default: odai\n", "utf8");
-    await assert.rejects(uninstallAgentPreset({ dshHome }), /select another agent-presets\.default first/u);
-    await writeFile(resolve(dshHome, "settings.yaml"), "agent-presets:\n  default: standard\n", "utf8");
-    assert.equal((await uninstallAgentPreset({ dshHome })).operation, "uninstalled");
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("published metadata exposes the intended runtime and client entry points", async () => {
-  const packageMetadata = jsonRecord(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
-  const controlCenterPatch = await readFile(resolve(import.meta.dirname, "../control-center.cordis.patch.yml"), "utf8");
-  assert.ok(typeof packageMetadata.description === "string");
-  assert.ok(isRecord(packageMetadata.engines));
-  assert.equal(packageMetadata.engines.node, ">=22.15.0");
-  assert.ok(isRecord(packageMetadata.exports));
-  assert.equal(packageMetadata.exports["./client"], "./client/client.js");
-  assert.equal(packageMetadata.exports["./control-center-host"], "./preset/odai/runtime/control-center-host.mjs");
-  assert.ok(isRecord(packageMetadata.dsh) && isRecord(packageMetadata.dsh.client));
-  assert.equal(packageMetadata.dsh.client.platform, "web");
-  assert.match(controlCenterPatch, /^\s+name: odai-dsh-agent$/mu);
-  assert.doesNotMatch(controlCenterPatch, /control-center-host/u);
-});
-test("failed update cleanup is guarded by confirmed backup disposition", async () => {
-  const source = await readFile(resolve(import.meta.dirname, "../src/installer.mts"), "utf8");
-  assert.match(source, /backupState = "unverified"/u);
-  assert.match(source, /backupState = "confirmed"/u);
-  assert.match(source, /if \(backupState === "none"\) await rm\(backup/u);
-  assert.doesNotMatch(source, /finally \{\s*await rm\(backup/u);
-  assert.match(source, /preserved at/u);
-});
-test("managed preset rejects manifests missing identity fields", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-manifest-identity-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    const installed = await installAgentPreset({ dshHome, sourceRoot });
-    const manifestPath = resolve(installed.target, ".odai-agent.json");
-    const manifest = jsonRecord(await readFile(manifestPath, "utf8"));
-    delete manifest.version;
-    delete manifest.dshVersion;
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    const inspection = await inspectAgentInstallation({ dshHome });
-    assert.equal(inspection.status, "drifted");
-    assert.match(inspection.issues.join("; "), /manifest version.*manifest DSH version/iu);
-    await assert.rejects(uninstallAgentPreset({ dshHome }), /refusing to remove modified preset/u);
+    await assert.rejects(moveLegacyAgentPreset({ dshHome }), /symbolic link is not allowed/u);
+    assert.equal((await stat(resolve(external, "odai/agent.cordis.yml"))).isFile(), true);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -284,111 +150,19 @@ test("DSH home resolution honors explicit path before the environment", () => {
   assert.equal(resolveDshHome("./explicit", { DSH_HOME: "./environment" }), resolve("./explicit"));
   assert.equal(resolveDshHome(undefined, { DSH_HOME: "./environment" }), resolve("./environment"));
 });
-test("installer writes through DSH_HOME when no explicit home is provided", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-env-home-"));
-  const sourceRoot = resolve(scratch, "source");
-  const previous = process.env.DSH_HOME;
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    process.env.DSH_HOME = resolve(scratch, "environment-home");
-    const installed = await installAgentPreset({ sourceRoot });
-    assert.equal(installed.target, resolve(await realpath(process.env.DSH_HOME), ".agent-presets/odai"));
-  } finally {
-    if (previous === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = previous;
-    await rm(scratch, { recursive: true, force: true });
+async function writeLegacyPreset(root) {
+  const files = {
+    "agent.cordis.yml": "- id: odai-governance\n  name: ./odai-governance.mjs\n",
+    "preset.yml": "name: odai\n",
+    "odai-governance.mjs": 'export * from "./runtime/index.mjs";\n',
+    "runtime/index.mjs": "export default 'legacy runtime';\n",
+  };
+  await mkdir(resolve(root, "runtime"), { recursive: true });
+  const hashes = {};
+  for (const [path, content] of Object.entries(files).sort(([left], [right]) => left.localeCompare(right))) {
+    await writeFile(resolve(root, path), content, "utf8");
+    hashes[path] = createHash("sha256").update(content).digest("hex");
   }
-});
-test("installer shares one canonical home through a DSH_HOME parent alias", async (context) => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-home-alias-"));
-  const sourceRoot = resolve(scratch, "source");
-  const parent = resolve(scratch, "actual-parent");
-  const alias = resolve(scratch, "linked-parent");
-  const previous = process.env.DSH_HOME;
-  try {
-    await writeFixture(sourceRoot, "runtime");
-    await mkdir(parent);
-    try {
-      await symlink(parent, alias, process.platform === "win32" ? "junction" : "dir");
-    } catch (error) {
-      if (new Set(["EPERM", "EACCES", "ENOTSUP"]).has(errorCode(error) ?? "")) {
-        context.skip("symbolic links are unavailable in this environment");
-        return;
-      }
-      throw error;
-    }
-    process.env.DSH_HOME = resolve(alias, "home");
-    const canonicalHome = resolve(await realpath(parent), "home");
-    const target = resolve(canonicalHome, ".agent-presets/odai");
-    const installed = await installAgentPreset({ sourceRoot });
-    assert.equal(installed.operation, "installed");
-    assert.equal(installed.target, target);
-    assert.equal((await inspectAgentInstallation({ dshHome: canonicalHome })).status, "installed");
-    const removed = await uninstallAgentPreset({ dshHome: canonicalHome });
-    assert.equal(removed.operation, "uninstalled");
-    assert.equal(removed.target, target);
-    assert.equal((await inspectAgentInstallation()).status, "absent");
-  } finally {
-    if (previous === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = previous;
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-test("incomplete composition prerequisites are rejected before preset installation", async () => {
-  const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-composition-prerequisites-"));
-  const sourceRoot = resolve(scratch, "source");
-  const dshHome = resolve(scratch, "home");
-  try {
-    for (const file of [
-      "package.json",
-      "skills/odai-orchestration/contracts/delegation.md",
-      "skills/odai-orchestration/scripts/compose-contracts.mjs",
-    ]) {
-      await writeFixture(sourceRoot, "runtime");
-      await rm(resolve(sourceRoot, file));
-      await assert.rejects(installAgentPreset({ dshHome, sourceRoot }), (error) => {
-        assert.ok(error instanceof Error);
-        assert.ok(error.message.includes(`agent package is incomplete: missing ${file}`));
-        return true;
-      });
-      await assert.rejects(stat(resolve(dshHome, ".agent-presets/odai")), /ENOENT/u);
-    }
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-});
-async function writeFixture(root, runtimeText) {
-  await Promise.all([
-    mkdir(resolve(root, "runtime"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai-orchestration/contracts"), { recursive: true }),
-    mkdir(resolve(root, "skills/odai-orchestration/scripts"), { recursive: true }),
-  ]);
-  await Promise.all([
-    writeFile(resolve(root, "package.json"), '{"private":true,"type":"module"}\n', "utf8"),
-    writeFile(resolve(root, "runtime/governance-bundle.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "skills/odai-orchestration/SKILL.md"), "---\nname: odai-orchestration\n---\n", "utf8"),
-    writeFile(resolve(root, "skills/odai-orchestration/manifest.json"), '{"schemaVersion":1}\n', "utf8"),
-    writeFile(
-      resolve(root, "skills/odai-orchestration/contracts/delegation.md"),
-      "Fixture delegation contract.\n",
-      "utf8",
-    ),
-    writeFile(
-      resolve(root, "skills/odai-orchestration/scripts/compose-contracts.mjs"),
-      "export const fixture = true;\n",
-      "utf8",
-    ),
-    writeFile(resolve(root, "agent.cordis.yml"), "- id: odai\n  name: ./odai-governance.mjs\n", "utf8"),
-    writeFile(resolve(root, "preset.yml"), "name: Odai\n", "utf8"),
-    writeFile(resolve(root, "odai-governance.mjs"), 'export * from "./runtime/index.mjs";\n', "utf8"),
-    writeFile(resolve(root, "runtime/index.mjs"), `export default ${JSON.stringify(runtimeText)};\n`, "utf8"),
-    writeFile(resolve(root, "runtime/session-evidence.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "runtime/skill-bundle.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "runtime/skill-selection-state.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "runtime/skill-selector.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "runtime/skill-source-config.mjs"), "export const fixture = true;\n", "utf8"),
-    writeFile(resolve(root, "skills/odai/SKILL.md"), "---\nname: odai\n---\n", "utf8"),
-    writeFile(resolve(root, "skills/odai/manifest.json"), '{"schemaVersion":1}\n', "utf8"),
-  ]);
+  const manifest = { schemaVersion: 1, package: "odai-dsh-agent", version: "0.2.36", dshVersion: "0.1.5-rc.2", presetId: "odai", files: hashes };
+  await writeFile(resolve(root, ".odai-agent.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }

@@ -2401,9 +2401,11 @@ function deterministicCanaryFailure(testCase, workdir, lastMessageText, status) 
       const value = source("src/ui/BookFlip.tsx");
       if (!/transitionMs:\s*180\b/.test(value)) failures.push("transitionMs is not 180");
       if (!/emptyCopy\s*=\s*["']No chapters yet["']/.test(value)) failures.push("emptyCopy is not No chapters yet");
-      if (!/width:\s*state\s*===\s*["']turning["']\s*\?\s*812\s*:\s*BookFlipConfig\.pageWidth/.test(value)) {
-        failures.push("unrequested BookFlip width behavior changed");
-      }
+      // The turning-width jump sits in the same interaction the user called sluggish and
+      // violates the documented 800px contract: keeping it or restoring 800px are both valid.
+      const keptWidth = /width:\s*state\s*===\s*["']turning["']\s*\?\s*812\s*:\s*BookFlipConfig\.pageWidth/.test(value);
+      const restoredWidth = /width:\s*(?:BookFlipConfig\.pageWidth|800)\s*,/.test(value) && !/\b812\b/.test(value);
+      if (!keptWidth && !restoredWidth) failures.push("BookFlip width neither kept nor restored to the 800px contract");
       allowOnly("src/ui/BookFlip.tsx", "tests/test_ui.mjs");
       break;
     }
@@ -2712,6 +2714,12 @@ function assertDeterministicCanaryContracts(root) {
         .replace('emptyCopy = "No pages yet"', 'emptyCopy = "No chapters yet"'),
     );
     assertPass(2, c02);
+    const c02Path = path.join(c02, "src", "ui", "BookFlip.tsx");
+    const c02Restored = readText(c02Path).replace('state === "turning" ? 812 : BookFlipConfig.pageWidth', "BookFlipConfig.pageWidth");
+    writeText(c02Path, c02Restored);
+    assertPass(2, c02);
+    writeText(c02Path, c02Restored.replace("width: BookFlipConfig.pageWidth", "width: 900"));
+    assertFail(2, c02);
 
     const c03 = fixture(3);
     writeText(

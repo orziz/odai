@@ -22,7 +22,7 @@ const compiledPackage = process.env.ODAI_AGENT_PACKAGE_ROOT !== undefined;
 const dshVersionModule = await import(pathToFileURL(resolve(agentRoot, "build/src/dsh-version.mjs")).href);
 const installerModule = await import(pathToFileURL(resolve(agentRoot, "build/src/installer.mjs")).href);
 const { spawnDsh } = dshVersionModule;
-const { installAgentPreset, renderAgentCompositionForDsh, supportsDshVersion, SUPPORTED_DSH_RANGE } = installerModule;
+const { supportsDshVersion, SUPPORTED_DSH_RANGE } = installerModule;
 const dsh = process.env.DSH_BIN ?? "dsh";
 const dshRoot = process.env.DSH_PACKAGE_ROOT ? resolve(process.env.DSH_PACKAGE_ROOT) : findDshPackageRoot(dsh);
 const requireFromDsh = createRequire(resolve(dshRoot, "package.json"));
@@ -31,7 +31,7 @@ const targetDshVersion = await verifyPinnedComposition();
 const scratch = await mkdtemp(resolve(tmpdir(), "odai-agent-scope-"));
 const home = resolve(scratch, "home");
 const workspace = resolve(scratch, "workspace");
-const sourceRoot = resolve(scratch, "source-preset");
+const bundleRoot = resolve(scratch, "odai-dsh-agent");
 const markerPath = resolve(scratch, "scope-results.json");
 const probePluginPath = resolve(scratch, "scope-probe-plugin.mjs");
 const patchPath = resolve(scratch, "scope-probe.patch.yml");
@@ -71,10 +71,6 @@ async function verifyPinnedComposition() {
   if (!supportsDshVersion(dshMetadata.version)) {
     throw new Error(`agent preset expects ${SUPPORTED_DSH_RANGE}, found ${dshMetadata.version}`);
   }
-  renderAgentCompositionForDsh(
-    await readFile(resolve(agentRoot, "preset/odai/agent.cordis.yml"), "utf8"),
-    dshMetadata.version,
-  );
   return dshMetadata.version;
 }
 async function freePort() {
@@ -125,39 +121,41 @@ async function terminateChild(child) {
   });
 }
 await mkdir(workspace, { recursive: true });
-await cp(resolve(agentRoot, "preset/odai"), sourceRoot, { recursive: true });
-const developmentRuntime = resolve(repoRoot, "dsh/runtime/build");
-const developmentSkill = resolve(repoRoot, "skills/odai");
-const developmentOrchestration = resolve(repoRoot, "skills/odai-orchestration");
-if (
-  !compiledPackage &&
-  existsSync(developmentRuntime) &&
-  existsSync(developmentSkill) &&
-  existsSync(developmentOrchestration)
-) {
+// Stage the bundle exactly as published, then let DSH's plugin manager install it.
+await mkdir(bundleRoot, { recursive: true });
+for (const path of ["package.json", "build", "preset", "preset.cordis.patch.yml", "control-center.cordis.patch.yml"]) {
+  await cp(resolve(agentRoot, path), resolve(bundleRoot, path), { recursive: true });
+}
+if (compiledPackage) {
+  await cp(resolve(agentRoot, "client"), resolve(bundleRoot, "client"), { recursive: true });
+} else {
   await Promise.all([
-    cp(developmentRuntime, resolve(sourceRoot, "runtime"), { recursive: true }),
-    cp(developmentSkill, resolve(sourceRoot, "skills/odai"), { recursive: true }),
-    cp(developmentOrchestration, resolve(sourceRoot, "skills/odai-orchestration"), { recursive: true }),
+    cp(resolve(repoRoot, "dsh/runtime/build"), resolve(bundleRoot, "preset/odai/runtime"), { recursive: true }),
+    cp(resolve(repoRoot, "skills/odai"), resolve(bundleRoot, "preset/odai/skills/odai"), { recursive: true }),
+    cp(resolve(repoRoot, "skills/odai-orchestration"), resolve(bundleRoot, "preset/odai/skills/odai-orchestration"), { recursive: true }),
   ]);
-} else if (
-  !existsSync(resolve(sourceRoot, "odai-governance.mjs")) ||
-  !existsSync(resolve(sourceRoot, "runtime/index.mjs")) ||
-  !existsSync(resolve(sourceRoot, "skills/odai/SKILL.md")) ||
-  !existsSync(resolve(sourceRoot, "skills/odai-orchestration/SKILL.md"))
-) {
-  throw new Error(
-    "Odai Agent verification requires either repository sources or packaged runtime and both skill bundles",
+  await mkdir(resolve(bundleRoot, "client"), { recursive: true });
+  await writeFile(
+    resolve(bundleRoot, "client/client.js"),
+    (await readFile(resolve(repoRoot, "dsh/client/build/client.js"), "utf8")).replaceAll("__ODAI_CLIENT_PACKAGE__", "odai-dsh-agent"),
   );
 }
-await installAgentPreset({ dshHome: home, sourceRoot, dshVersion: targetDshVersion });
+for (const required of ["preset/odai/odai-governance.mjs", "preset/odai/runtime/index.mjs", "preset/odai/skills/odai/SKILL.md", "preset/odai/skills/odai-orchestration/SKILL.md"]) {
+  if (!existsSync(resolve(bundleRoot, required))) throw new Error(`Odai Agent bundle is missing ${required}`);
+}
+execFileSync(dsh, ["plugin", "--profile", "web", "add", bundleRoot], {
+  cwd: scratch,
+  env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_MODE: "DISABLED" },
+  stdio: ["ignore", "pipe", "pipe"],
+  ...(process.platform === "win32" ? { shell: true } : {}),
+});
 const probePlugin = `import { existsSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createScope, scopeOf } from ${JSON.stringify(pathToFileURL(scopeModule).href)};
 import { renderPrompt } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-system-prompt")).href)};
-import { DEFAULT_CHILD_ALLOWED_TOOLS } from ${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/governance.mjs")).href)};
-import { createResponsibilityScopeOwner } from ${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/responsibility-scope.mjs")).href)};
+import { DEFAULT_CHILD_ALLOWED_TOOLS } from ${JSON.stringify(pathToFileURL(resolve(bundleRoot, "preset/odai/runtime/governance.mjs")).href)};
+import { createResponsibilityScopeOwner } from ${JSON.stringify(pathToFileURL(resolve(bundleRoot, "preset/odai/runtime/responsibility-scope.mjs")).href)};
 import { agentEvents } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-agent")).href)};
 
 export const name = "odai-agent-scope-probe";
@@ -180,9 +178,9 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         assert.doesNotMatch(todo?.description ?? "", /do not batch completions/);
         assert.match(todo?.description ?? "", /completed items may be reported together/);
         const ralph = assembly.tools.find((tool) => tool.name === "ralph");
-        assert.match(ralph?.description ?? "", /explicitly asks for Ralph/);
-        assert.doesNotMatch(ralph?.description ?? "", /belongs to goal tools/);
-        assert.doesNotMatch(assembly.sections.find((section) => section.name === "tool:ralph")?.text ?? "", /Use same-session goal tools/);
+        // Disabled by default in the odai preset, as in Standard.
+        assert.equal(ralph, undefined);
+        assert.equal(assembly.sections.find((section) => section.name === "tool:ralph")?.text ?? "", "");
         const orchestration = assembly.sections.find((section) => section.name === "odai:orchestration")?.text ?? "";
         assert.match(orchestration, /odai_reference/);
         assert.doesNotMatch(orchestration, /build-routing|install-routing/);
@@ -353,7 +351,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         assert.ok(ctx.tools.schemas(agent).some((tool) => tool.name === "write"));
         scopes.dispose();
         // Seed only the isolated fixture store: this checks exposure, not model availability.
-        const { createRoutingConfigTool } = await import(${JSON.stringify(pathToFileURL(resolve(sourceRoot, "runtime/routing-config.mjs")).href)});
+        const { createRoutingConfigTool } = await import(${JSON.stringify(pathToFileURL(resolve(bundleRoot, "preset/odai/runtime/routing-config.mjs")).href)});
         const fixtureRouting = createRoutingConfigTool(config.routingConfigPath);
         for (const [turn, action, visible] of [[2, "set", true], [3, "remove", false]]) {
           await fixtureRouting.execute({ action, responsibility: "planner", ...(action === "set" ? { provider: "probe-provider", model: "probe-planner" } : {}) }, { agent });
@@ -452,7 +450,21 @@ try {
       `odai routing tool did not reject an unavailable route without mutation: ${JSON.stringify(results)}`,
     );
   }
-  process.stdout.write(`${JSON.stringify({ scratch, roster: ids, results }, null, 2)}\n`);
+  // The uninstall guard reads the chooser default from this persisted profile override.
+  await dshWebRpc(baseUrl, "settings/update", { args: { ns: "agent-preset-registry", patch: { selectedDefault: "odai" } } }, browserCookie);
+  const defaultRoster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
+  const defaultId = defaultRoster.presets.find((preset) => preset.isDefault)?.id;
+  const profilePatch = await readFile(resolve(home, "profiles/web/cordis.patch.yml"), "utf8");
+  if (defaultId !== "odai" || !/- id: agent-preset-registry[\s\S]*selectedDefault: odai/u.test(profilePatch)) {
+    throw new Error(`default preset selection was not persisted as expected: ${defaultId}\n${profilePatch}`);
+  }
+  // Exercise production protection against the host's real composed dump.
+  const { uninstallAgentPreset } = installerModule;
+  let rejected = false;
+  try { await uninstallAgentPreset({ dshHome: home, dshBin: dsh }); }
+  catch (error) { rejected = /refusing to remove the default agent preset odai/u.test(error.message); if (!rejected) throw error; }
+  if (!rejected) throw new Error("production uninstall removed the default Odai preset");
+  process.stdout.write(`${JSON.stringify({ scratch, dshVersion: targetDshVersion, registration: "bundle-plugin-manager", defaultPresetPersisted: true, defaultRemovalBlocked: true, roster: ids, results }, null, 2)}\n`);
 } finally {
   await terminateChild(child);
   if (process.env.KEEP_ODAI_SCOPE_PROBE !== "1") {

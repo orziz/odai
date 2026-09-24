@@ -83,6 +83,7 @@ if (!isRecord(parsedMetadata) || typeof parsedMetadata.name !== "string" || type
 }
 const packageMetadata: PackageMetadata = { name: parsedMetadata.name, version: parsedMetadata.version };
 const PROFILE_STATE_FILES = Object.freeze(["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]);
+const ODAI_PRESET_ID = "odai";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -173,7 +174,9 @@ function exactRegistryVersion(dependency: string): string | undefined {
 
 async function resolvedPackage(target: string): Promise<ResolvedPackage | undefined> {
   const manifestPath = resolve(target, "node_modules", packageMetadata.name, "package.json");
-  const source = await optionalFile(manifestPath);
+  let source: Buffer | undefined;
+  try { source = await optionalFile(manifestPath); }
+  catch (error) { return { complete: false, issues: [`resolved package metadata is unreadable: ${errorMessage(error)}`] }; }
   if (!source) return undefined;
   const issues: string[] = [];
   let parsed: unknown;
@@ -192,15 +195,36 @@ async function resolvedPackage(target: string): Promise<ResolvedPackage | undefi
     issues.push(`cannot resolve installed package root: ${errorMessage(error)}`);
   }
   for (const relativePath of [
+    "preset.cordis.patch.yml",
+    "preset/odai/odai-governance.mjs",
+    "preset/odai/package.json",
+    "preset/odai/skills/odai/manifest.json",
+    "preset/odai/skills/odai-orchestration/manifest.json",
+    "preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs",
+    "preset/odai/runtime/index.mjs",
+    "preset/odai/skills/odai/SKILL.md",
     "control-center.cordis.patch.yml",
     "build/src/installer.mjs",
     "preset/odai/runtime/control-center-host.mjs",
     "preset/odai/runtime/control-center-runtime.mjs",
     "client/client.js",
   ]) {
-    if (!await optionalFile(resolve(dirname(manifestPath), relativePath))) {
-      issues.push(`resolved package is missing ${relativePath}`);
+    try {
+      if (!await optionalFile(resolve(dirname(manifestPath), relativePath))) {
+        issues.push(`resolved package is missing ${relativePath}`);
+      }
+    } catch (error) {
+      issues.push(`resolved package cannot read ${relativePath}: ${errorMessage(error)}`);
     }
+  }
+  try {
+    const presetMetadata: unknown = JSON.parse(await readFile(resolve(dirname(manifestPath), "preset/odai/package.json"), "utf8"));
+    if (!isRecord(presetMetadata) || presetMetadata.type !== "module" || !isRecord(presetMetadata.imports)
+      || presetMetadata.imports["#odai-contracts"] !== "./skills/odai-orchestration/scripts/compose-contracts.mjs") {
+      issues.push("resolved preset package has an invalid #odai-contracts import map");
+    }
+  } catch (error) {
+    issues.push(`resolved preset package metadata is unavailable: ${errorMessage(error)}`);
   }
   return {
     ...(root ? { root } : {}),
@@ -342,6 +366,49 @@ async function changedProfileFailure(
   }
 }
 
+// Ask the host to compose bundle, profile and home layers without booting or
+// evaluating !!js. Reading only the profile patch misses deployment defaults.
+async function assertOdaiIsNotProfileDefault(options: AgentControlCenterOptions): Promise<void> {
+  const dsh = options.dshBin ?? process.env.DSH_BIN ?? "dsh";
+  const platform = options.platform ?? process.platform;
+  const execute = options.execute ?? execFileSync;
+  const source = execute(platform === "win32" && dsh === "dsh" ? "dsh.cmd" : dsh,
+    ["--profile", assertProfile(options.profile ?? "web"), "--dump-config"], {
+      encoding: "utf8",
+      env: { ...process.env, DSH_HOME: resolveDshHome(options.dshHome) },
+      ...(platform === "win32" ? { shell: true } : {}),
+    });
+  let entries: unknown;
+  try {
+    entries = parseYaml(source, { customTags: [{ tag: "tag:yaml.org,2002:js", resolve: (value: string) => ({ expression: value }) }] });
+  } catch (error) {
+    throw new Error(`cannot verify the composed default agent preset: ${errorMessage(error)}`);
+  }
+  const registries: Record<string, unknown>[] = [];
+  const visit = (rows: unknown): void => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      if (row.name === "@deepseek-ai/dsh-agent-preset-registry") registries.push(row);
+      if (row.group === true) visit(row.config);
+    }
+  };
+  visit(entries);
+  const row = registries.length === 1 ? registries[0] : undefined;
+  const config = row && isRecord(row.config) ? row.config : undefined;
+  if (!row || (row.disabled !== undefined && row.disabled !== false) || !config
+    || typeof config.default !== "string"
+    || (config.selectedDefault != null && typeof config.selectedDefault !== "string")
+    || (config.modeSelectionEnabled !== undefined && typeof config.modeSelectionEnabled !== "boolean")) {
+    throw new Error("cannot determine the effective default agent preset; resolve the registry configuration before uninstalling");
+  }
+  const selected = config.modeSelectionEnabled === false
+    ? config.default : config.selectedDefault ?? config.default;
+  if (selected === ODAI_PRESET_ID) {
+    throw new Error(`refusing to remove the default agent preset ${ODAI_PRESET_ID}; choose another default preset in DSH first`);
+  }
+}
+
 async function acquireControlCenterOperation(dshHome: string, profile: string): Promise<() => void> {
   await assertNoSymlinkDescendants(dshHome, "odai/locks");
   const lockRoot = resolve(dshHome, "odai", "locks");
@@ -403,7 +470,7 @@ async function installAgentControlCenterUnderLock(
     runPluginCommand("add", packageSpec, options);
     const installed = await inspectAgentControlCenter(options);
     if (installed.status !== "current" || !installed.dependency) {
-      throw new Error(`DSH plugin manager did not install the exact Agent Control Center package: ${installed.issues.join("; ") || installed.status}`);
+      throw new Error(`DSH plugin manager did not install the exact Odai Agent bundle: ${installed.issues.join("; ") || installed.status}`);
     }
     const operation = current.status === "absent"
       ? "installed"
@@ -440,6 +507,7 @@ export async function uninstallAgentControlCenter(
     if (current.status === "partial-drift") {
       throw new Error(`refusing to remove partially owned Control Center profile state at ${current.target}: ${current.issues.join("; ")}`);
     }
+    await assertOdaiIsNotProfileDefault(operationOptions);
     const before = await captureProfile(current.target);
     try {
       runPluginCommand("remove", packageMetadata.name, operationOptions);

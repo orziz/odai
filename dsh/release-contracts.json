@@ -1,14 +1,14 @@
 {
   "schemaVersion": 2,
-  "dshRange": "0.1.5-rc.2",
-  "sourceDshVersion": "0.1.5-rc.2",
+  "dshRange": "*",
+  "sourceDshVersion": "0.1.7-rc.1",
   "releases": [
     {
-      "version": "0.1.5-rc.2",
-      "publishedBefore": "2026-09-11T00:00:00.000Z",
-      "expectedDshPackages": 231,
-      "standardCompositionPath": "@deepseek-ai/dsh-agent-presets/presets/standard/agent.cordis.yml",
-      "standardCompositionSha256": "08a029c64fdeaabe415a5627ef73ce6f6c6bc61dadaf9989d11f9e15608907f6"
+      "version": "0.1.7-rc.1",
+      "publishedBefore": "2026-09-24T00:00:00.000Z",
+      "expectedDshPackages": 267,
+      "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
+      "standardCompositionSha256": "6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8"
     }
   ]
 }

@@ -2,7 +2,22 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.37 / canonical 0.7.0
+## Unreleased — DSH 0.2.38 / canonical 0.7.1
+
+- 取消逐版本白名单：双包 npm peer 为 `*`，Agent 最低宿主为 `0.1.7-rc.1`，允许更高版本及后续预发布；实测矩阵仍固定 `0.1.7-rc.1`，放行不等于未来版本已验证。不再支持旧 Agent 安装协议 `0.1.5-rc.2`（仍在 rc.2 上的用户继续使用已发布的 `0.2.37`）。上游在该版本把 agent 预设改为由 profile bundle 声明，宿主不再扫描 `$DSH_HOME/.agent-presets`，并以 `dsh-workflow-ptc` 取代已移除的 `dsh-workflow-worker-thread`。Agent 包随之改为 DSH bundle：`preset.cordis.patch.yml` 以 `@deepseek-ai/dsh-agent-preset` 声明 `odai` 预设（保留已有会话引用的预设 ID；未另做旧会话重启恢复实测），与 Control Center 一起由插件管理器装入 profile（默认 `web`），治理入口以 `odai-dsh-agent/governance` 导出。预设跟进 Standard：工作流引擎改用 `workflow-ptc`，`ralph` 默认关闭，插件管理工具行存在但默认关闭。
+- Agent 命令改为 `install|status|uninstall|cleanup-legacy`。安装不再复制文件，也不再单独询问是否装 Control Center；旧 `control-center …` 命令作为别名保留，`--with/without-control-center` 被接受但忽略，可在 DSH 插件页停用 Control Center。卸载通过宿主 `--dump-config` 合并 bundle、profile 与 home 层，按 `default`、`selectedDefault` 和 `modeSelectionEnabled` 判断有效默认项；默认仍为 `odai` 或动态配置无法判定时拒绝。修复完整性检查遗漏模块映射及编排入口的问题：缺失或损坏时判为 `partial-drift` 并尝试修复，不再误报 `current` / `unchanged`。旧版复制的 `.agent-presets/odai` 原样保留，`status` 会报告它，`cleanup-legacy` 把它移入 `$DSH_HOME/odai/legacy-preset-backups/` 而不删除；会话、记忆、路由与证据数据均不触碰。
+- 迁移注意：DSH `0.1.7` 导入旧 `settings.yaml` 时不映射 `agent-presets.default`，升级后新会话默认回到 Standard，需要在 DSH 中重新把 odai 设为默认；该选择保存在 profile 自己的 `cordis.patch.yml`。
+- Plugin 运行时代码未改，仅宿主范围更新。评测用的 DSH runner 仍依赖复制的预设目录，在 `0.1.7` 上跑 Agent 组时会明确报错，尚未适配。
+
+- 官方 registry 确认双包 `0.2.37` 已发布，下载制品的治理与编排文件逐字节匹配 `655623d` 对应目录。本次使用双包 `0.2.38`、治理 `0.7.1`，避免已发布包版本复用和治理同版本异内容回退；runtime contract `9`、schema `5`、编排 `0.2.0` / schema `1` 保持。
+- 入口改为按“事、实、法、成、界”组织，另设交付与按缺口取用；dao、verification、planning、craft 中已由入口承接的规则去重，账本登记 33 条规则及唯一 owner、细则位置与核对版本。保留原总纲、授权、事实、人身安全和真实完成边界；不把结构重组宣称为运行成本或行为收益。
+- 根据已记录的会话问题，将逐项核对原请求、同步失真的项目文档、按缺陷选择必要回归、核实实际接口、大任务尽早呈现方向和使用易懂语言纳入入口（R28–R33）。读取次数本身不能证明 reference 规则无效，不据此宣称上移的净收益已经测得。
+- R31 保留实际证据优先：接口路径、字段和状态码不按文档惯性或相似项猜测；差异结合有效要求和使用场景判断是说明过时还是实现有误，不把现状自动当正确标准，也不因旧文档不同就否定实际行为。
+- C02 接受局部修复同一翻页交互中有明确 800px 契约的宽度跳变并说明，也接受保持不改并报告。范围依据是当前交互、已有契约与局部影响，不是同文件或“用户通常希望”；不扩大到独立问题、不声称宽度是拖慢根因。原判 2/4 与新标准重裁 4/4 分别保留，不把重裁计为模型行为改善。
+- DSH 审查范围完整时，允许只截掉其后的长用户原文，并明确不能验收未见要求；范围本身截断仍拒绝。撤回候选中的单轮两次审查硬上限：未启动的 fallback 会误消耗额度，次数也不能区分重复审查与新的必要属性。保留既有任务绑定、已消费请求去重与证据不足时的等待，不新增固定轮次门。
+- 不同冻结快照的 C19、C31、C03、C32 和 C02 结果按实际产物保留，详见 [`docs/evaluation-results.md`](docs/evaluation-results.md)。治理 `0.7.1` 未新增模型运行，不继承旧满分为当前全量或稳定性验收。
+
+## DSH 0.2.37 / canonical 0.7.0
 
 - 治理重构为 canonical `0.7.0` / runtime contract `9`。入口把共同行动边界改写为九条行动门，并恢复此前整理中被删除、且有评测来源的规则：方向性改进先对齐真实结果、非目标与不可接受退化（C31）；需要许可时在最终答复中引用权威来源，写出完整命令、会带来的联网、依赖或配置变更、验证步骤与缺失前提，并明确请用户决定是否授权（C19）；有项目文件时首次行动前检查一次 `.odai/local.md`，去掉含义不明的“宿主未提供本地规则”条件（C07）；目标、授权或写入对象不明确时读取 dao。加载地图逐项写明触发条件。精神内核原句、care 与 human-safety 不变。
 - reference 只写入口之外的增量，不再复述入口规则。新增 `memory.md` 统一负责长期信息、项目叠加层与项目规则和技能的固化；`support.md` 退役，其恢复判断并入入口主线与 craft 的排障与纠偏，状态外化规则并入 planning。新增 [`docs/rule-ledger.md`](docs/rule-ledger.md) 登记 24 条有来源的操作规则及其 owner；改写或删除账本规则须在 CHANGELOG 说明理由。R11 原有“保险改动”表述未明确内部强不变量与外部输入的区别，现于 craft 原位补清：已经由入口、封闭类型或内部合同保证的条件不重复加防御，外部输入继续按执行边界校验；不扩写入口或新增措辞测试。
@@ -10,7 +25,7 @@
 - DSH 退役技能演进：移除 `odai_skill_evolution`、演进选择覆盖、`ODAI_DISABLE_EVOLUTION` 与 `governance.evolutionRoot` 配置。升级重启后，原已激活的治理与编排修改不再生效；`$DSH_HOME/odai/skill-evolution` 既有数据保留且不再读取，部署配置残留 `evolutionRoot` 被忽略。自定义治理须使用完整兼容且带独立 SemVer 标识的用户级技能，将来源设为 `user`，并在下一轮核对实际来源、版本与 digest；同版本异内容仍回退，单改 build metadata 无效。该路径不恢复编排定制或演进代际的激活、rebase、回滚，也不自动迁移旧数据，详见 [迁移说明](dsh/README.md#migrating-retired-skill-evolution)。
 - DSH 只在路由未关闭且至少一项职责配置了模型映射时，才暴露 `odai_responsibility_gap` 和原生委派指引；默认未配置映射的安装不再引导模型提交只会得到“未配置”通知的职责缺口。路由未关闭但存储无效时仍保持可见，原有失败提示照常生效。已配置映射的路由、调度与证据门不变。
 - 自动发现的旧 contract `8` 外部治理候选会被拒绝，继续查找兼容来源；无可用候选时明示回退到内置版本，不改写原数据。显式部署技能路径不兼容时直接报错，通用宿主路由生成器拒绝治理与编排的契约不配套。
-- 定向实跑（`gpt-5.6-sol` / high，隔离 Codex，每题一次）：C07、C14、C31 为 4/4；C19 首跑与收紧许可门后的重跑均为 3/4，两次缺口不同，最终措辞未再复测。详见 [`docs/evaluation-results.md`](docs/evaluation-results.md)；不宣称全量、稳定性或成本改善。
+- 定向实跑（`gpt-5.6-sol` / high，隔离 Codex，每题一次）：C07、C14、C31 为 4/4；C19 首跑与收紧许可门后的重跑均为 3/4，两次缺口不同，发布文本未再复测。详见 [`docs/evaluation-results.md`](docs/evaluation-results.md)；不宣称全量、稳定性或成本改善。
 
 - 将 DSH 普通行为测试、辅助代码和宿主探针改为原生 JavaScript ESM，统一导入构建产物并通过 Node 执行；同步包脚本、CI 和发布探针入口，移除三份测试 tsconfig 及不再使用的 `tsx` 开发依赖。生产 TypeScript 严格检查保留。
 - 维护验证改为按问题取用：取消默认全量/A-B、多模型评测及固定补考题单；删除提示措辞、固定 token 预算断言和仅供这些断言使用的内部估算函数。harness 必须显式选题，整套离线自检移至手动入口；日常 CI 移除评测设施检查、全量 fixture 生成和重复构建/打包，保留数据、权限、安装恢复与发布契约回归。历史未知仍如实保留，不据此宣称模型效果改善。
@@ -19,7 +34,7 @@
 - 评测新增实际安装技能完整文件指纹，覆盖 manifest、脚本和资源；安装编排的臂包含 `odai-orchestration`。重裁核对完整包身份和路由映射，拒绝身份缺失或不匹配的历史产物，不将旧结果升级为新快照证据。
 - 路由安装器成功返回前执行临时目录清理，并记录自身新建目录；卸载只删除已记录且仍为空的目录，保留预存目录、非托管内容和没有目录来源记录的旧安装。Claude Hooks 补齐 `NotebookEdit` matcher、写工具识别与 `notebook_path` 保护，普通 shell 写入仍不在路径保护范围内。
 - 版本策略测试补齐治理 schema 与编排版本载体，并接入根脚本和 CI；补齐双包 client 生成目录残留检查，更新拆分后的维护路径、reference 职责和发布状态说明。Ribao 默认提示与日报、周报、状态更新的已有范围对齐。
-- npm registry 与已发布制品确认 `0.2.36` 已消耗，当前候选更正为双包 `0.2.37`；治理 `0.7.0`、编排 `0.2.0` 与 contract `9` 保持。离线一致性校验不证明版本尚未发布，发布前仍须查询 registry。
+- 本版发布准备时确认 `0.2.36` 已消耗，因此改用双包 `0.2.37`，治理 `0.7.0`、编排 `0.2.0` 与 contract `9` 保持；随后两包均已发布。离线一致性校验不证明版本尚未发布，发布前仍须查询 registry。
 
 ## 2026-09-22 — DSH 0.2.36 / canonical 0.6.1
 

@@ -1,7 +1,7 @@
 {
   "name": "odai-dsh-agent",
-  "version": "0.2.37",
-  "description": "独立维护的 odai 治理模式 preset，按任务需要提供治理与协作，可作为默认总控。",
+  "version": "0.2.38",
+  "description": "独立维护的 odai 治理模式预设（DSH bundle），按任务需要提供治理与协作。",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,6 +16,7 @@
   "main": "./build/src/installer.mjs",
   "exports": {
     ".": "./build/src/installer.mjs",
+    "./governance": "./preset/odai/odai-governance.mjs",
     "./control-center": "./build/src/control-center-installer.mjs",
     "./control-center-host": "./preset/odai/runtime/control-center-host.mjs",
     "./client": "./client/client.js",
@@ -33,13 +34,17 @@
     "build/src",
     "client",
     "preset",
+    "preset.cordis.patch.yml",
     "control-center.cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "dsh": {
     "bundle": {
-      "patch": "./control-center.cordis.patch.yml"
+      "patch": [
+        "./preset.cordis.patch.yml",
+        "./control-center.cordis.patch.yml"
+      ]
     },
     "client": {
       "inject": [
@@ -70,7 +75,7 @@
     "yaml": "^2.8.1"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.1.5-rc.2"
+    "@deepseek-ai/dsh": "*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {

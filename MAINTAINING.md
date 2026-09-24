@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前未发布候选为 DSH `0.2.37` / 治理 `0.7.0`（runtime contract `9`）/ 编排 `0.2.0`，仅面向 DSH `0.1.5-rc.2`。双包 `0.2.36` 已于 2026-09-22 发布（治理 `0.6.1` / contract `8`、编排 `0.1.0`），不能复用其版本号。
+- 当前未发布候选为 DSH `0.2.38` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.0`，DSH npm peer 开放为 `*`，Agent 从 `0.1.7-rc.1` 起允许后续版本及预发布（改为 profile bundle 声明预设）；实测记录仍只有 `0.1.7-rc.1`，不得把放行当作未来版本已验证。双包 `0.2.37` 均已发布（面向 DSH `0.1.5-rc.2`）（治理 `0.7.0` / contract `9`、编排 `0.2.0`），不能复用其包版本或以修改后的治理内容继续使用 `0.7.0`；更早发布记录保留在 CHANGELOG 与兼容表。
 - 当前定向评估及限制统一在 [`docs/evaluation-results.md`](docs/evaluation-results.md)，实际职责调用和宿主保护边界统一在 [`docs/routing-results.md`](docs/routing-results.md)。不复制旧版本分数作为当前结论，也不把有限样本当作全量验收。
 - 结果文档保持当前状态，用户要求重试时以最新完整结果更新对应项，简要说明重试；淘汰的试跑、重复快照与已结束执行计划及时清理。已发布版本事实保留在 CHANGELOG 与兼容表，旧实现和旧文档由 Git 历史承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -14,7 +14,7 @@
 ```text
 AGENTS.md                         仓库级维护约束
 skills/odai/                      独立治理技能
-  SKILL.md                        精神内核、当前判断、行动门、主线、加载地图与完成
+  SKILL.md                        总纲，事、实、法、成、界与交付的规则，按缺口取用地图
   manifest.json                  治理版本、reference owner 和文件清单
   agents/openai.yaml              宿主 UI 元数据
   references/                    边界、计划、制作、验收、状态与记忆、能力选择、关怀与人身保护
@@ -28,7 +28,7 @@ skills/odai-orchestration/        可选、单向依赖治理的编排技能
   assets/                         职责预设和宿主模板
   scripts/                        可信组合器、路由生成、安装与调用核验
 integrations/hooks/              可选 Hooks 运行时、生成器和策略示例
-docs/rule-ledger.md               有来源的操作规则、owner 与保持状态
+docs/rule-ledger.md               有来源的操作规则、唯一 owner、细则位置与核对版本
 docs/evaluation.md                稳定评测契约
 docs/evaluation-results.md        模型全量 / A/B 的公开记录
 docs/routing-results.md           可选宿主能力路由的独立实验记录
@@ -51,7 +51,7 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 
 | 需求 | 唯一 owner |
 |---|---|
-| 精神内核、当前判断、行动门、主线与加载地图 | `skills/odai/SKILL.md` |
+| 总纲，按事、实、法、成、界组织的入口规则，交付与按缺口取用 | `skills/odai/SKILL.md` |
 | 事的所有权、事实校准、授权、参考只读、冲突与高影响动作 | `references/dao.md` |
 | 正式计划、可执行合同与跨轮续作 | `references/planning.md` |
 | 已决定结果的实施与排障、设计、UI / 实时交互、文档与审查 | `references/craft.md` |
@@ -60,7 +60,7 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 | 工具、资料与技能选择 | `skills/odai/references/leverage.md` |
 | 职责选择、调度和交接 | `skills/odai-orchestration/references/orchestration.md` |
 | 通用宿主路由的安装、更新与卸载 | `skills/odai-orchestration/references/install.md` |
-| 有来源的操作规则登记与保持状态 | `docs/rule-ledger.md` |
+| 有来源的操作规则登记与核对 | `docs/rule-ledger.md` |
 | 非危机日常关怀 | `references/care.md` |
 | 自伤、轻生与即时危险保护 | `references/human-safety.md` |
 | 跨会话可恢复状态 | `skills/odai/assets/task-state.md` |

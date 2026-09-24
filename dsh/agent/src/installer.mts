@@ -1,22 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  chmod,
-  cp,
   lstat,
   mkdir,
   readFile,
   readdir,
   realpath,
   rename,
-  rm,
-  writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { satisfies, valid, validRange } from "semver";
-import { parse as parseYaml } from "yaml";
 
 import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
@@ -29,8 +24,11 @@ interface PackageMetadata {
 export interface AgentInstallerOptions {
   presetId?: string;
   dshHome?: string;
-  sourceRoot?: string;
-  dshVersion?: string;
+  profile?: string;
+  packageSpec?: string;
+  dshBin?: string;
+  platform?: NodeJS.Platform;
+  execute?: import("./control-center-installer.mjs").AgentControlCenterOptions["execute"];
 }
 
 interface ManagedManifest {
@@ -81,7 +79,6 @@ export async function apply(ctx: unknown, rawConfig: unknown = {}): Promise<void
   await host.apply(ctx, rawConfig);
 }
 
-const defaultSourceRoot = resolve(packageRoot, "preset/odai");
 const parsedPackageMetadata: unknown = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
 if (!isRecord(parsedPackageMetadata) || typeof parsedPackageMetadata.name !== "string"
   || typeof parsedPackageMetadata.version !== "string" || !isRecord(parsedPackageMetadata.peerDependencies)) {
@@ -95,50 +92,21 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const EXPECTED_DSH_RANGE = "0.1.5-rc.2";
-const SOURCE_DSH_VERSION = "0.1.5-rc.2";
+export const MINIMUM_DSH_VERSION = "0.1.7-rc.1";
+const SOURCE_DSH_VERSION = "0.1.7-rc.1";
 const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
-if (!peerRange || peerRange !== EXPECTED_DSH_RANGE || validRange(peerRange) === null) {
-  throw new Error(`odai-dsh-agent peer dependency must equal ${EXPECTED_DSH_RANGE}`);
+if (peerRange !== "*" || validRange(peerRange) === null) {
+  throw new Error("odai-dsh-agent must keep an open DSH peer; tested releases are not an allow-list");
 }
-export const SUPPORTED_DSH_RANGE = peerRange;
+// The old directory-based host cannot load this bundle. Newer releases, including
+// prereleases, are admitted; actual bundle loading still validates host services.
+export const SUPPORTED_DSH_RANGE = `>=${MINIMUM_DSH_VERSION}`;
+// Historical export name: these are tested versions, never an admission list.
 export const SUPPORTED_DSH_VERSIONS = Object.freeze([SOURCE_DSH_VERSION]);
-if (SUPPORTED_DSH_VERSIONS.some((version) => !satisfies(version, SUPPORTED_DSH_RANGE))) {
-  throw new Error(`Odai Agent tested DSH versions must satisfy ${SUPPORTED_DSH_RANGE}`);
-}
 export function supportsDshVersion(version: string): boolean {
-  return satisfies(version, SUPPORTED_DSH_RANGE);
+  return valid(version) !== null && satisfies(version, SUPPORTED_DSH_RANGE, { includePrerelease: true });
 }
 export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
-const requiredFiles = Object.freeze([
-  "package.json",
-  "skills/odai/SKILL.md",
-  "skills/odai/manifest.json",
-  "skills/odai-orchestration/SKILL.md",
-  "skills/odai-orchestration/manifest.json",
-  "skills/odai-orchestration/contracts/delegation.md",
-  "skills/odai-orchestration/scripts/compose-contracts.mjs",
-  "runtime/governance-bundle.mjs",
-  "agent.cordis.yml",
-  "preset.yml",
-  "odai-governance.mjs",
-  "runtime/index.mjs",
-  "runtime/session-evidence.mjs",
-  "runtime/skill-bundle.mjs",
-  "runtime/skill-selection-state.mjs",
-  "runtime/skill-selector.mjs",
-  "runtime/skill-source-config.mjs",
-]);
-
-export function renderAgentCompositionForDsh(composition: string, dshVersion = SUPPORTED_DSH_VERSION): string {
-  if (typeof composition !== "string" || composition.trim() === "") {
-    throw new TypeError("agent composition must be a non-empty string");
-  }
-  if (!supportsDshVersion(dshVersion)) {
-    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
-  }
-  return composition.replace(/\r\n/gu, "\n");
-}
 
 export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = process.env): string {
   const value = configured ?? env.DSH_HOME ?? resolve(homedir(), ".dsh");
@@ -185,7 +153,7 @@ export async function assertNoSymlinkDescendants(root: string, relativePath: str
   }
 }
 
-async function acquirePresetOperation(dshHome: string, presetId: string): Promise<() => void> {
+async function acquireLegacyOperation(dshHome: string, presetId: string): Promise<() => void> {
   await assertNoSymlinkDescendants(dshHome, "odai/locks");
   const lockRoot = resolve(dshHome, "odai", "locks");
   await mkdir(lockRoot, { recursive: true, mode: 0o700 });
@@ -193,7 +161,34 @@ async function acquirePresetOperation(dshHome: string, presetId: string): Promis
   return acquireAgentOperationLock(resolve(lockRoot, `agent-preset-${presetId}.lock`), `Agent preset ${presetId} operation`);
 }
 
+// DSH 0.1.7 registers presets only from bundle declarations. The Agent package is that
+// bundle: installing it adds the `odai` preset and the Control Center to one profile.
+// Loaded lazily so the host entry above never imports the package-manager lifecycle.
+export async function installAgentPreset(options: AgentInstallerOptions = {}) {
+  const { installAgentControlCenter } = await import("./control-center-installer.mjs");
+  const result = await installAgentControlCenter(options);
+  return Object.freeze({
+    ...result,
+    presetId: DEFAULT_PRESET_ID,
+    notice: "DSH 0.1.7 does not carry an earlier agent-presets default forward; choose odai as the default preset in DSH if you want new sessions to start with it.",
+    security: "DSH bundles run with the same privileges as the host process; install only reviewed packages.",
+  });
+}
+
 export async function inspectAgentInstallation(options: AgentInstallerOptions = {}) {
+  const { inspectAgentControlCenter } = await import("./control-center-installer.mjs");
+  const bundle = await inspectAgentControlCenter(options);
+  const legacy = await inspectLegacyAgentPreset(options);
+  return Object.freeze({ ...bundle, presetId: DEFAULT_PRESET_ID, legacy });
+}
+
+export async function uninstallAgentPreset(options: AgentInstallerOptions = {}) {
+  const { uninstallAgentControlCenter } = await import("./control-center-installer.mjs");
+  return uninstallAgentControlCenter(options);
+}
+
+/** Inspect a preset directory that releases for DSH 0.1.5 copied into `.agent-presets`. */
+export async function inspectLegacyAgentPreset(options: AgentInstallerOptions = {}) {
   const presetId = assertPresetId(options.presetId ?? DEFAULT_PRESET_ID);
   const dshHome = await resolveManagedDshHome(options.dshHome, false);
   await assertNoSymlinkDescendants(dshHome, ".agent-presets");
@@ -202,181 +197,37 @@ export async function inspectAgentInstallation(options: AgentInstallerOptions = 
   return Object.freeze({ dshHome, presetId, target, ...state });
 }
 
-export async function installAgentPreset(options: AgentInstallerOptions = {}) {
-  const presetId = assertPresetId(options.presetId ?? DEFAULT_PRESET_ID);
-  const dshHome = await resolveManagedDshHome(options.dshHome, true);
-  await assertNoSymlinkDescendants(dshHome, ".agent-presets");
-  const targetRoot = resolve(dshHome, ".agent-presets");
-  await mkdir(targetRoot, { recursive: true, mode: 0o700 });
-  await assertNoSymlinkDescendants(dshHome, ".agent-presets");
-  const releaseOperation = await acquirePresetOperation(dshHome, presetId);
-  try {
-    return await installAgentPresetUnderLock(options, presetId, dshHome);
-  } finally {
-    releaseOperation();
-  }
-}
-
-async function installAgentPresetUnderLock(options: AgentInstallerOptions, presetId: string, dshHome: string) {
-  const sourceRoot = resolve(options.sourceRoot ?? defaultSourceRoot);
-  const dshVersion = options.dshVersion ?? SUPPORTED_DSH_VERSION;
-  if (!supportsDshVersion(dshVersion)) {
-    throw new Error(`unsupported DSH version ${dshVersion || "<empty>"}; expected ${SUPPORTED_DSH_RANGE}`);
-  }
-  const targetRoot = resolve(dshHome, ".agent-presets");
-  const target = resolve(targetRoot, presetId);
-  const current = await inspectTarget(target, presetId);
-  const previousCompositionSize = current.status === "installed"
-    ? Buffer.byteLength(await readFile(resolve(target, "agent.cordis.yml")))
-    : undefined;
-
-  if (current.status === "drifted") {
-    throw new Error(`refusing to replace modified preset at ${target}: ${current.issues.join("; ")}`);
-  }
-
-  await assertSource(sourceRoot);
-  await mkdir(targetRoot, { recursive: true, mode: 0o700 });
-  const staging = resolve(targetRoot, `.${presetId}.tmp-${process.pid}-${randomUUID()}`);
-  const backup = resolve(targetRoot, `.${presetId}.backup-${process.pid}-${randomUUID()}`);
-  let backupState: "none" | "unverified" | "confirmed" = "none";
-
-  try {
-    await cp(sourceRoot, staging, { recursive: true, errorOnExist: true });
-    await tightenTree(staging);
-    const compositionPath = resolve(staging, "agent.cordis.yml");
-    const composition = renderAgentCompositionForDsh(await readFile(compositionPath, "utf8"), dshVersion);
-    let stampedComposition = `${composition.trimEnd()}\n# odai-dsh-agent generation ${packageMetadata.version}:${randomUUID()}\n`;
-    // Supported DSH releases key standing generations by mtime and size, so size must change even on same-tick updates.
-    if (previousCompositionSize === Buffer.byteLength(stampedComposition)) {
-      stampedComposition += "# odai-dsh-agent generation size bump\n";
-    }
-    await writeFile(compositionPath, stampedComposition, "utf8");
-    const files = await hashTree(staging);
-    const manifest = {
-      schemaVersion: 1,
-      package: packageMetadata.name,
-      version: packageMetadata.version,
-      dshVersion,
-      presetId,
-      files,
-    };
-    const manifestPath = resolve(staging, MANIFEST_FILE);
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    await chmod(manifestPath, 0o600);
-
-    if (current.status === "installed") {
-      await rename(target, backup);
-      backupState = "unverified";
-      const claimed = await inspectTarget(backup, presetId);
-      if (claimed.status !== "installed" || claimed.revision !== current.revision) {
-        throw new Error(`preset changed before replacement; unverified target preserved at ${backup}`);
-      }
-      backupState = "confirmed";
-    } else {
-      const latest = await inspectTarget(target, presetId);
-      if (latest.status !== "absent") throw new Error(`preset target appeared during installation; refusing to replace ${target}`);
-    }
-    await rename(staging, target);
-    if (backupState === "confirmed") {
-      await rm(backup, { recursive: true, force: true });
-      backupState = "none";
-    }
-
-    return Object.freeze({
-      operation: current.status === "installed" ? "updated" : "installed",
-      dshHome,
-      presetId,
-      target,
-      version: packageMetadata.version,
-      dshVersion,
-      trust: "user",
-      security: "DSH user presets have the same privileges as shell access; install only reviewed preset code.",
-    });
-  } catch (error) {
-    if (backupState === "unverified") {
-      throw new Error(`agent preset update stopped before ownership was confirmed; moved target preserved at ${backup}: ${errorMessage(error)}`, { cause: error });
-    }
-    if (backupState === "confirmed") {
-      const targetState = await pathState(target);
-      if (targetState === "missing") {
-        try {
-          await rename(backup, target);
-          backupState = "none";
-        } catch (restoreError) {
-          throw new AggregateError(
-            [error, restoreError],
-            `agent preset update failed and the previous preset could not be restored; backup preserved at ${backup}`,
-          );
-        }
-      } else {
-        throw new Error(
-          `agent preset update failed after replacing the target; previous preset backup preserved at ${backup}: ${errorMessage(error)}`,
-          { cause: error },
-        );
-      }
-    }
-    throw error;
-  } finally {
-    await rm(staging, { recursive: true, force: true });
-    if (backupState === "none") await rm(backup, { recursive: true, force: true });
-  }
-}
-
-export async function uninstallAgentPreset(options: AgentInstallerOptions = {}) {
-  const inspected = await inspectAgentInstallation(options);
+/**
+ * Move the legacy preset directory into a timestamped backup. Nothing is deleted:
+ * DSH 0.1.7 no longer reads the directory, and the backup keeps any local edits.
+ */
+export async function moveLegacyAgentPreset(options: AgentInstallerOptions = {}) {
+  const inspected = await inspectLegacyAgentPreset(options);
   if (inspected.status === "absent") {
     return Object.freeze({ operation: "absent", target: inspected.target, presetId: inspected.presetId });
   }
-  const releaseOperation = await acquirePresetOperation(inspected.dshHome, inspected.presetId);
+  const releaseOperation = await acquireLegacyOperation(inspected.dshHome, inspected.presetId);
   try {
-    await assertNoSymlinkDescendants(inspected.dshHome, ".agent-presets");
     const current = await inspectTarget(inspected.target, inspected.presetId);
-    if (current.status === "drifted") {
-      throw new Error(`refusing to remove modified preset at ${inspected.target}: ${current.issues.join("; ")}`);
-    }
     if (current.status === "absent") {
       return Object.freeze({ operation: "absent", target: inspected.target, presetId: inspected.presetId });
     }
-    await assertPresetIsNotDefault(inspected.dshHome, inspected.presetId);
-    const quarantine = resolve(dirname(inspected.target), `.${inspected.presetId}.uninstall-${process.pid}-${randomUUID()}`);
-    await rename(inspected.target, quarantine);
-    const claimed = await inspectTarget(quarantine, inspected.presetId);
-    if (claimed.status !== "installed" || claimed.revision !== current.revision) {
-      throw new Error(`preset changed before uninstall ownership was confirmed; moved target preserved at ${quarantine}`);
-    }
-    try {
-      await rm(quarantine, { recursive: true });
-    } catch (error) {
-      throw new Error(`confirmed preset could not be removed completely; remaining quarantine retained at ${quarantine}: ${errorMessage(error)}`, { cause: error });
-    }
+    await assertNoSymlinkDescendants(inspected.dshHome, "odai/legacy-preset-backups");
+    const backupRoot = resolve(inspected.dshHome, "odai", "legacy-preset-backups", `${Date.now()}-${randomUUID()}`);
+    await mkdir(backupRoot, { recursive: true, mode: 0o700 });
+    await assertNoSymlinkDescendants(inspected.dshHome, "odai/legacy-preset-backups");
+    const backup = resolve(backupRoot, inspected.presetId);
+    await rename(inspected.target, backup);
     return Object.freeze({
-      operation: "uninstalled",
+      operation: "moved",
       target: inspected.target,
+      backup,
       presetId: inspected.presetId,
+      previousStatus: current.status,
+      issues: current.issues,
     });
   } finally {
     releaseOperation();
-  }
-}
-
-async function assertPresetIsNotDefault(dshHome: string, presetId: string): Promise<void> {
-  const settingsPath = resolve(dshHome, "settings.yaml");
-  let text: string;
-  try {
-    text = await readFile(settingsPath, "utf8");
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return;
-    throw error;
-  }
-  let settings: unknown;
-  try {
-    settings = parseYaml(text) ?? {};
-  } catch (error) {
-    throw new Error(`cannot verify the default agent preset in ${settingsPath}: ${errorMessage(error)}`);
-  }
-  const presets = isRecord(settings) ? settings["agent-presets"] : undefined;
-  if (isRecord(presets) && presets.default === presetId) {
-    throw new Error(`refusing to uninstall the default preset ${presetId}; select another agent-presets.default first`);
   }
 }
 
@@ -445,29 +296,6 @@ function validateManifest(manifest: unknown, presetId: string): string[] {
     issues.push("managed manifest file map is invalid");
   }
   return issues;
-}
-
-async function assertSource(sourceRoot: string): Promise<void> {
-  if (await pathState(sourceRoot) !== "directory") {
-    throw new Error(`agent package source must be a regular directory and not a symbolic link: ${sourceRoot}`);
-  }
-  for (const path of requiredFiles) {
-    const state = await pathState(resolve(sourceRoot, path));
-    if (state !== "file") throw new Error(`agent package is incomplete: missing ${path}`);
-  }
-}
-
-async function tightenTree(root: string): Promise<void> {
-  if (await pathState(root) !== "directory") throw new Error(`managed preset root is not a regular directory: ${root}`);
-  await chmod(root, 0o700);
-  const entries = await readdir(root, { withFileTypes: true });
-  for (const entry of entries) {
-    const path = resolve(root, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`symbolic link is not allowed in managed preset: ${entry.name}`);
-    if (entry.isDirectory()) await tightenTree(path);
-    else if (entry.isFile()) await chmod(path, 0o600);
-    else throw new Error(`unsupported filesystem entry in managed preset: ${entry.name}`);
-  }
 }
 
 async function hashTree(

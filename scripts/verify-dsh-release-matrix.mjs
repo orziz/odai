@@ -143,7 +143,7 @@ function requiredValue(arguments_, index, option) {
 
 function validateRelease(release) {
   if (!release || typeof release.version !== "string"
-    || !satisfies(release.version, document.dshRange)
+    || !satisfies(release.version, document.dshRange, { includePrerelease: true })
     || typeof release.publishedBefore !== "string"
     || !Number.isSafeInteger(release.expectedDshPackages)
     || release.expectedDshPackages <= 0
