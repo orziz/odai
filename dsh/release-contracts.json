@@ -9,6 +9,13 @@
       "expectedDshPackages": 267,
       "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
       "standardCompositionSha256": "6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8"
+    },
+    {
+      "version": "0.2.0-rc.1",
+      "publishedBefore": "2026-09-29T00:00:00.000Z",
+      "expectedDshPackages": 278,
+      "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
+      "standardCompositionSha256": "6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8"
     }
   ]
 }

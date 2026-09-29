@@ -2,7 +2,13 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.2.39 / canonical 0.7.1
+## Unreleased — DSH 0.2.50 / canonical 0.7.1
+
+- 支持 DSH `0.2.0-rc.1`：适配上游缩短后的 goal 与 todo 提示，恢复明确授权才开启自动续作、按需要维护任务列表及允许合并完成状态更新的既有规则；保留宿主的目标生命周期、工具参数和 todo 并发限制。旧 `0.1.7-rc.1` 提示适配继续保留。
+- 兼容矩阵增加 `0.2.0-rc.1`，npm peer 仍为 `*`，Agent 最低版本仍为 `0.1.7-rc.1`，不恢复逐版本白名单。
+- 官方 registry 已发布双包 `0.2.39`，本次双包使用 `0.2.50`，按版本策略跳过含数字 `4` 的候选；治理、runtime contract 和编排版本不变。
+
+## DSH 0.2.39 / canonical 0.7.1
 
 - 修复 DSH `0.1.7` 上整轮失败：`0.2.38` 的提醒、语义记忆包和压缩状态说明仍使用已退役的 `{ kind: "plugin", plugin: "odai-dsh-runtime" }` 消息来源，DSH 在会话格式 v4 落盘时拒收并报 `format v4 message requires a producer-owned source kind`。需要这些消息的轮次随之失败；同一会话在 DSH 重新加载前，后续轮次继续失败；已存语义记忆的项目新建 odai 会话首轮即失败。Plugin 与 Agent 都受影响。现改用 `plugin:odai-dsh-runtime`，即 DSH 自己的 v3→v4 迁移给旧 odai 消息的来源，新旧历史归属一致。被拒消息不会写入会话日志；失败后发出的用户消息同样未保存，需要重发。
 - 回归：Plugin 宿主探针通过 DSH SDK 的 JSONL 会话落盘，把这三类消息写入当前格式会话并读回；该检查在修复前复现同一错误。

@@ -57,6 +57,36 @@ test("optional work tools agree without weakening actual schemas, authority or t
     assert.deepEqual(applyWorkPolicy(result), result);
   }
 });
+test("DSH 0.2.0 goal guidance retains lifecycle rules without inferred authorization", () => {
+  const lifecycle = "Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 5 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked.";
+  const original = {
+    sections: [{ name: "tool:goal", text: "create_goal may infer goal intent from a direct human request in any language. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. " + lifecycle }],
+    tools: [],
+  };
+  const result = applyWorkPolicy(original);
+  assert.doesNotMatch(result.sections[0].text, /may infer goal intent|in any wording or language/);
+  assert.match(result.sections[0].text, /human explicitly requests/);
+  assert.ok(result.sections[0].text.endsWith(lifecycle));
+  assert.deepEqual(applyWorkPolicy(result), result);
+});
+test("DSH 0.2.0 todo adaptation preserves deployment concurrency and schemas", () => {
+  for (const parallel of [true, false]) {
+    const parameters = { type: "object", properties: { todos: { type: "array" } } };
+    const active = parallel
+      ? "While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. "
+      : "While work remains, keep exactly one todo `in_progress`. ";
+    const original = { sections: [], tools: [{ name: "todo_write", parameters,
+      description: "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. " + active + "Mark each todo `completed` as soon as it is done." }] };
+    const result = applyWorkPolicy(original);
+    const description = result.tools[0].description;
+    assert.doesNotMatch(description, /Add one todo per concrete step|While work remains|as soon as it is done/);
+    assert.match(description, /multi-step work alone does not require a list/);
+    assert.match(description, /completed items may be reported together/);
+    assert.match(description, parallel ? /several only when work runs in parallel/ : /AT MOST ONE/);
+    assert.equal(result.tools[0].parameters, parameters);
+    assert.deepEqual(applyWorkPolicy(result), result);
+  }
+});
 test("missing tools and descriptions remain valid", () => {
   assert.deepEqual(applyWorkPolicy({ sections: [], tools: [] }), { sections: [], tools: [] });
   const tool = { name: "todo_write" };

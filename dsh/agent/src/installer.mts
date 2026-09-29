@@ -102,7 +102,7 @@ if (peerRange !== "*" || validRange(peerRange) === null) {
 // prereleases, are admitted; actual bundle loading still validates host services.
 export const SUPPORTED_DSH_RANGE = `>=${MINIMUM_DSH_VERSION}`;
 // Historical export name: these are tested versions, never an admission list.
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([SOURCE_DSH_VERSION]);
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([SOURCE_DSH_VERSION, "0.2.0-rc.1"]);
 export function supportsDshVersion(version: string): boolean {
   return valid(version) !== null && satisfies(version, SUPPORTED_DSH_RANGE, { includePrerelease: true });
 }
