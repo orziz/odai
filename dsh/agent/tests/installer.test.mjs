@@ -26,12 +26,12 @@ function jsonRecord(text) {
   return value;
 }
 test("Agent admits newer stable and prerelease hosts without extending a version list", () => {
-  assert.equal(SUPPORTED_DSH_RANGE, ">=0.1.7-rc.1");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.1.7-rc.1", "0.2.0-rc.1"]);
-  for (const admitted of ["0.1.7-rc.1", "0.1.7-rc.2", "0.1.7", "0.1.8-alpha.1", "0.2.0-rc.1", "1.0.0"]) {
+  assert.equal(SUPPORTED_DSH_RANGE, ">=0.2.1-rc.2");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.2.1-rc.2"]);
+  for (const admitted of ["0.2.1-rc.2", "0.2.1-rc.3", "0.2.1", "0.2.2-alpha.1", "1.0.0"]) {
     assert.equal(supportsDshVersion(admitted), true, admitted);
   }
-  for (const unsupported of ["0.1.5-rc.2", "0.1.7-alpha.2", "", "not-semver"]) {
+  for (const unsupported of ["0.1.7-rc.1", "0.2.0-rc.2", "0.2.1-alpha.5", "0.2.1-rc.1", "", "not-semver"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
 });

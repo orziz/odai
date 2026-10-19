@@ -1,6 +1,6 @@
 # odai 正式评测结果
 
-状态：最新已发布 DSH 双包为 `0.2.52` / canonical `0.7.1`；当前源码候选为 DSH `0.2.53` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.2`，治理与 runtime contract 不变，编排升至 `0.2.2`，修复 Claude Code 短回答及 Grok 辅助模型用量导致的模型不符误判，保留已发布的 Control Center 本机 CLI 映射表单、本机 CLI 职责路由与 DSH `0.2.0-rc.1` 的 goal / todo 适配。治理 `0.7.1` 的入口按五问组织，澄清实际证据与正确性判断，修复审查任务原文截断的准入；保留已发布的演进退役和 goal / todo 提示边界，DSH npm peer 已开放，Agent 最低宿主为 `0.1.7-rc.1`（包含后续预发布），当前宿主矩阵覆盖该基线与 `0.2.0-rc.1`；本次未新增模型评测。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史结果不回填改分；当前候选定向结果单列，历史分数不迁移为当前源码的全量或稳定性验收。
+状态：最新已发布 DSH 双包为 `0.2.53`；当前源码候选为 `0.2.55` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.2`。本次以 DSH `0.2.1-rc.2` 为最低支持基线，修复 Agent 工作目录提示变量适配；npm peer 保持开放，Agent 允许后续版本及预发布，放行不等于未来版本已验证。本次未新增模型评测。系统验证与限制见 [`routing-results.md`](routing-results.md)。2026-09-17 在冻结 canonical `0.3.15` 上的 22 项模型结果保持原样：20 项有评分，2 项重试后仍超时，C20 另有评分路径争议。这些历史分数不迁移为当前源码的全量或稳定性验收。
 
 活动评测契约与 C01-C34 唯一题本见 [`evaluation.md`](evaluation.md) 和 [`plans/odai-canary.md`](../plans/odai-canary.md)。当前目录通过 suite 选择 `full`、`ab`、`routing`、`ideation`、`defensive`、`intent`、`verification` 或 `all`；本文件不再链接或维护专项题本副本。
 

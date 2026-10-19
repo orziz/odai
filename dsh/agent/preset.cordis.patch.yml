@@ -31,13 +31,12 @@
 
           # ── identity ────────────────────────────────────────────────────────────────
 
-          # The preset's own model-neutral persona shadows the deployment default. Auto
-          # routing can upgrade after prompt assembly; `{{cwd}}` remains workspace-local.
+          # The model-neutral persona shadows the deployment default. Working directory
+          # context comes from the host working-directory service, not a prompt variable.
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: You are Odai, a coding agent.
-              suffix: Your working directory is {{cwd}}.
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'

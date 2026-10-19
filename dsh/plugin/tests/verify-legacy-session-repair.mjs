@@ -22,12 +22,13 @@ const requireFromDsh = createRequire(resolve(dshRoot, "package.json"));
 const loadSdk = (specifier) => import(pathToFileURL(requireFromDsh.resolve(specifier)).href);
 const { Context } = await loadSdk("@deepseek-ai/cordis");
 const { SessionStore, SessionId, SESSION_FORMAT_VERSION } = await loadSdk("@deepseek-ai/dsh-session");
-const { default: JsonlSessionPersistence } = await loadSdk("@deepseek-ai/dsh-session-persistence-jsonl");
+const { apply: applyJsonlSessionPersistence } = await loadSdk("@deepseek-ai/dsh-session-persistence-jsonl");
 const scratch = mkdtempSync(resolve(tmpdir(), "odai-dsh-legacy-boundary-"));
 const ctx = new Context();
 new SessionStore(ctx);
-const backend = new JsonlSessionPersistence(ctx, { root: resolve(scratch, "sessions"), compression: "zstd" });
 try {
+  await applyJsonlSessionPersistence(ctx, { root: resolve(scratch, "sessions"), compression: "zstd" });
+  const backend = ctx.sessionPersistence;
   for (const ignorable of [false, true]) {
     const id = ignorable ? "legacy-marked" : "legacy-unmarked";
     const path = resolve(scratch, "sessions", "_no-cwd", id, "session.jsonl.zstd");

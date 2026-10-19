@@ -142,7 +142,7 @@ const wrapper = [
   "      subagents: { async start(_provider, request) {",
   "        const session = ctx.sessions.create(undefined, { meta: { cwd: process.cwd(), origin: 'subagent', parentSession: parent.id, delegationDepth: 1 } });",
   "        session.append('subagent/descriptor', { version: 3, mode: 'one-shot', provider: 'probe', label: request.label });",
-  "        reviewer = { id: session.id, session, options: {} };",
+  "        reviewer = { id: session.id, session, options: {}, ctx };",
   "        const page = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-page', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
   "        if (page.isError || !JSON.stringify(page).includes('UNTRUNCATED_TAIL')) throw new Error(`native evidence paging failed: ${JSON.stringify(page)}`);",
   `        const source = await ctx.tools.execute({ name: 'read', callId: 'review-source-read', arguments: { file_path: ${JSON.stringify(skillPath)} }, agent: reviewer, signal: new AbortController().signal });`,

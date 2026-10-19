@@ -1,21 +1,14 @@
 {
   "schemaVersion": 2,
   "dshRange": "*",
-  "sourceDshVersion": "0.1.7-rc.1",
+  "sourceDshVersion": "0.2.1-rc.2",
   "releases": [
     {
-      "version": "0.1.7-rc.1",
-      "publishedBefore": "2026-09-24T00:00:00.000Z",
-      "expectedDshPackages": 267,
+      "version": "0.2.1-rc.2",
+      "publishedBefore": "2026-10-17T08:51:12.000Z",
+      "expectedDshPackages": 295,
       "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
-      "standardCompositionSha256": "6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8"
-    },
-    {
-      "version": "0.2.0-rc.1",
-      "publishedBefore": "2026-09-29T00:00:00.000Z",
-      "expectedDshPackages": 278,
-      "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
-      "standardCompositionSha256": "6cd2f197737fc94a45e487d0bb57869461dd6f392d45f6429b576e75d973eda8"
+      "standardCompositionSha256": "0d398d2a6872a73a106cb3bd19303ecccf1637e1fcad4d0bf9d8a72d2c2c68f5"
     }
   ]
 }

@@ -297,7 +297,14 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           // on the standing preset used by this inherited-scope probe.
           for (const section of parentBefore.sections.filter((section) => restrictedOwners.has(section.name)
             && (beforeChildNames.includes(section.name.slice(5)) || ["tool:goal", "tool:jobs"].includes(section.name)))) {
-            assert.deepEqual(first.sections.find((item) => item.name === section.name), section);
+            // Native delegation guidance is derived from each scope's visible tools.
+            const childSection = first.sections.find((item) => item.name === section.name);
+            if (section.name === "tool:subagent_fork") {
+              assert.ok(childSection?.text, "standard child retains native fork guidance");
+              assert.ok(childNames.includes("subagent_fork"), "fork guidance has an available tool");
+            } else {
+              assert.deepEqual(childSection, section);
+            }
           }
         }
         const parentAfter = await ctx.systemPrompt.assemble({ agent, scope: agent });
