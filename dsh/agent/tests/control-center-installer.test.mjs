@@ -10,6 +10,7 @@ import {
   installAgentControlCenter,
   uninstallAgentControlCenter,
 } from "../build/src/control-center-installer.mjs";
+import { MINIMUM_DSH_VERSION } from "../build/src/installer.mjs";
 const packageMetadata = JSON.parse(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
 const targetVersion = packageMetadata.version;
 const previousVersion = targetVersion.replace(/\.\d+$/u, (value) => `.${Number(value.slice(1)) - 1}`);
@@ -91,7 +92,7 @@ async function writeProfile(dshHome, fixture) {
 }
 function registryExecutor(profileRoot, calls) {
   return (command, args, options) => {
-    if (args[0] === "-V") return "0.1.7-rc.1";
+    if (args[0] === "-V") return MINIMUM_DSH_VERSION;
     if (args.includes("--dump-config")) {
       let config = { default: "standard" };
       for (const path of [resolve(profileRoot, "cordis.patch.yml"), resolve(options.env.DSH_HOME, "cordis.patch.yml")]) {
@@ -407,7 +408,7 @@ test("failed local-source repair preserves changed profile state and captures re
     const before = await readFile(resolve(profileRoot, "package.json"), "utf8");
     let attempts = 0;
     const execute = (_command, args) => {
-      if (args[0] === "-V") return "0.1.7-rc.1";
+      if (args[0] === "-V") return MINIMUM_DSH_VERSION;
       attempts += 1;
       const packagePath = resolve(profileRoot, "package.json");
       const profile = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -448,7 +449,7 @@ test("failed Control Center command with unchanged profile performs no inverse c
       installAgentControlCenter({
         dshHome,
         execute: (_command, args) => {
-          if (args[0] === "-V") return "0.1.7-rc.1";
+          if (args[0] === "-V") return MINIMUM_DSH_VERSION;
           attempts += 1;
           throw new Error("no mutation");
         },
