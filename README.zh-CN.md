@@ -96,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前 `0.2.55` 源码候选以 DSH `0.2.1-rc.2` 为最低支持基线。Agent 允许 `>=0.2.1-rc.2`（含后续预发布），双包 npm peer 保持开放（`*`）；后续版本仍须具备兼容的宿主接口，放行不等于已经验证。更早 DSH 版本不再属于当前支持范围，已发布版本的历史兼容记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
+当前 `0.2.56` 源码候选以 DSH `0.2.1-rc.2` 为最低支持基线。Agent 允许 `>=0.2.1-rc.2`（含后续预发布），双包 npm peer 保持开放（`*`）；后续版本仍须具备兼容的宿主接口，放行不等于已经验证。更早 DSH 版本不再属于当前支持范围，已发布版本的历史兼容记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
@@ -306,7 +306,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前源码候选为 DSH `0.2.55` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.2`，最新已发布 Odai DSH 双包为 `0.2.53`（已修复会话格式缺陷；`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
+当前源码候选为 DSH `0.2.56` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.2`，最新已发布 Odai DSH 双包为 `0.2.55`（已修复会话格式缺陷；`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
 
 当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 
