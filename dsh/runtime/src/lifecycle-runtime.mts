@@ -952,7 +952,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               researchBundle.roleContracts.researcher,
             );
             const subagents = isSubagentsService(ctx.subagents) ? ctx.subagents : undefined;
-            const result: Readonly<RoutedRoleOutcome> = subagents
+            const result: Readonly<RoutedRoleOutcome> = subagents || researchRoute.backend === "local-cli"
               ? await runRoutedRole({
                   subagents,
                   provider: config.routing.provider,

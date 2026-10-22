@@ -28,7 +28,7 @@ function store(path, roles, dispatch = {}, schemaVersion = 3) {
 }
 
 test("local CLI routes validate supported responsibilities, options, and evidence boundaries", () => {
-  for (const role of ["planner", "frontend", "creative"]) {
+  for (const role of ["researcher", "planner", "reviewer", "frontend", "creative"]) {
     assert.deepEqual(resolveRoleRoute(local, role), local);
     assert.deepEqual(resolveRoleRoute({ ...local, model: "sonnet", timeoutSeconds: 7200 }, role), {
       ...local, model: "sonnet", timeoutSeconds: 7200,
@@ -38,8 +38,6 @@ test("local CLI routes validate supported responsibilities, options, and evidenc
   for (const reasoningEffort of ["low", "medium", "high", "xhigh", "max"]) {
     assert.equal(resolveRoleRoute({ ...local, reasoningEffort }, "planner").reasoningEffort, reasoningEffort);
   }
-  assert.throws(() => resolveRoleRoute(local, "researcher"), /validated research package.*DSH read-tool evidence/i);
-  assert.throws(() => resolveRoleRoute(local, "reviewer"), /odai_review_evidence/);
   const invalid = [
     [{ backend: "local-cli", model: "opus" }, /cli/],
     [{ backend: "local-cli", cli: "claude" }, /model/],
@@ -80,7 +78,7 @@ test("all four CLI routes persist user options and render their adapter identity
     ["antigravity", "gemini-3.8-flash-high", "high"], ["grok", "grok-code", "none"],
   ]) {
     const route = { backend: "local-cli", cli, model, reasoningEffort };
-    for (const role of ["planner", "frontend", "creative"]) assert.deepEqual(resolveRoleRoute(route, role), route);
+    for (const role of ["researcher", "planner", "reviewer", "frontend", "creative"]) assert.deepEqual(resolveRoleRoute(route, role), route);
     const result = await applyRoutingConfigAction(path, { action: "set", responsibility: "frontend", ...route });
     assert.deepEqual(result.roles.frontend, route);
     assert.deepEqual(readRoutingStore(path).roles.frontend, route);

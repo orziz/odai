@@ -68,7 +68,7 @@ export const ROUTING_CONFIG_PROMPT = [
   "## Odai responsibility model configuration",
   "When the user naturally asks to inspect, set, change, or remove the research/investigation, planning/planner, review/acceptance/reviewer, frontend design/implementation, or creative writing/design/review model, use odai_routing_config.",
   "Translate the user's natural responsibility wording into the tool's responsibility field. Do not require internal routing terms or a special prompt form.",
-  "For an API model set, require explicit provider and model from the user. For backend=local-cli, require explicit cli and model; this version supports cli=claude/codex/antigravity/grok for planner/frontend/creative as child. gemini is reserved and unsupported; Antigravity uses cli=antigravity. Pass reasoningEffort, maxTokens (API only), or timeoutSeconds (local-cli only) only when supplied by the user; otherwise omit them.",
+  "For an API model set, require explicit provider and model from the user. For backend=local-cli, require explicit cli and model; this version supports cli=claude/codex/antigravity/grok for researcher/planner/reviewer/frontend/creative as child. gemini is reserved and unsupported; Antigravity uses cli=antigravity. Pass reasoningEffort, maxTokens (API only), or timeoutSeconds (local-cli only) only when supplied by the user; otherwise omit them.",
   "A user may independently set or reset one responsibility's dispatch. API routes for researcher, planner, reviewer, and frontend accept same-turn or child; creative on either backend and all local-cli routes reject same-turn and default to child. Do not require provider/model or cli/model again for a dispatch-only change.",
   "Never infer, recommend as chosen, or silently select any provider, cli, model, effort, timeout, token limit, dispatch, or price. Ask a concise clarification when a requested value is ambiguous.",
   "Researcher routing is task-gated but not price-aware. A researcher mapping enables the narrow trigger but does not guarantee lower cost; compare actual provider prices and measured usage without inventing either.",
@@ -92,12 +92,6 @@ export function resolveRoleRoute(value: unknown, role: unknown): Readonly<ModelR
   if (!isConfigurableRole(role)) throw new TypeError(`unknown odai routing responsibility: ${String(role)}`);
   if (!isUnknownRecord(value)) throw new TypeError(`routing role ${role} must be an object`);
   if (value.backend === "local-cli") {
-    if (role === "researcher") {
-      throw new TypeError("local-cli researcher is unsupported: researcher requires a validated research package and the DSH read-tool evidence chain");
-    }
-    if (role === "reviewer") {
-      throw new TypeError("local-cli reviewer is unsupported: reviewer requires odai_review_evidence from DSH");
-    }
     return Object.freeze({ ...validateLocalCliRoute(value) });
   }
   const unknownFields = Object.keys(value).filter((field) => !ROLE_ROUTE_FIELDS.has(field));
@@ -525,7 +519,7 @@ export function createRoutingConfigTool(
       "Never choose a provider, cli, model, reasoning effort, timeout, token limit, or price on the user's behalf. Never choose a dispatch mode on the user's behalf.",
       "Researcher routing is task-gated but not price-aware; its mapping does not guarantee lower cost.",
       "For every configuration change, handle one responsibility per call. Persisted model mappings and dispatch overrides are shared by the Odai DSH Plugin and Agent and apply from the next user turn.",
-      "Local-cli supports claude, codex, antigravity, and grok for planner/frontend/creative as child, defaulting to child when dispatch is omitted. researcher/reviewer require DSH evidence tools and cannot use local-cli. Creative also defaults to child on API routes and rejects same-turn. Results expose API in-place responsibility ceilings; never invent an override.",
+      "Local-cli supports claude, codex, antigravity, and grok for researcher/planner/reviewer/frontend/creative as child, defaulting to child when dispatch is omitted. Researcher quotations are verified against repository sources; reviewer receives bounded captured execution evidence. Creative also defaults to child on API routes and rejects same-turn. Results expose API in-place responsibility ceilings; never invent an override.",
     ].join(" "),
     parameters: {
       type: "object",

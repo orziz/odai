@@ -1,3 +1,4 @@
+import { renderLocalCliReviewEvidence } from "./review-evidence.mjs";
 import { randomUUID } from "node:crypto";
 import { executeLocalCli } from "#odai-local-cli";
 import type { LocalCliRoute } from "#odai-local-cli";
@@ -273,7 +274,7 @@ export async function runRoutedRole({
   reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   if (roleRoute?.backend === "local-cli") {
-    return runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute });
+    return runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence });
   }
   let run: RoutedRun | undefined;
   let outcome: Readonly<RoutedRoleOutcome>;
@@ -388,7 +389,7 @@ export async function runRoutedRole({
   }
 }
 
-async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute }: {
+async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence }: {
   decision: Pick<RouteDecision, "role">;
   taskText: string;
   roleContract: string;
@@ -396,9 +397,13 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
   agent: unknown;
   signal: AbortSignal;
   roleRoute: LocalCliRoute;
+  reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   try {
-    if (!["planner", "frontend", "creative"].includes(decision.role)) throw new Error("local-cli only supports planner, frontend, and creative responsibilities");
+    signal.throwIfAborted();
+    if (!["researcher", "planner", "reviewer", "frontend", "creative"].includes(decision.role)) throw new Error("unsupported local-cli responsibility");
+    if (decision.role === "reviewer" && !reviewEvidence) throw new Error("local-cli reviewer requires a task-bound captured evidence snapshot");
+    const capturedEvidence = decision.role === "reviewer" && reviewEvidence ? renderLocalCliReviewEvidence(reviewEvidence) : "";
     const cwd = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
       ? agent.session.header.cwd : undefined;
     if (typeof cwd !== "string" || !cwd.trim()) throw new Error("local-cli requires the session working directory");
@@ -410,6 +415,8 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
     }[roleRoute.cli];
     const prompt = [
       renderDelegationPrompt(decision, taskText, roleBundle ? `${roleBundle.coreContract}\n\n${roleContract}` : roleContract),
+      capturedEvidence,
+      decision.role === "researcher" ? "Return only the required research packet JSON. Repository quotations are checked against source paths and lines before acceptance." : "",
       `Local CLI execution boundary: read-only. ${readBoundary} There are no DSH tools. Return plain text to the controller. For production work, return an unapplied patch; do not modify files.`,
     ].join("\n\n");
     const result = await executeLocalCli({ route: roleRoute, prompt, cwd, signal });

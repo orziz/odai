@@ -106,7 +106,7 @@ Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 ca
 
 完整、独立安装的 Odai skill 可以比两个 DSH 包更快更新，但不会自行改变默认来源。只有用户明确要求，Odai 才会把 skill source 切换为 `auto` 或 `user`：`auto` 可以选择兼容的项目 `.dsh` / `.agents` bundle 与较新的用户安装，`user` 则忽略项目根；部署显式路径始终优先。Plugin 与 Agent 刻意共存时按 agent / turn 共用同一份快照，prompt 治理与路由 role contract 不会选到不同 bundle。
 
-两个 DSH 包都不会自行选择 researcher、planner、reviewer、frontend 或 creative 模型。planner、frontend、creative 也可按用户明确指定的 CLI 和模型使用本机 CLI，只支持只读 child；creative 在 API 路由上同样只支持 child，回交构思、候选或审查意见。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。总控负责整合、验证和最终交付；DSH 子代理保持只读，在明确委派补丁制作时可返回待应用补丁，研究、规划和审查仍遵守各自的较窄合同。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
+两个 DSH 包都不会自行选择 researcher、planner、reviewer、frontend 或 creative 模型。五项职责均可按用户明确指定的 CLI 和模型使用本机 CLI，只支持只读 child；creative 在 API 路由上同样只支持 child，回交构思、候选或审查意见。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。总控负责整合、验证和最终交付；DSH 子代理保持只读，在明确委派补丁制作时可返回待应用补丁，研究、规划和审查仍遵守各自的较窄合同。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
 
 DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用户明确要求，controller-only 工具才会把用户原文中的照护偏好、希望留意的信号、有效支持方式或自写安全计划保存到独立本地记录；用户可查看、导出、更正、逐条删除或物理清空，记录默认保留到用户执行删除。新会话只把它当历史照护偏好，不当成当前风险、诊断或隐藏评分，child agent 也拿不到这份记录。
 

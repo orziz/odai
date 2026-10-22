@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRoleContextPacket, renderRoleContextPacket, reviewEvidenceSnapshot } from "../build/routing-context.mjs";
-import { createReviewEvidenceSnapshot, createReviewEvidenceTool } from "../build/review-evidence.mjs";
+import { createReviewEvidenceSnapshot, createReviewEvidenceTool, renderLocalCliReviewEvidence } from "../build/review-evidence.mjs";
 import { managedReviewEvidenceReader, runRoutedRole } from "../build/runtime-support.mjs";
 import { activeOdaiToolNames, classifyContextActivation } from "../build/context-activation.mjs";
 const user = (id) => ({
@@ -207,4 +207,28 @@ test("only the bound managed reviewer can retrieve a snapshot, and disposal revo
       /active managed reviewer/,
     );
   }
+});
+
+const cliEvidence = snapshot => JSON.parse(renderLocalCliReviewEvidence(snapshot).split("\n").at(-1));
+test("CLI snapshot delivery preserves immutable task evidence and discloses limits", () => {
+  const original = entry("captured receipt");
+  const snapshot = createReviewEvidenceSnapshot([original]);
+  original.text = "new source";
+  const payload = cliEvidence(snapshot);
+  assert.equal(payload.digest, snapshot.digest);
+  assert.equal(payload.deliveredAllRetained, true);
+  assert.equal(payload.pages.find(p => p.action === "read").text, "captured receipt");
+  assert(payload.pages.every(p => p.digest === snapshot.digest));
+  for (const size of [100_000, 2_000_001]) {
+    const bounded = cliEvidence(createReviewEvidenceSnapshot([entry("x".repeat(size))]));
+    assert.equal(bounded.deliveredAllRetained, false);
+    assert.match(bounded.deliveryGap, /budget exhausted/);
+    assert(bounded.pages.length <= 40);
+    assert(bounded.pages.every(p => p.remainingChars >= 0));
+    const read = bounded.pages.find(p => p.action === "read");
+    assert.equal(read.originalChars, size);
+    assert.equal(read.completeCapture, size <= 2_000_000);
+  }
+  assert.equal(cliEvidence(createReviewEvidenceSnapshot(Array.from({length:501}, (_, i) => entry("receipt", i)))).omitted, 1);
+  assert.throws(() => renderLocalCliReviewEvidence({ ...snapshot, createReader: () => () => { throw new Error("snapshot mismatch"); } }), /snapshot mismatch/);
 });

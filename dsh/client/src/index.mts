@@ -131,9 +131,9 @@ window.__ModuleLoader__.load({
       { id: "grok", label: "Grok（按文档实现，未实测）", efforts: "none / minimal / low / medium / high / xhigh / max" },
     ]);
 
-    // Researcher and reviewer depend on DSH evidence tools, so only these responsibilities accept a local CLI.
+    // All configured responsibilities support managed, read-only CLI dispatch.
     function localCliAllowed(role: Responsibility): boolean {
-      return role === "planner" || role === "frontend" || role === "creative";
+      return ROLES.includes(role);
     }
 
     interface RouteForm { backend: "provider" | "local-cli"; cli: string; provider: string; model: string; effort: string; maxTokens: string; timeoutSeconds: string }

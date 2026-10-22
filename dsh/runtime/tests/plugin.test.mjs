@@ -6621,3 +6621,46 @@ console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", respo
     else process.env.ODAI_AGY_COMMAND = previousCommand;
   }
 });
+
+test("local CLI researcher validates quotations and reviewer receives task-bound captured evidence", { skip: process.platform === "win32" }, async () => {
+  const command = resolve(testDshHome, "fake-evidence-claude.mjs");
+  const source = resolve(testDshHome, "cli-research-source.txt");
+  writeFileSync(source, "verified source line\n");
+  const previous = process.env.ODAI_CLAUDE_COMMAND;
+  process.env.ODAI_CLAUDE_COMMAND = command;
+  try {
+    for (const mode of ["researcher", "forged", "reviewer"]) {
+      const role = mode === "forged" ? "researcher" : mode;
+      const output = role === "researcher" ? researchPacketText({ facts: [{ claim: "source fact", excerpt: mode === "forged" ? "invented" : "verified source line", source: { path: "cli-research-source.txt", line: 1 }, authority: "source" }] }) : "reviewer captured receipt verified";
+      writeFileSync(command, `#!${process.execPath}
+let prompt = "";
+for await (const chunk of process.stdin) prompt += chunk;
+if (${JSON.stringify(role)} === "reviewer") {
+ const line = prompt.split("\\n").find(line => line.startsWith('{"schemaVersion":1,"digest":'));
+ if (!line) process.exit(7);
+ const evidence = JSON.parse(line);
+ if (!evidence.pages.some(page => page.action === "read" && page.text.includes("CAPTURED_EXECUTION"))) process.exit(8);
+ if (evidence.pages.some(page => page.digest !== evidence.digest)) process.exit(9);
+}
+console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,result:${JSON.stringify(output)},modelUsage:{"claude-opus-5":{outputTokens:30}}}));
+`);
+      chmodSync(command, 0o700);
+      const ctx = fakeContext();
+      apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, `evidence-cli-${mode}/routing.json`), roles: { [role]: { backend: "local-cli", cli: "claude", model: "opus" } } } });
+      const message = userMessage("调查当前来源并独立审查当前任务的执行证据。");
+      const events = [{ type: "user/message", data: { message } }, ...nativeToolEvents("cli-evidence", "node --test", "CAPTURED_EXECUTION"), responsibilityGapEvent(role)];
+      const agent = { session: { header: { cwd: testDshHome }, events, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+      seedCurrentEvidence(ctx, agent, events);
+      const result = await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal: new AbortController().signal }, async () => ({ kind: "enter", messages: [message] }));
+      const receipt = findLastEvent(events, event => event.type === (role === "researcher" ? "odai/research-result" : "odai/route-result"))?.data;
+      assert.ok(receipt, JSON.stringify(events));
+      assert.equal(receipt.status, mode === "forged" ? "fallback" : "completed", JSON.stringify(receipt));
+      if (mode === "forged") assert.equal(receipt.stopReason, "packet-invalid");
+      else assert.equal(receipt.routeReceiptStatus, "applied");
+      if (role === "reviewer") assert.match(messageText(result.messages.at(-1)), /reviewer captured receipt verified/);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.ODAI_CLAUDE_COMMAND;
+    else process.env.ODAI_CLAUDE_COMMAND = previous;
+  }
+});

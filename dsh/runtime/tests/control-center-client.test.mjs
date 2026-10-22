@@ -404,8 +404,8 @@ test("route editor creates API or local CLI mappings and blocks invalid forms", 
   }
   for (const role of ["planner", "frontend", "creative"]) assert.equal(localCliAllowed(role), true, role);
   for (const role of ["researcher", "reviewer"]) {
-    assert.equal(localCliAllowed(role), false, role);
-    assert.equal(routeEditorPayload(role, { ...cli, model: "m" }), undefined, role);
+    assert.equal(localCliAllowed(role), true, role);
+    assert.deepEqual(routeEditorPayload(role, { ...cli, model: "m" }), { action: "set", responsibility: role, backend: "local-cli", cli: "claude", model: "m" });
   }
   for (const invalid of [
     { ...api, model: "  " },
