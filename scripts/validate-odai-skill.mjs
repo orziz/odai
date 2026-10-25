@@ -12,7 +12,7 @@ try {
   const selected = process.argv[2];
   if (process.argv.length > 3) throw new Error("usage: validate-odai-skill.mjs [skill-directory]");
   if (!selected) assertRepositoryVersionPolicy({ repoRoot });
-  const roots = selected ? [path.resolve(selected)] : ["odai", "odai-orchestration", "ribao"].map(name => path.join(repoRoot, "skills", name));
+  const roots = selected ? [path.resolve(selected)] : ["odai", "odai-orchestration", "ribao", "renwei"].map(name => path.join(repoRoot, "skills", name));
   for (const root of roots) {
     const name = path.basename(root);
     const files = listFiles(root);

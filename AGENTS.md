@@ -10,7 +10,7 @@
 
 ## 官方 skills 单一事实源
 
-- `skills/odai/`、`skills/odai-orchestration/` 与 `skills/ribao/` 是各自唯一可编辑的 source。odai 提供独立治理；odai-orchestration 是单向依赖治理的可选编排技能；ribao 是独立汇报能力。各自通过技能入口安装，不把编排预设或适配器放回治理核心。
+- `skills/odai/`、`skills/odai-orchestration/`、`skills/ribao/` 与 `skills/renwei/` 是各自唯一可编辑的 source。odai 提供独立治理；odai-orchestration 是单向依赖治理的可选编排技能；ribao 是独立汇报能力；renwei 是独立的去 AI 味表现工艺（文案、图像与视频）。各自通过技能入口安装，不把编排预设或适配器放回治理核心。
 - `cli/skills/` 不在仓库中常驻；它只由 npm `prepack` 临时生成，并在 `postpack` 清理。
 - 即使用户或 IDE 指向打包期间临时出现的 `cli/skills/`，也要把对应修改落到仓库根 `skills/<name>/`。
 - source 修改完成后，运行 `node scripts/validate-odai-skill.mjs` 验证 canonical skills。

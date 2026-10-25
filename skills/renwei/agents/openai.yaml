@@ -1,0 +1,6 @@
+interface:
+  display_name: "Renwei"
+  short_description: "去 AI 味：让文案、图像和视频像具体的人为具体受众认真做的"
+  default_prompt: "使用 $renwei，找出现有文案或素材里的 AI 味，按产品自身的真实样本改写或重做，并在最终交付形态里验收。"
+policy:
+  allow_implicit_invocation: true

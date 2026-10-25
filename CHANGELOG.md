@@ -4,6 +4,7 @@
 
 ## Unreleased — DSH 0.2.56 / canonical 0.7.1
 
+- 新增独立技能 `renwei`（人味）：处理“AI 味重”的文案与视觉交付物。先在实际交付物里定位具体症状，再以产品自身的真实样本为准改写或重做，并在最终形态里验收；文案、本地化与图像、噪点、截图、宣传图、视频、生成来源标记的做法分别放在 `references/copy.md` 与 `references/visual.md`。边界写明不用于规避必需的 AI 使用披露，内嵌水印无法证明去除时不作宣称。可用 `npx skills add https://github.com/orziz/odai --skill renwei` 单独安装；治理、编排与 DSH 版本不变。
 - 调查与审查补齐本机 CLI 只读 child 路由和 Control Center 配置入口。调查回交继续逐条核对仓库引用；审查通过同一任务的不可变捕获快照接收执行证据，复用读取预算并明确报告未交付或截断内容，缺失回执不视为验收通过。既有 API 路由、模型核验与取消处理保持。
 
 ## DSH 0.2.55 / canonical 0.7.1

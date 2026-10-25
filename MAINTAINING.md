@@ -27,6 +27,10 @@ skills/odai-orchestration/        可选、单向依赖治理的编排技能
   references/install.md          通用宿主路由的安装、更新与卸载
   assets/                         职责预设和宿主模板
   scripts/                        可信组合器、路由生成、安装与调用核验
+skills/renwei/                    独立的去 AI 味表现工艺技能
+  SKILL.md                        诊断、原则、做法与边界
+  references/                    文案（copy.md）与图像、视频（visual.md）工艺
+  agents/openai.yaml              宿主 UI 元数据
 integrations/hooks/              可选 Hooks 运行时、生成器和策略示例
 docs/rule-ledger.md               有来源的操作规则、唯一 owner、细则位置与核对版本
 docs/evaluation.md                稳定评测契约
