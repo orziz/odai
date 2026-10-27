@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
-const ROUTE_FIELDS = new Set(["backend", "cli", "model", "reasoningEffort", "timeoutSeconds"]);
+const ROUTE_FIELDS = new Set(["backend", "cli", "model", "reasoningEffort", "timeoutSeconds", "session"]);
 const DEFAULT_TIMEOUT_SECONDS = 1200;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const STDERR_BYTES = 8192;
@@ -29,28 +30,36 @@ export function validateLocalCliRoute(value) {
   if (value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== "string" || /[^a-z]/.test(value.reasoningEffort) || !ADAPTERS[value.cli].effort.test(value.reasoningEffort))) {
     throw new TypeError(`Invalid ${value.cli} reasoningEffort`);
   }
+  if (value.session !== undefined && !["fresh", "continue"].includes(value.session)) throw new TypeError("session must be fresh or continue");
+  if (value.session === "continue" && !ADAPTERS[value.cli].continuation) throw new TypeError(`${value.cli} 暂不支持会话续接`);
   const timeoutSeconds = value.timeoutSeconds;
   if (timeoutSeconds !== undefined && (!Number.isInteger(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 7200)) {
     throw new TypeError("local-cli timeoutSeconds must be an integer from 1 to 7200");
   }
   return {
     backend: "local-cli", cli: value.cli, model: value.model,
+    ...(value.session !== undefined ? { session: value.session } : {}),
     ...(value.reasoningEffort !== undefined ? { reasoningEffort: value.reasoningEffort } : {}),
     ...(timeoutSeconds !== undefined ? { timeoutSeconds } : {}),
   };
 }
 
-const AGY_READ_BOUNDARY = "\n\n读文件只用 view_file、grep_search、list_dir、find_by_name；命令行不可用，会被拒绝。";
+export const AGY_READ_ONLY_TOOLS = Object.freeze(["read_file", "search_web", "ask_question", "manage_task", "view_file", "grep_search", "list_dir", "find_by_name"]);
+const AGY_READ_BOUNDARY = "\n\n只用只读工具读取任务包中已给出路径的文件（例如 read_file，旧版本叫 view_file）。不要列目录、搜索文件、执行命令、写入或编辑文件；这些动作会被拒绝，并使本次调用作废。需要但未给出的文件，请在回交中列明所需文件，不要自行尝试。";
 const effortArgs = (route) => route.reasoningEffort ? ["--effort", route.reasoningEffort] : [];
 const ADAPTERS = Object.freeze({
   claude: {
+    continuation: true,
     effort: /^(low|medium|high|xhigh|max)$/,
     command: "claude", override: "ODAI_CLAUDE_COMMAND", input: "stdin",
-    args: (route) => ["-p", "--output-format", "json", "--model", route.model, ...effortArgs(route),
-      "--tools", "Read,Glob,Grep", "--permission-mode", "dontAsk", "--no-session-persistence"],
+    args: (route, { sessionId, resumeSessionId }) => ["-p", "--output-format", "json", "--model", route.model, ...effortArgs(route),
+      "--tools", "Read,Glob,Grep", "--permission-mode", "dontAsk", ...(route.session === "continue"
+        ? [resumeSessionId ? "--resume" : "--session-id", resumeSessionId || sessionId]
+        : ["--no-session-persistence"])],
     parse: (stdout, route) => parseClaudeResult(stdout, route.model),
   },
   codex: {
+    continuation: false,
     effort: /^[a-z]+$/,
     command: "codex", override: "ODAI_CODEX_COMMAND", input: "stdin",
     args: (route, { cwd }) => ["exec", "--json", "--model", route.model,
@@ -59,18 +68,20 @@ const ADAPTERS = Object.freeze({
     parse: parseCodexResult,
   },
   antigravity: {
+    continuation: true,
     effort: /^(low|medium|high)$/,
     command: "agy", override: "ODAI_AGY_COMMAND", input: "argv",
-    args: (route, { prompt }) => {
+    args: (route, { prompt, resumeSessionId }) => {
       if (typeof prompt !== "string") throw new TypeError("antigravity requires a prompt");
       const input = prompt + AGY_READ_BOUNDARY;
       if (Buffer.byteLength(input, "utf8") > 256 * 1024) throw new TypeError("antigravity prompt exceeds 256 KiB (including read-only instructions)");
-      return ["-p", input, "--output-format", "stream-json", "--mode", "plan", "--disable-slash-commands", "--model", route.model,
+      return [...(resumeSessionId ? ["--conversation", resumeSessionId] : []), "-p", input, "--output-format", "stream-json", "--mode", "plan", "--disable-slash-commands", "--model", route.model,
         ...effortArgs(route), "--print-timeout", `${route.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS}s`];
     },
     parse: parseAntigravityResult,
   },
   grok: {
+    continuation: false,
     effort: /^(none|minimal|low|medium|high|xhigh|max)$/,
     command: "grok", override: "ODAI_GROK_COMMAND", input: "file",
     args: (route, { cwd, promptFile }) => {
@@ -89,6 +100,8 @@ export function buildLocalCliInvocation(route, env = process.env, context = {}) 
     throw new TypeError(`${normalized.cli} requires cwd`);
   }
   const adapter = ADAPTERS[normalized.cli];
+  if (context.resumeSessionId !== undefined && (normalized.session !== "continue" || typeof context.resumeSessionId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(context.resumeSessionId))) throw new TypeError("Invalid resume session ID");
+  if (normalized.cli === "claude" && normalized.session === "continue" && !context.resumeSessionId && !context.sessionId) throw new TypeError("Claude continuation requires a new session ID");
   return { command: env[adapter.override] || adapter.command, args: adapter.args(normalized, context) };
 }
 
@@ -214,6 +227,8 @@ function parseCodexResult(stdout, route, { cwd, env }) {
 
 function parseAntigravityResult(stdout, route) {
   const events = jsonLines(stdout);
+  const violations = [...new Set(events.filter(event => event.event === "step_update" && event.step_update?.step_type === "tool" && event.step_update?.state === "DONE" && !AGY_READ_ONLY_TOOLS.includes(event.step_update.tool_name)).map(event => String(event.step_update.tool_name ?? "<missing>")))];
+  if (violations.length) return { ...emptyResult("error", `boundary-violation: ${violations.join(", ")}；agy 的权限设置允许了写类工具，请检查 agy 设置里的 permissions.allow。执行后检查不能撤销已发生的动作。`), boundaryStatus: "boundary-violation", boundaryTools: violations };
   const init = events.find((event) => event.event === "init");
   const payload = events.findLast((event) => event.event === "result")?.result;
   if (!isRecord(payload)) return emptyResult("error", "Antigravity returned no result event");
@@ -285,10 +300,11 @@ export function parseLocalCliResult(stdout, requestedRoute, context = {}) {
 
 /** Executes only the target CLI. Host routing and fallback policy belong to callers. */
 export async function executeLocalCli({
-  route, prompt, cwd, signal, env = process.env, spawnProcess = spawn, killProcess,
+  route, prompt, cwd, signal, resumeSessionId, env = process.env, spawnProcess = spawn, killProcess,
   killGraceMs = 1000, maxOutputBytes = MAX_OUTPUT_BYTES,
 }) {
   const normalized = validateLocalCliRoute(route);
+  const sessionId = normalized.session === "continue" && normalized.cli === "claude" ? resumeSessionId || randomUUID() : undefined;
   if (typeof prompt !== "string") throw new TypeError("local-cli prompt must be a string");
   if (typeof cwd !== "string" || !cwd) throw new TypeError("local-cli cwd must be a non-empty string");
   if (!Number.isSafeInteger(killGraceMs) || killGraceMs < 0) throw new TypeError("killGraceMs must be a non-negative safe integer");
@@ -313,7 +329,7 @@ export async function executeLocalCli({
       promptFile = join(temporary, "prompt.txt");
       writeFileSync(promptFile, prompt, { encoding: "utf8", mode: 0o600, flag: "wx" });
     }
-    const invocation = buildLocalCliInvocation(normalized, env, { prompt, cwd, promptFile });
+    const invocation = buildLocalCliInvocation(normalized, env, { prompt, cwd, promptFile, sessionId, resumeSessionId });
     return await new Promise((resolve) => {
       let child;
       let settled = false;
@@ -396,7 +412,7 @@ export async function executeLocalCli({
           finish(emptyResult("error", `${normalized.cli} exited ${terminationSignal ? `with signal ${terminationSignal}` : `with code ${code}`}${details ? `: ${details}` : ""}`));
           return;
         }
-        finish(parseLocalCliResult(Buffer.concat(stdout).toString("utf8"), normalized, { cwd, env }));
+        finish({ ...parseLocalCliResult(Buffer.concat(stdout).toString("utf8"), normalized, { cwd, env }), ...(sessionId ? { sessionId } : {}) });
       });
       child.stdin.on("error", (error) => {
         // Early CLI failure often closes stdin first; close still supplies its stderr and exit code.

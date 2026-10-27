@@ -1,3 +1,5 @@
+import { leadState, leadTaskId, leadGap, isLeadWriteTool } from "./lead-mode.mjs";
+import { classifyPendingReviewerText } from "./router.mjs";
 import { extractLatestUserText } from "./router.mjs";
 import { createRepeatedFailureMonitor } from "./repeated-failure.mjs";
 import { DEFAULT_CHILD_ALLOWED_TOOLS, DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS, activeRouteProtection, createChildToolGuard, createRouteProtectionGuard, isSubagent, summarizeToolResult } from "./governance.mjs";
@@ -251,6 +253,26 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     },
   });
   ctx.tools.guard?.((execution: ToolExecution) => {
+    const agent = execution.agent;
+    if (agent && !isSubagentSession(agent) && config.routing.mode !== "off" && !responsibilityScopes.get(agent)) {
+      const events = evidence.events(agent);
+      const consumed = new Set(events.filter(event => event.type === "odai/responsibility-gap-consumed").map(event => event.data.stateDigest));
+      const message = latestDirectUserMessage(agent);
+      const taskId = message && leadTaskId(events, message.id, classifyPendingReviewerText(extractLatestUserText([message])) === "continue");
+      const state = leadState(events);
+      if (taskId && state?.enabled && Array.isArray(state.roles) && state.roles.includes("planner") && isLeadWriteTool(execution.name)) {
+        const existing = events.some(event => event.type === "odai/responsibility-gap" && event.data.taskMessageId === taskId && event.data.responsibility === "planner" && event.data.timing === "start");
+        if (!existing) {
+          appendEvent(agent, "odai/responsibility-gap", leadGap("planner", taskId, currentAgentTurn(agent), currentAgentStep(agent) ?? 0));
+          return "ODAI_NAMED_START_PENDING: 主导模式先由规划插槽规划，然后继续原工具调用";
+        }
+      }
+      if (events.some(event => event.type === "odai/responsibility-gap" && event.data.userNamed === true && event.data.timing === "start" && !consumed.has(event.data.stateDigest))) {
+        const reason = "ODAI_NAMED_START_PENDING: wait for the runtime to dispatch the user's start responsibilities before implementation";
+        onDenied({ ...execution, agent }, reason);
+        return reason;
+      }
+    }
     if (execution.agent && isManagedReviewer(execution.agent) && !reviewerAllowedTools.includes(execution.name)) {
       const reason = "ODAI_REVIEW_READ_ONLY: managed reviewers may only inspect delegated source with read, glob, grep, and immutable evidence with odai_review_evidence";
       onDenied({ ...execution, agent: execution.agent }, reason);
@@ -320,6 +342,11 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
 
   ctx.on("tools/result", (execution: ToolExecution, result: ToolResult) => {
     if (!execution.agent) return;
+    const agent = execution.agent;
+    if (!isSubagentSession(agent) && config.routing.mode !== "off" && !responsibilityScopes.get(agent) && leadState(evidence.events(agent))?.enabled && isLeadWriteTool(execution.name) && !result.isError) {
+      const message = latestDirectUserMessage(agent);
+      if (message) appendEvent(agent, "odai/lead-write", { callId: execution.callId, tool: execution.name, taskMessageId: leadTaskId(evidence.events(agent), message.id, classifyPendingReviewerText(extractLatestUserText([message])) === "continue") });
+    }
     const summary = summarizeToolResult(execution, result);
     if (hasSessionEvent(execution.agent, "odai/tool-observed", (data) => data?.callId === summary.callId)) return;
     repeatedFailure.observe(execution, result);

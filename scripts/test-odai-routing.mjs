@@ -14,7 +14,7 @@ const builder = path.join(skill, "scripts", "build-routing.mjs");
 const installer = path.join(skill, "scripts", "install-routing.mjs");
 const roles = ["controller", "planner", "reviewer"];
 
-const tests = [testBuilds, testCreativeRouting, testInstallLifecycle, testDirectoryOwnership,
+const tests = [testHostSessions, testBuilds, testCreativeRouting, testWriterRouting, testInstallLifecycle, testDirectoryOwnership,
   testUninstallSettingsDriftIsAtomic, testManifestPathEscapeIsRejected, testParentSymlinkIsRejected,
   testTargetSymlinkIsRejected, testUnmanagedResearcherConflict, testRetiredArguments,
   testClaudeLocalBuild, testClaudeLocalLifecycle, testClaudeLocalRuntime, testClaudeLocalUserScope];
@@ -441,7 +441,8 @@ function testClaudeLocalBuild() {
     const extra = ["--reviewer-cli", "codex", "--reviewer-effort", "high",
       "--planner-cli", "grok", "--researcher-model", "research-model", "--researcher-cli", "codex",
       "--frontend-model", "front-model", "--frontend-cli", "antigravity",
-      "--creative-model", "creative-model", "--creative-cli", "grok"];
+      "--creative-model", "creative-model", "--creative-cli", "grok",
+      "--writer-model", "writer-model", "--writer-cli", "antigravity"];
     const result = runNode(builder, [...buildArgs("claude", root), ...extra]);
     assert.equal(result.status, 0, result.stderr);
     const config = path.join(root, "claude/.claude");
@@ -453,7 +454,7 @@ function testClaudeLocalBuild() {
     assert.deepEqual(adapter.mapping.reviewer, manifest.mapping.reviewer);
     assert.equal(adapter.runtime_verification.roles.reviewer.mode, "role-executor-evidence");
     assert.equal(adapter.runtime_verification.roles.controller.mode, "host-native-evidence-required");
-    for (const role of ["planner", "reviewer", "researcher", "frontend", "creative"]) {
+    for (const role of ["planner", "reviewer", "researcher", "frontend", "creative", "writer"]) {
       assert.equal(existsSync(path.join(config, `agents/odai-${role}.md`)), false);
       assert.ok(existsSync(path.join(config, `role-contracts/odai-${role}.md`)));
     }
@@ -468,7 +469,7 @@ function testClaudeLocalBuild() {
       for (const [entry, args] of [[builder, buildArgs(host, root)], [installer, installArgs(root, host)]]) {
         const invalid = runNode(entry, [...args, "--reviewer-cli", "codex"]);
         assert.notEqual(invalid.status, 0);
-        assert.match(invalid.stderr, /only supported with --host claude/u);
+        assert.match(invalid.stderr, /requires claude or codex|must be/u);
       }
     }
     for (const invalid of [["--reviewer-cli", "claude"], ["--reviewer-cli", "gemini"],
@@ -746,3 +747,124 @@ function json(file) { return JSON.parse(readFileSync(file, "utf8")); }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 // Ordinary fixtures need physical paths; link rejection cases create their own links.
 function temp(prefix) { return realpathSync(mkdtempSync(path.join(tmpdir(), prefix))); }
+
+function testWriterRouting() {
+  for (const host of ["codex", "claude", "copilot"]) {
+    const project = temp("odai-routing-writer-");
+    const config = path.join(project, { codex: ".codex", claude: ".claude", copilot: ".github" }[host]);
+    const roleFile = path.join("agents", `odai-writer${{ codex: ".toml", claude: ".md", copilot: ".agent.md" }[host]}`);
+    const configured = [...installArgs(project, host), "--writer-model", "writer-model",
+      ...(host === "copilot" ? [] : ["--writer-effort", "high"])];
+    try {
+      const initial = runNode(installer, installArgs(project, host));
+      assert.equal(initial.status, 0, initial.stderr);
+      assert.equal(existsSync(path.join(config, roleFile)), false);
+      const absent = json(path.join(config, "odai-routing.json"));
+      assert.equal(absent.mapping.writer, undefined);
+      assert.equal(absent.routingPolicy.writer_activation, "unconfigured");
+
+      const enabled = runNode(installer, configured);
+      assert.equal(enabled.status, 0, enabled.stderr);
+      const manifest = json(path.join(config, "odai-routing.json"));
+      assert.deepEqual(manifest.mapping.writer, { provider: host, model: "writer-model", reasoning_effort: host === "copilot" ? null : "high" });
+      assert.ok(manifest.files[roleFile]);
+      const profile = readFileSync(path.join(config, roleFile), "utf8");
+      assert.ok(profile.includes(readFileSync(path.join(skill, "assets/routing-roles/writer.md"), "utf8").trim()));
+      assert.ok(profile.includes(readFileSync(path.join(repo, "skills/odai/references/craft.md"), "utf8").trim()));
+      assert.doesNotMatch(profile, /__ODAI_[A-Z0-9_]+__/u);
+      if (host === "codex") {
+        assert.match(profile, /^sandbox_mode = "read-only"$/mu);
+        assert.match(readFileSync(path.join(config, "config.toml"), "utf8"), /^\[agents\.odai_writer\]$/mu);
+        testWriterCodexRuntime(project, config);
+      } else if (host === "claude") {
+        assert.match(profile, /^permissionMode: plan$/mu);
+      } else {
+        assert.match(profile, /^tools: \["view", "glob", "grep"\]$/mu);
+      }
+
+      const disabled = runNode(installer, installArgs(project, host));
+      assert.equal(disabled.status, 0, disabled.stderr);
+      assert.equal(existsSync(path.join(config, roleFile)), false);
+      assert.equal(json(path.join(config, "odai-routing.json")).mapping.writer, undefined);
+      if (host === "codex") assert.equal(existsSync(path.join(config, "role-contracts/odai-writer.md")), false);
+      const reenabled = runNode(installer, configured);
+      assert.equal(reenabled.status, 0, reenabled.stderr);
+      const removed = runNode(installer, ["--host", host, "--target", project, "--uninstall", "--yes"]);
+      assert.equal(removed.status, 0, removed.stderr);
+      assert.equal(existsSync(path.join(config, roleFile)), false);
+    } finally { rmSync(project, { recursive: true, force: true }); }
+  }
+
+  const root = temp("odai-routing-writer-invalid-");
+  try {
+    const effortOnly = runNode(builder, [...buildArgs("codex", root), "--writer-effort", "high"]);
+    assert.notEqual(effortOnly.status, 0);
+    assert.match(effortOnly.stderr, /--writer-effort requires --writer-model/u);
+    const installEffortOnly = runNode(installer, [...installArgs(root), "--writer-effort", "high"]);
+    assert.notEqual(installEffortOnly.status, 0);
+    assert.match(installEffortOnly.stderr, /--writer-effort 需要同时提供 --writer-model/u);
+    const config = path.join(root, ".codex/config.toml");
+    mkdirSync(path.dirname(config), { recursive: true });
+    const original = '[agents.odai_writer]\nconfig_file = "external-writer.toml"\n';
+    writeFileSync(config, original);
+    const conflict = runNode(installer, [...installArgs(root), "--writer-model", "writer-model"]);
+    assert.notEqual(conflict.status, 0);
+    assert.match(conflict.stderr, /既有 Codex 配置已声明 odai 角色/u);
+    assert.equal(readFileSync(config, "utf8"), original);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+function testWriterCodexRuntime(project, config) {
+  const fakeCodex = path.join(project, "fake-codex.mjs");
+  writeFileSync(fakeCodex, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+writeFileSync(args[args.indexOf("-o") + 1], JSON.stringify(args));
+console.log(JSON.stringify({ type: "thread.started", thread_id: "writer-thread", model: "writer-model" }));
+`);
+  chmodSync(fakeCodex, 0o700);
+  const input = path.join(project, "input.md");
+  const evidence = path.join(project, "evidence.json");
+  writeFileSync(input, "给已定稿的商店页提供两个有明确取舍的标题候选。\n");
+  for (const resume of [false, true]) {
+    const result = runNode(path.join(config, "odai-run-role.mjs"), [
+      "--role", "writer", "--cwd", project, "--input", input,
+      "--codex-bin", fakeCodex, "--sandbox", "danger-full-access", "--evidence", evidence,
+      ...(resume ? ["--session-id", "writer-thread"] : []),
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(result.stdout);
+    if (resume) assert.ok(args.includes('sandbox_mode="read-only"'));
+    else assert.equal(args[args.indexOf("--sandbox") + 1], "read-only");
+    assert.equal(args[args.indexOf("--model") + 1], "writer-model");
+    assert.ok(args.includes('model_reasoning_effort="high"'));
+    assert.equal(json(evidence).role, "writer");
+    assert.equal(json(evidence).observed.model_verified, true);
+  }
+
+  const sessions = path.join(project, "sessions");
+  mkdirSync(sessions);
+  const timestamp = new Date().toISOString();
+  const sessionFile = path.join(sessions, "writer.jsonl");
+  const records = [
+    { type: "session_meta", payload: { id: "writer-thread", agent_role: "odai_writer", cwd: project, timestamp,
+      source: { subagent: { thread_spawn: { agent_path: "/root/writer" } } } } },
+    { type: "turn_context", payload: { model: "writer-model", effort: "high" } },
+  ];
+  writeFileSync(sessionFile, records.map(record => JSON.stringify(record)).join("\n") + "\n");
+  const verifyArgs = ["--host", "codex", "--project", project, "--role", "odai_writer", "--after", timestamp,
+    "--agent-path", "/root/writer", "--sessions", sessions];
+  const verified = runNode(path.join(config, "odai-verify-routing.mjs"), verifyArgs);
+  assert.equal(verified.status, 0, verified.stderr);
+  assert.equal(JSON.parse(verified.stdout).role, "odai_writer");
+  records[1].payload.model = "wrong-model";
+  writeFileSync(sessionFile, records.map(record => JSON.stringify(record)).join("\n") + "\n");
+  const mismatch = runNode(path.join(config, "odai-verify-routing.mjs"), verifyArgs);
+  assert.notEqual(mismatch.status, 0);
+  assert.match(mismatch.stderr, /模型不匹配/u);
+}
+
+function testHostSessions() {
+  const result = spawnSync(process.execPath, ["--test", path.join(repo, "scripts/host-routing-session.test.mjs"), path.join(repo, "scripts/named-dispatch.test.mjs"), path.join(repo, "scripts/lead-dispatch.test.mjs")], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}

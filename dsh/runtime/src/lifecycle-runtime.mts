@@ -1,3 +1,4 @@
+import { recognizeLeadSwitch, leadState, leadTaskId, leadGap, parseLeadVerdict } from "./lead-mode.mjs";
 
 import {
   classifyResponsibilityInterruptionText,
@@ -10,7 +11,10 @@ import {
   renderRouteNotice,
 } from "./router.mjs";
 import type { RouteDecision } from "./router.mjs";
-import type { ResponsibilityGapProposal } from "./responsibility-gap.mjs";
+import { recognizeNamedRequests, resolveResponsibilityGap } from "./responsibility-gap.mjs";
+import type { ResponsibilityGapProposal, Responsibility } from "./responsibility-gap.mjs";
+import { CONFIGURABLE_ROLES } from "./routing-config.mjs";
+import { classifyPendingReviewerText } from "./router.mjs";
 import { classifyModelRouteFailure, probeModelRoute } from "./model-route.mjs";
 import { selectSharedOutputPolicyForTurn } from "./output-policy-state.mjs";
 import { prepareSessionOutputControl, previewSessionOutputControl } from "./output-session.mjs";
@@ -89,7 +93,7 @@ function effectiveRoleDispatch(
   configured: ResponsibilityDispatch | undefined,
   routingMode: RuntimeConfig["routing"]["mode"],
 ): ResponsibilityDispatch {
-  if (role === "creative") return "child";
+  if (role === "creative" || role === "writer") return "child";
   if (configured) return configured;
   if (role === "researcher" || role === "reviewer") return "child";
   if (role === "planner") return routingMode === "auto" ? "same-turn" : "child";
@@ -140,6 +144,78 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
   const outputUsageBySession = new WeakMap<DshSession, OutputUsage>();
   const inputRequests = new WeakMap<DshAgent, { token: object; turn: number; signal: AbortSignal }>();
   const inputGuards = new WeakSet<DshAgent>();
+  const namedGaps = (agent: DshAgent) => evidence.events(agent).filter(event => event.type === "odai/responsibility-gap" && event.data.userNamed === true);
+  const gapConsumed = (agent: DshAgent, digest: unknown) => evidence.events(agent).some(event => event.type === "odai/responsibility-gap-consumed" && event.data.stateDigest === digest);
+  const promptNamedRequests = ({ agent, turn, signal }: AgentTurnEvent & { signal: AbortSignal }) => {
+    if (signal.aborted || isSubagentSession(agent) || config.routing.mode === "off" || namedGaps(agent).length === 0) return;
+    pendingResponsibilityGap(agent, turn, Number.MAX_SAFE_INTEGER);
+    const events = evidence.events(agent);
+    const prompts: string[] = [];
+    for (const { data } of namedGaps(agent).sort((left, right) => Number(left.data.timing === "completion") - Number(right.data.timing === "completion"))) {
+      if (gapConsumed(agent, data.stateDigest)) continue;
+      const message = latestDirectUserMessage(agent);
+      if (!message || (message.id !== data.taskMessageId && classifyPendingReviewerText(extractLatestUserText([message])) !== "continue")) {
+        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, stateDigest: data.stateDigest, responsibility: data.responsibility, reason: "SUPERSEDED_BY_DIRECT_USER_TASK" });
+        continue;
+      }
+      const step = agent.phase?.step ?? sessionEvents(agent.session).findLast(event => event.type === "step/start")?.data.step ?? 0;
+      const prompted = events.find(event => event.type === "odai/named-request-prompted" && event.data.stateDigest === data.stateDigest);
+      if (prompted) {
+        // Coexisting Plugin/Agent listeners can observe the same stop. Only a
+        // later native step may conclude that the one reminder was ineffective.
+        if (prompted.data.turn === turn && prompted.data.step === step) return;
+        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, stateDigest: data.stateDigest, responsibility: data.responsibility, reason: "NAMED_REQUEST_INCOMPLETE_AFTER_PROMPT" });
+        continue;
+      }
+      appendEvent(agent, "odai/named-request-prompted", { turn, step, stateDigest: data.stateDigest, responsibility: data.responsibility });
+      prompts.push(String(data.responsibility));
+      break;
+    }
+    if (prompts.length && !signal.aborted) agent.steer?.(pluginMessage(`用户点名尚待运行：${prompts.join("、")}。运行时将在下一步按顺序派发；不要重复提交同项。最终答复逐项说明实际模型与结果，未完成时说明原因，不替换模型或配置。`, "odai named responsibility request"));
+  };
+  const checkedNamedInputs = new WeakMap<DshAgent, Set<string>>();
+  const recognizeDirectNames = (agent: DshAgent, turn: number, step: number, message: DshMessage | undefined): DshMessage | undefined => {
+    if (!message?.id || isSubagentSession(agent) || config.routing.mode === "off" || checkedNamedInputs.get(agent)?.has(message.id) || hasSessionEvent(agent, "odai/named-input-checked", data => data.taskMessageId === message.id)) return;
+    let checked = checkedNamedInputs.get(agent);
+    if (!checked) { checked = new Set(); checkedNamedInputs.set(agent, checked); }
+    checked.add(message.id);
+    const text = extractLatestUserText([message]);
+    const routes: Partial<Record<Responsibility, ModelRoute>> = {};
+    for (const role of CONFIGURABLE_ROLES) { const route = configuredRole(agent, role, turn).route; if (route) routes[role] = route; }
+    const change = recognizeLeadSwitch(text, routes);
+    if (change && !hasSessionEvent(agent, "odai/lead-switch-checked", data => data.taskMessageId === message.id)) {
+      appendEvent(agent, "odai/lead-switch-checked", { taskMessageId: message.id });
+      if (!change.issue) {
+        appendEvent(agent, "odai/lead-mode", { taskMessageId: message.id, ...change });
+        if (!change.enabled) for (const event of namedGaps(agent)) if (event.data.source === "lead-mode" && !gapConsumed(agent, event.data.stateDigest)) appendEvent(agent, "odai/responsibility-gap-consumed", { stateDigest: event.data.stateDigest, reason: "LEAD_MODE_DISABLED" });
+      }
+      agent.inject?.(pluginMessage(`主导模式：${change.issue ?? (change.enabled ? "已开启" : "已关闭")}。规划与审查插槽：${JSON.stringify(Object.fromEntries(change.roles.map(role => [role, routes[role as Responsibility]])))}。未启用的插槽不调用；关闭说“关闭主导模式”。请向用户说明。`, "odai lead mode"));
+    }
+    const taskMessageId = leadTaskId(evidence.events(agent), message.id, classifyPendingReviewerText(text) === "continue");
+    if (leadState(evidence.events(agent))?.enabled && !hasSessionEvent(agent, "odai/lead-task", data => data.taskMessageId === taskMessageId)) appendEvent(agent, "odai/lead-task", { taskMessageId });
+    const requests = recognizeNamedRequests(text, routes);
+    if (requests.length) appendEvent(agent, "odai/named-input-checked", { turn, step, taskMessageId: message.id });
+    const notices: string[] = [];
+    for (const request of requests) {
+      if (request.canceled) {
+        for (const { data } of namedGaps(agent)) if (data.responsibility === request.responsibility && !gapConsumed(agent, data.stateDigest)) appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "CANCELED_BY_USER" });
+        continue;
+      }
+      if (request.issue) {
+        appendEvent(agent, "odai/named-request-unfulfilled", { turn, step, taskMessageId: message.id, ...request, configuredRoute: routes[request.responsibility] });
+        notices.push(`${request.responsibility}（${request.name}）：${request.issue}；当前映射 ${JSON.stringify(routes[request.responsibility] ?? null)}`);
+        if (request.issue === "unconfigured") {
+          const proposal = resolveResponsibilityGap({ responsibility: request.responsibility, gap: request.excerpt, evidenceRefs: [`user-message:${message.id}`], expectedChange: "完成用户点名职责" });
+          notices.push(renderMissingRouteConfigNotice(decideRoute({ text, proposal, writerConfigured: true, creativeConfigured: true }), config.routing.mode));
+        }
+        continue;
+      }
+      const proposal = resolveResponsibilityGap({ responsibility: request.responsibility, gap: `用户明确点名：${request.excerpt}`, evidenceRefs: [`user-message:${message.id}`], expectedChange: `按用户指定的${request.timing}时机完成该职责并回交` });
+      appendEvent(agent, "odai/responsibility-gap", { ...proposal, stateDigest: `user-named:${proposal.stateDigest}:${message.id}:${request.timing}`, taskMessageId: message.id, turn, step: step - 1, userNamed: true, timing: request.timing, sourceExcerpt: request.excerpt, requestedName: request.name, requestedRoute: routes[request.responsibility] });
+      notices.push(`${request.responsibility}：${request.timing === "start" ? "开始时" : "完成时"}`);
+    }
+    return notices.length ? pluginMessage(`用户点名：${notices.join("；")}。由运行时负责按顺序派发；总控不要自己再派同一项。最终答复必须逐项说明哪个实际模型做了什么，以及未完成的原因；不得替换职责、模型或修改配置。`, "odai user named responsibilities") : undefined;
+  };
   ctx.on("agent/inbox/claimed", ({ agent, turn, message }: { agent: DshAgent; turn: number; message: DshMessage }) => {
     if (isSubagentSession(agent) || typeof agent.ctx?.on !== "function" || !agent.session.id) return;
     if (!inputGuards.has(agent)) {
@@ -478,6 +554,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       const turn = position?.turn;
       const step = position?.step;
       if (message && message.id === event.data.id && typeof turn === "number" && typeof step === "number") {
+        const notice = recognizeDirectNames(owner, turn, step, message);
+        if (notice) session.append("user/message", notice, { surfaceOp: "append" });
         prepareSessionOutputControl({
           events: evidence.events(owner), text: extractLatestUserText([message]), turn, step,
           userMessageId: typeof message.id === "string" ? message.id : undefined,
@@ -517,13 +595,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           step: event.data?.step ?? activeScope.startStep,
           responsibility: activeScope.role,
           target: "controller",
-          status: typeof owner.inject === "function" ? "recovery-injected" : "recovery-unavailable",
+          status: "recovery-pending",
         });
-        owner.inject?.(pluginMessage([
-          `The same-turn ${activeScope.role} responsibility emitted a terminal response without odai_responsibility_return.`,
-          "Its text is an unverified read-only draft, not final delivery or independent acceptance.",
-          "The runtime restored the controller route. Verify the decisive claims, continue the authorized task, and keep controller ownership of final delivery.",
-        ].join("\n"), `${activeScope.role} handback recovery`));
       }
     }
 
@@ -715,8 +788,53 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     pendingRouteReceipts.delete(session);
   });
 
-  ctx.on("agent/turn-stopping", ({ agent, turn }: AgentTurnEvent) => {
+  ctx.on("agent/turn-stopping", ({ agent, turn, signal }: AgentTurnEvent & { signal?: AbortSignal }) => {
     stopResponsibilityScope(agent, "turn-stopping");
+    const missing = evidence.events(agent).findLast(event => event.type === "odai/responsibility-return-missing" && event.data.turn === turn);
+    const recovered = missing && evidence.events(agent).some(event => event.type === "odai/responsibility-recovery" && event.data.scopeId === missing.data.scopeId);
+    if (missing && !recovered && !signal?.aborted && typeof agent.steer === "function") {
+      agent.steer(pluginMessage([
+        `The same-turn ${missing.data.responsibility} responsibility emitted a terminal response without odai_responsibility_return.`,
+        "Its text is an unverified read-only draft, not final delivery or independent acceptance.",
+        "The runtime restored the controller route. Verify the decisive claims, continue the authorized task, and keep controller ownership of final delivery.",
+      ].join("\n"), "responsibility handback recovery"));
+      appendEvent(agent, "odai/responsibility-recovery", { turn, scopeId: missing.data.scopeId, status: "recovery-steered" });
+      // Recovery already wakes the controller; defer completion prompting to its next stop.
+    } else if (signal) {
+      if (!signal.aborted && !isSubagentSession(agent) && config.routing.mode !== "off" && leadState(evidence.events(agent))?.enabled) {
+        const message = latestDirectUserMessage(agent);
+        const events = evidence.events(agent);
+        const taskId = message && leadTaskId(events, message.id, classifyPendingReviewerText(extractLatestUserText([message])) === "continue");
+        const state = leadState(events);
+        if (taskId && Array.isArray(state?.roles) && state.roles.includes("reviewer") && events.some(event => event.type === "odai/lead-write" && event.data.taskMessageId === taskId)) {
+          const gaps = namedGaps(agent).filter(event => event.data.taskMessageId === taskId && event.data.responsibility === "reviewer" && event.data.timing === "completion");
+          const last = gaps.at(-1);
+          const prior = events.filter(event => event.type === "odai/lead-review" && event.data.taskMessageId === taskId);
+          const step = agent.phase?.step ?? sessionEvents(agent.session).findLast(event => event.type === "step/start")?.data.step ?? 0;
+          if (!last && configuredRole(agent, "reviewer", turn).route) appendEvent(agent, "odai/responsibility-gap", leadGap("reviewer", taskId, turn, step));
+          else if (last && gapConsumed(agent, last.data.stateDigest)) {
+            const result = events.findLast(event => event.type === "odai/route-result" && event.data.stateDigest === last.data.stateDigest);
+            const decision = events.findLast(event => event.type === "odai/route-decided" && event.data.stateDigest === last.data.stateDigest);
+            const scope = decision && events.find(event => event.type === "odai/responsibility-scope-started" && event.data.startStep === decision.data.step && event.data.turn === decision.data.turn);
+            const returned = scope && events.find(event => event.type === "odai/responsibility-returned" && event.data.scopeId === scope.data.scopeId);
+            if ((result || returned) && !prior.some(event => event.data.stateDigest === last.data.stateDigest)) {
+              const text = String(result?.data.outputText ?? returned?.data.summary ?? "");
+              const success = (returned && events.some(event => event.type === "odai/route-applied" && event.data.responsibilityScopeId === scope?.data.scopeId && event.data.status === "applied")) || (result?.data.status === "completed" && result.data.routeReceiptStatus === "applied");
+              const verdict = success ? parseLeadVerdict(text) : "failed";
+              appendEvent(agent, "odai/lead-review", { taskMessageId: taskId, stateDigest: last.data.stateDigest, turn, step, verdict, round: prior.length });
+              if (verdict === "changes-requested" && prior.length < 2) {
+                agent.steer?.(pluginMessage(`主导模式审查要求修正（最多再审2轮）：\n${text}\n请完成修正，下一次结束时再审。`, "odai lead correction"));
+                return;
+              }
+              if (verdict !== "pass") agent.steer?.(pluginMessage(`主导模式审查未通过或未完成（${verdict}）；不再重试。最终答复说明未解决问题及原因。\n${text}`, "odai lead review incomplete"));
+            } else if (prior.at(-1)?.data.verdict === "changes-requested" && prior.length <= 2 && prior.at(-1)?.data.stateDigest === last.data.stateDigest && (prior.at(-1)?.data.turn !== turn || prior.at(-1)?.data.step !== step)) {
+              appendEvent(agent, "odai/responsibility-gap", leadGap("reviewer", taskId, turn, step, prior.length));
+            }
+          }
+        }
+      }
+      promptNamedRequests({ agent, turn, signal });
+    }
     const role = routedRoleOf(agent);
     if (!role) return;
     const receipts = evidence.events(agent)
@@ -762,6 +880,15 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         return { ...downstream, kind: "reject", reason: "ODAI_INPUT_CHANGED_BEFORE_ADMISSION" };
       }
       const directMessage = latestDirectUserMessage(agent, suppliedDirectMessages, { turn });
+      const namedNotice = recognizeDirectNames(agent, turn, step, directMessage);
+      if (namedNotice) downstream = { ...downstream, messages: [...downstream.messages, namedNotice] };
+      // A candidate must first pass native admission. The committed user/message
+      // observer records it before the model can execute controller tools.
+      if (!directMessage && previewInput?.message && !subagentSession && config.routing.mode !== "off") {
+        const routes: Partial<Record<Responsibility, ModelRoute>> = {};
+        for (const role of CONFIGURABLE_ROLES) { const route = configuredRole(agent, role, turn).route; if (route) routes[role] = route; }
+        if (recognizeNamedRequests(extractLatestUserText([previewInput.message]), routes).length) return downstream;
+      }
       const responsibilityGap = subagentSession ? undefined : pendingResponsibilityGap(agent, turn, step);
       // Inbox messages are committed after pre-step. Do not dispatch a task-bound
       // proposal while a new or changed human batch still lacks native admission.
@@ -871,6 +998,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       }
 
       if (config.routing.mode === "off") return downstream;
+      if (!responsibilityGap && hasSessionEvent(agent, "odai/named-input-checked", data => data.taskMessageId === (directMessage ?? previewInput?.message)?.id)) return downstream;
       if (hasSessionEvent(agent, "odai/route-decided", (data) => data?.turn === turn && data?.step === step)) {
         return downstream;
       }
@@ -893,6 +1021,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               gap: responsibilityGap.gap,
               expectedChange: responsibilityGap.expectedChange,
               evidenceRefs: responsibilityGap.evidenceRefs,
+              ...(responsibilityGap.userNamed ? { priorHandbacks: evidence.events(agent).filter(event => ["odai/route-result", "odai/research-result"].includes(event.type) && event.data.taskMessageId === responsibilityGap.taskMessageId && event.data.status === "completed" && event.data.routeReceiptStatus === "applied").map(event => ({ responsibility: event.data.role, actualRoute: event.data.actualRoute, output: event.data.outputText })) } : {}),
             }, undefined, 2),
             "",
             DIRECT_USER_TASK_HEADING.trimStart(),
@@ -913,11 +1042,12 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           step,
           role: "researcher",
           action: "delegate",
+          ...(responsibilityGap?.userNamed ? { stateDigest: responsibilityGap.stateDigest, taskMessageId: responsibilityGap.taskMessageId } : {}),
           mode: config.routing.mode,
           reasonCode: researchDecision.reasonCode,
           signals: researchDecision.signals,
         });
-        if (config.routing.mode === "observe") {
+        if (config.routing.mode === "observe" && !responsibilityGap?.userNamed) {
           appendEvent(agent, "odai/research-result", {
             turn,
             step,
@@ -954,6 +1084,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
             const subagents = isSubagentsService(ctx.subagents) ? ctx.subagents : undefined;
             const result: Readonly<RoutedRoleOutcome> = subagents || researchRoute.backend === "local-cli"
               ? await runRoutedRole({
+             sessionEvidence: { events: evidence.events, append: (owner, type, data) => appendEvent(owner, type, data) },
                   subagents,
                   provider: config.routing.provider,
                   decision: researchDecision,
@@ -987,6 +1118,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               turn,
               step,
               role: "researcher",
+              ...(responsibilityGap?.userNamed ? { stateDigest: responsibilityGap.stateDigest, taskMessageId: responsibilityGap.taskMessageId, userNamed: true, outputText: completed ? outputText(result.output) : undefined } : {}),
               status: completed ? "completed" : "fallback",
               stopReason: completed ? result.stopReason : (packetError ? "packet-invalid" : result.stopReason),
               routeSource: researchState.source,
@@ -995,9 +1127,11 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
               requestedRoute: researchRoute,
               ...(result.routeReceiptError ? { routeReceiptError: result.routeReceiptError } : {}),
               ...(result.actualRoute ? { actualRoute: result.actualRoute } : {}),
+              ...(result.boundaryStatus ? { boundaryStatus: result.boundaryStatus, boundaryTools: result.boundaryTools } : {}),
               ...(packet ? { packetDigest: packet.digest, sourceCount: packet.sourceCount } : {}),
               ...(packetError ? { error: packetError } : result.taskError ? { error: result.taskError } : {}),
             });
+            if (result.sessionNotice) routedDownstream = { ...routedDownstream, messages: [...routedDownstream.messages, pluginMessage(result.sessionNotice, "responsibility session recovery")] };
             if (completed && packet) {
               researchPacketText = renderResearchPacket(packet);
               routedDownstream = {
@@ -1015,8 +1149,14 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         }
       }
 
+      if (responsibilityGap?.userNamed && responsibilityGap.responsibility === "researcher" && !sameTurnResearchDecision) {
+        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: "researcher", stateDigest: responsibilityGap.stateDigest, reason: "NAMED_RESEARCH_ATTEMPTED" });
+        if (!researchPacketText) routedDownstream = { ...routedDownstream, messages: [...routedDownstream.messages, pluginMessage("用户点名 researcher 未完成：未取得通过核实的研究证据包。最终答复说明实际回执及原因，不重试、不替换模型或修改配置。", "odai named research incomplete")] };
+        return routedDownstream;
+      }
       let decision = sameTurnResearchDecision ?? decideRoute({
         text: taskText,
+        writerConfigured: Boolean(configuredRole(agent, "writer", turn).route),
         creativeConfigured: Boolean(configuredRole(agent, "creative", turn).route),
         creativeText: (extractLatestUserText(downstream.messages) || authenticatedDirectText).slice(0, config.routing.maxInputChars),
         proposal: responsibilityGap,
@@ -1158,7 +1298,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         };
       }
 
-      if (config.routing.mode === "observe") {
+      if (config.routing.mode === "observe" && !responsibilityGap?.userNamed) {
         return {
           kind: "enter",
           messages: [
@@ -1199,7 +1339,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
 
       const roleBundle = sharedSkillSelection<SkillSelection>(agent, turn)?.bundle ?? bundled;
       const canonicalRoleContract = roleBundle.roleContracts[routeRole];
-      const roleContract = dshRoleContract(routeRole, canonicalRoleContract);
+      const leadReview = routeRole === "reviewer" && leadState(evidence.events(agent))?.enabled === true && evidence.events(agent).some(event => event.type === "odai/lead-write" && event.data.taskMessageId === responsibilityGap?.taskMessageId);
+      const roleContract = dshRoleContract(routeRole, canonicalRoleContract) + (leadReview ? "\n主导模式验收：回交末尾必须独占一行 VERDICT: pass 或 VERDICT: changes-requested。same-turn 时写在 odai_responsibility_return 的 summary 末尾。" : "");
       let rolePreflightVerified = false;
       if (roleRoute.backend !== "local-cli" && routeRole === "frontend" && decision.action === "upgrade") {
         const health = await probeModelRoute(
@@ -1208,6 +1349,10 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           signal,
         );
         if (health.status === "rejected") {
+          if (responsibilityGap?.userNamed) {
+            appendEvent(agent, "odai/route-result", { turn, step, role: routeRole, stateDigest: responsibilityGap.stateDigest, taskMessageId: responsibilityGap.taskMessageId, status: "fallback", stopReason: "route-preflight-failed", error: health.failure.message });
+            return { kind: "enter", messages: [...routedDownstream.messages, pluginMessage(`用户点名的 ${routeRole} 未完成：${health.failure.message}。不重试，不替换模型，不修改配置；最终答复必须说明该项未完成及原因。`, "odai named responsibility failed")] };
+          }
           const invalidation = invalidateFailedRoleRoute(
             agent,
             routeRole,
@@ -1384,6 +1529,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       const subagents = isSubagentsService(ctx.subagents) ? ctx.subagents : undefined;
       const result: Readonly<RoutedRoleOutcome> = subagents || roleRoute.backend === "local-cli"
         ? await runRoutedRole({
+             sessionEvidence: { events: evidence.events, append: (owner, type, data) => appendEvent(owner, type, data) },
             subagents,
             provider: config.routing.provider,
             decision: delegationDecision,
@@ -1408,6 +1554,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         action: "delegate",
         status: result.status,
         stopReason: result.stopReason,
+        ...(responsibilityGap?.userNamed ? { stateDigest: responsibilityGap.stateDigest, taskMessageId: responsibilityGap.taskMessageId, userNamed: true, outputText: result.status === "completed" ? outputText(result.output) : undefined } : {}),
         routeSource: roleState.source,
         fallbackUsed: result.status !== "completed",
         routeReceiptStatus: result.routeReceiptStatus,
@@ -1416,6 +1563,8 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         ...(result.routeReceiptError ? { routeReceiptError: result.routeReceiptError } : {}),
         ...(result.actualRoute ? { actualRoute: result.actualRoute } : {}),
         ...(result.taskError ? { error: result.taskError } : {}),
+        ...(result.sessionAction ? { sessionAction: result.sessionAction, routeSessionId: result.routeSessionId, sessionNotice: result.sessionNotice } : {}),
+        ...(result.boundaryStatus ? { boundaryStatus: result.boundaryStatus, boundaryTools: result.boundaryTools } : {}),
         ...(result.durationMs === undefined ? {} : { durationMs: result.durationMs }),
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.cliReportedCostUsd === undefined ? {} : { cliReportedCostUsd: result.cliReportedCostUsd }),
@@ -1426,6 +1575,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
       if (result.status === "completed") {
         const childText = outputText(result.output);
         const heading = [
+          ...(result.sessionNotice ? [result.sessionNotice] : []),
           renderRouteNotice(delegationDecision, config.routing.mode, result.actualRoute, "child"),
           ...(result.reasoningEffortVerification === "verified"
             ? [`Reasoning effort: ${result.actualRoute?.reasoningEffort ?? "unspecified"} (verified from CLI session evidence).`]
@@ -1445,13 +1595,13 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         };
       }
 
-      const failure = result.error ?? result.stopReason;
+      const failure = [result.sessionNotice, result.error ?? result.stopReason].filter(Boolean).join("; ");
       return {
         kind: "enter",
         messages: [
           ...routedDownstream.messages,
           pluginMessage(
-            renderRouteFailureNotice(delegationDecision, failure),
+            renderRouteFailureNotice(delegationDecision, failure) + (responsibilityGap?.stateDigest.startsWith("user-named:lead-mode:") ? "\n主导模式该职责未完成：继续授权任务，不重试、不替换模型；最终答复必须说明未完成的步骤及上述原因。" : ""),
             `odai ${routeRole} route unavailable; controller retains ownership`,
           ),
         ],

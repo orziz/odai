@@ -96,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前 `0.2.56` 源码候选以 DSH `0.2.1-rc.2` 为最低支持基线。Agent 允许 `>=0.2.1-rc.2`（含后续预发布），双包 npm peer 保持开放（`*`）；后续版本仍须具备兼容的宿主接口，放行不等于已经验证。更早 DSH 版本不再属于当前支持范围，已发布版本的历史兼容记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
+当前 `0.2.57` 源码候选以 DSH `0.2.1-rc.2` 为最低支持基线。Agent 允许 `>=0.2.1-rc.2`（含后续预发布），双包 npm peer 保持开放（`*`）；后续版本仍须具备兼容的宿主接口，放行不等于已经验证。更早 DSH 版本不再属于当前支持范围，已发布版本的历史兼容记录保留。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
@@ -106,7 +106,9 @@ Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 ca
 
 完整、独立安装的 Odai skill 可以比两个 DSH 包更快更新，但不会自行改变默认来源。只有用户明确要求，Odai 才会把 skill source 切换为 `auto` 或 `user`：`auto` 可以选择兼容的项目 `.dsh` / `.agents` bundle 与较新的用户安装，`user` 则忽略项目根；部署显式路径始终优先。Plugin 与 Agent 刻意共存时按 agent / turn 共用同一份快照，prompt 治理与路由 role contract 不会选到不同 bundle。
 
-两个 DSH 包都不会自行选择 researcher、planner、reviewer、frontend 或 creative 模型。五项职责均可按用户明确指定的 CLI 和模型使用本机 CLI，只支持只读 child；creative 在 API 路由上同样只支持 child，回交构思、候选或审查意见。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：职责词不是口令，runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。总控负责整合、验证和最终交付；DSH 子代理保持只读，在明确委派补丁制作时可返回待应用补丁，研究、规划和审查仍遵守各自的较窄合同。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
+可选 writer（写作）承接方向已定的起草、改写、翻译与本地化，只读回交成稿；creative 负责方向、构思与品味把关。未配置 writer 时 creative 照旧承接写作。writer 的 API 与本机 CLI 路由均只支持 child。
+
+两个 DSH 包都不会自行选择 researcher、planner、reviewer、frontend、creative 或 writer 模型。六项职责均可按用户明确指定的 CLI 和模型使用本机 CLI，只支持只读 child；creative 在 API 路由上同样只支持 child，回交构思、候选或审查意见。用户只需自然地告诉 Odai，例如“规划用 provider/model，推理档 high”，模型就会为 Plugin 和 Agent 共用的机制持久化这项明确选择。之后正常交任务即可：不用说职责词，任务照样能完成；明确点名让某项已配置职责或其映射的模型来做时，会按指定时机照办，未完成时如实说明；其他请求仍由 runtime 从任务状态和证据缺口选择 direct、inline、same-turn 或 child；当前 controller 与 planner 同模型时不会重复调用，planner 回交后由 controller 继续已获授权的实施。总控负责整合、验证和最终交付；DSH 子代理保持只读，在明确委派补丁制作时可返回待应用补丁，研究、规划和审查仍遵守各自的较窄合同。真实任务需要某项尚未配置的职责时，Odai 会说明缺少哪一项并询问模型，而不会声称该路线已经运行。持久映射在 provider I/O 前正式校验；确定性坏映射备份后精确清理，额度、鉴权或网络故障只影响当次 fallback。
 
 DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用户明确要求，controller-only 工具才会把用户原文中的照护偏好、希望留意的信号、有效支持方式或自写安全计划保存到独立本地记录；用户可查看、导出、更正、逐条删除或物理清空，记录默认保留到用户执行删除。新会话只把它当历史照护偏好，不当成当前风险、诊断或隐藏评分，child agent 也拿不到这份记录。
 
@@ -120,7 +122,7 @@ DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用
 
 这项路由受宿主能力约束，单靠 Skill 文本不能机械保证。宿主不能核实换档或委派时，odai 使用单一充分总控继续完成安全可做的部分，不虚构升档或下放。路由器不是普通使用的前置步骤；只有用户要求托管能力路由时才安装。
 
-托管能力路由与下文项目护栏 Hooks 是两套机制。路由只注册宿主角色，不安装任务 runner 或隐藏的每轮 Hook；项目护栏只执行项目明确声明的只读路径和验收命令，不负责模型路由。
+托管能力路由与下文项目护栏 Hooks 是两套机制。路由默认只注册宿主角色；Claude Code / Codex 显式开启 `--named-dispatch` 或 `--lead-mode` 时安装声明式路由 Hook，用于识别点名、写类工具前拦截和结束前催办；通过路由安装器 `--uninstall --yes` 卸载；项目护栏只执行项目明确声明的只读路径和验收命令，不负责模型路由。
 
 受支持宿主的用户需要托管角色路由时，不用找路径、填写模型或手工合并配置；安装 skill 后直接说：
 
@@ -128,7 +130,7 @@ DSH 的心理与人身安全连续性不进入通用 semantic memory。只有用
 /odai 为当前项目安装并验证能力路由。
 ```
 
-odai 会从当前宿主的真实能力目录配置一个 controller 与 planner、reviewer，并可选配置 researcher、frontend、creative，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由总控承担完整交付，制作可按宿主权限有界委派，可选责任只在独立工作能改变结果时调用，不增加隐藏的每轮前置流程或 stage runner。可靠直答和只读查询不为展示路由调用其他角色。
+odai 会从当前宿主的真实能力目录配置一个 controller 与 planner、reviewer，并可选配置 researcher、frontend、creative、writer，说明持久化影响并请求一次确认，然后安装并检查冲突。默认 `auto` 只注册能力：由总控承担完整交付，制作可按宿主权限有界委派，可选责任只在独立工作能改变结果时调用，不增加隐藏的每轮前置流程或 stage runner。可靠直答和只读查询不为展示路由调用其他角色。
 
 不再使用时可以说“用 odai 卸载当前项目的能力路由”。安装器会合并既有宿主设置，记录原始 Codex 总控配置以便精确恢复，只删除清单中仍未被外部修改的托管文件，并保留无关设置；安装、更新或实际卸载后须开启新会话。默认只影响当前项目。自动安装器可为 Codex、Claude Code 与 GitHub Copilot CLI 生成托管角色配置；Codex 另有原生角色核验，另外两个宿主尚未取得等价证据时不能宣称同等程度的运行时路由。
 
@@ -283,7 +285,7 @@ cp "pets/$pet_name/pet.json" "pets/$pet_name/spritesheet.webp" "$HOME/.codex/pet
 
 skill 负责判断，Hooks 只把项目已经明确的边界变成机械护栏。它们默认不安装、不启用，也不改变 `odai` 的主流程；只有项目创建 `.odai/hooks.json` 后，才会针对受支持的结构化写工具（含 Claude Code 的 `NotebookEdit`）保护显式只读路径，并在收口时运行显式声明且与当前变更相关的验收命令。没有策略文件时完全静默。
 
-这是 odai 管理的唯一每轮 Hook。能力路由安装器不安装 Hook，也不能替代项目护栏。
+项目护栏与显式开启 `--named-dispatch` 的路由 Hook 独立管理配置，可以共存，互不替代。
 
 仓库维护一份无依赖运行时，按需生成宿主原生适配，不常驻六套平台镜像：
 
@@ -306,7 +308,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前源码候选为 DSH `0.2.56` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.2`，最新已发布 Odai DSH 双包为 `0.2.55`（已修复会话格式缺陷；`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
+当前源码候选为 DSH `0.2.57` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.3`，最新已发布 Odai DSH 双包为 `0.2.56`（已修复会话格式缺陷；`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
 
 当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 

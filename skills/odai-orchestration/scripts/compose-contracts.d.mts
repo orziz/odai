@@ -1,7 +1,7 @@
 export const RUNTIME_CONTRACT: 9;
 export const MANIFEST_SCHEMA: 1;
 export const ORCHESTRATION_URL: URL;
-export const ROLE_NAMES: readonly ["controller", "researcher", "planner", "reviewer", "frontend", "creative"];
+export const ROLE_NAMES: readonly ["controller", "researcher", "planner", "reviewer", "frontend", "creative", "writer"];
 export const REFERENCE_NAMES: readonly ["dao", "planning", "craft", "verification", "memory", "leverage", "care", "human-safety", "orchestration"];
 export type RoleName = typeof ROLE_NAMES[number];
 export type ReferenceName = typeof REFERENCE_NAMES[number];

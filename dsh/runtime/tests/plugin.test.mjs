@@ -223,7 +223,7 @@ function nativeToolEvents(callId, command, output, options = {}) {
   ];
 }
 function responsibilityGapEvent(responsibility, overrides = {}) {
-  const markers = { researcher: "a", planner: "b", reviewer: "c", frontend: "d", user: "e", creative: "f" };
+  const markers = { researcher: "a", planner: "b", reviewer: "c", frontend: "d", user: "e", creative: "f", writer: "1" };
   const marker = markers[responsibility];
   return {
     type: "odai/responsibility-gap",
@@ -3982,7 +3982,7 @@ test("same-turn read-only terminal output is recovered to the controller when ha
   const events = [responsibilityGapEvent("reviewer")];
   const injected = [];
   const agent = {
-    inject(message) {
+    steer(message) {
       injected.push(message);
     },
     session: {
@@ -4009,11 +4009,17 @@ test("same-turn read-only terminal output is recovered to the controller when ha
     type: "assistant/message",
     data: { turn: 1, step: 1, message: { content: [{ type: "text", text: "looks good" }] } },
   });
+  assert.equal(injected.length, 0);
+  const stopping = ctx.captured.handlers.get("agent/turn-stopping");
+  stopping({ agent, turn: 1, signal: AbortSignal.abort() });
+  assert.equal(injected.length, 0);
+  stopping({ agent, turn: 1, signal: new AbortController().signal });
+  stopping({ agent, turn: 1, signal: new AbortController().signal });
   assert.equal(injected.length, 1);
   assert.match(messageText(injected[0]), /unverified read-only draft/u);
   assert.equal(
     findLastEvent(events, (event) => event.type === "odai/responsibility-return-missing").data.status,
-    "recovery-injected",
+    "recovery-pending",
   );
   assert.deepEqual(
     await ctx.captured.handlers.get("agent/request")({ agent, turn: 1, step: 2 }, async () => reviewerRequest),
@@ -4270,6 +4276,31 @@ test("same-turn deterministic route validation removes the exact persisted mappi
     true,
   );
 });
+test("a named same-turn mapping survives deterministic validation failure in a later scope step", async () => {
+  const configPath = resolve(testDshHome, "named-later-failure", "routing.json");
+  mkdirSync(resolve(configPath, ".."), { recursive: true });
+  const route = { provider: "openai", model: "named-planner" };
+  const original = JSON.stringify({ schemaVersion: 1, roles: { planner: route } });
+  writeFileSync(configPath, original);
+  let calls = 0;
+  const ctx = fakeContext({ llm: { async resolveCallConfig(config) {
+    if (config.model === route.model && ++calls > 1) { const error = new Error("unknown model named-planner"); error.code = "UNKNOWN_MODEL"; throw error; }
+    return { config };
+  } } });
+  apply(ctx, { skillPath, routing: { configPath } });
+  const message = userMessage("先让 GPT 规划一下再动手", "named-later-failure");
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
+  const agent = { session: { header: {}, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const signal = new AbortController().signal;
+  await ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: 1, signal }, async () => ({ kind: "enter", messages: [message] }));
+  const base = { provider: "openai", model: "controller-model" };
+  await ctx.captured.handlers.get("agent/request")({ agent, turn: 1, step: 1, signal }, async () => base);
+  await ctx.captured.handlers.get("agent/request")({ agent, turn: 1, step: 2, signal }, async () => base);
+  assert.ok(events.some(event => event.type === "odai/route-fallback"));
+  assert.equal(readFileSync(configPath, "utf8"), original);
+  assert.equal(readdirSync(resolve(configPath, "..")).some(path => path.includes("invalidated")), false);
+});
+
 test("transient same-turn route validation falls back without deleting the persisted mapping", async () => {
   const configPath = resolve(testDshHome, "runtime-route-transient", "routing.json");
   mkdirSync(resolve(configPath, ".."), { recursive: true });
@@ -6425,7 +6456,7 @@ test("local CLI planner/frontend/creative dispatch returns verified child eviden
 import process from "node:process";
 let prompt = "";
 for await (const chunk of process.stdin) prompt += chunk;
-const role = prompt.includes("You are the odai planner.") ? "planner" : prompt.includes("You are the odai creative.") ? "creative" : "frontend";
+const role = prompt.includes("You are the odai writer.") ? "writer" : prompt.includes("You are the odai planner.") ? "planner" : prompt.includes("You are the odai creative.") ? "creative" : "frontend";
 if (!prompt.includes("Local CLI execution boundary") || !prompt.includes("Read, Glob, and Grep")
   || !prompt.includes("unapplied patch") || process.cwd() !== ${JSON.stringify(realpathSync(testDshHome))}) process.exit(3);
 if (role === "creative" && (!prompt.includes("创意专业责任") || !prompt.includes("DSH creative execution boundary"))) process.exit(5);
@@ -6436,7 +6467,7 @@ console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,resul
   const previousCommand = process.env.ODAI_CLAUDE_COMMAND;
   process.env.ODAI_CLAUDE_COMMAND = command;
   try {
-    for (const role of ["planner", "frontend", "creative"]) {
+    for (const role of ["planner", "frontend", "creative", "writer"]) {
       // Exercise both absent and present native subagents services.
       const ctx = fakeContext(role === "planner" ? {} : {
         subagents: { async start() { throw new Error("native subagents must not execute local-cli"); } },
@@ -6587,7 +6618,7 @@ test("local CLI Antigravity preserves denied actions in managed dispatch and rec
   const command = resolve(testDshHome, "fake-agy-routing.mjs");
   writeFileSync(command, `#!${process.execPath}
 const prompt = process.argv[process.argv.indexOf("-p") + 1];
-if (!prompt.includes("view_file") || !prompt.includes("find_by_name") || prompt.includes("only Read, Glob, and Grep")) process.exit(3);
+if (!prompt.includes("只用只读工具") || !prompt.includes("本次调用作废") || prompt.includes("only Read, Glob, and Grep")) process.exit(3);
 console.log(JSON.stringify({ event: "init", conversation_id: "fake-agy", init: { model: "gemini-3.8-flash-high", cwd: process.cwd() } }));
 console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "Antigravity result", denied_actions: 2, usage: { input_tokens: 30, output_tokens: 10 } } }));
 `);
@@ -6663,4 +6694,272 @@ console.log(JSON.stringify({type:"result",subtype:"success",is_error:false,resul
     if (previous === undefined) delete process.env.ODAI_CLAUDE_COMMAND;
     else process.env.ODAI_CLAUDE_COMMAND = previous;
   }
+});
+
+test("writer API dispatch is a bounded child for lexical requests and responsibility gaps", async () => {
+  const route = { provider: "writer-provider", model: "writer-model", reasoningEffort: "high", maxTokens: 2300 };
+  for (const entry of ["lexical", "gap", "unmapped", "tool-text"]) {
+    const starts = [];
+    const ctx = fakeContext({ subagents: {
+      async start(provider, request) {
+        starts.push({ provider, request });
+        return {
+          localAgent: { session: childSession(route) },
+          result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "候选：原文与替换文本；取舍依据。" }] }),
+          async dispose() {},
+        };
+      },
+    } });
+    apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, `writer-api-${entry}/routing.json`),
+      roles: entry === "unmapped" ? {} : { writer: route } } });
+    const events = entry === "gap" ? [responsibilityGapEvent("writer")] : [];
+    const agent = { session: { header: { cwd: testDshHome }, events, snapshotEvents: () => events,
+      append(type, data) { events.push({ type, data }); } } };
+    seedCurrentEvidence(ctx, agent, events);
+    const message = userMessage(entry === "gap" ? "完成当前已确定的创意缺口" : "帮我润色这段对白");
+    if (entry === "tool-text") message.source = { kind: "tool" };
+    const result = await ctx.captured.handlers.get("agent/pre-step")(
+      { agent, turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ kind: "enter", messages: [message] }),
+    );
+    if (["unmapped", "tool-text"].includes(entry)) {
+      assert.equal(starts.length, 0, entry);
+      assert.equal(events.some(event => event.type === "odai/route-config-missing"), false, entry);
+      continue;
+    }
+    assert.equal(starts.length, 1, entry);
+    const { request } = starts[0];
+    assert.match(request.label, /^odai-writer:/);
+    assert.equal(request.maxDepth, 1);
+    assert.deepEqual(request.agentOptions, { provider: route.provider, model: route.model, maxTokens: route.maxTokens });
+    const prompt = blockText(request.prompt[0]);
+    const bundle = loadSkillBundle(skillPath);
+    assert.ok(prompt.includes(bundle.roleContracts.writer));
+    assert.match(prompt, /DSH writer execution boundary/);
+    assert.match(prompt, /bounded task and evidence packet/);
+    assert.match(messageText(result.messages.at(-1)), /候选：原文与替换文本/);
+    const receipt = findLastEvent(events, event => event.type === "odai/route-result").data;
+    assert.equal(receipt.role, "writer");
+    assert.equal(receipt.routeReceiptStatus, "applied");
+    assert.deepEqual(receipt.actualRoute, route);
+    assert.equal(events.some(event => ["odai/route-upgrade", "odai/responsibility-scope-started"].includes(event.type)), false);
+    const controllerRoute = { provider: "base", model: "controller", maxTokens: 8000 };
+    assert.deepEqual(await ctx.captured.handlers.get("agent/request")(
+      { agent, turn: 1, step: 1 }, async () => controllerRoute,
+    ), controllerRoute);
+  }
+});
+
+test("named responsibilities share ordered gaps, handbacks and one completion steering prompt", async () => {
+  const routes = { creative: { provider: "anthropic", model: "claude" }, writer: { provider: "google", model: "gemini" } };
+  const starts = [];
+  const ctx = fakeContext({ subagents: { async start(_provider, request) {
+    const role = request.label.startsWith("odai-creative:") ? "creative" : "writer";
+    starts.push({ role, prompt: blockText(request.prompt[0]) });
+    return { localAgent: { session: childSession(routes[role]) }, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: `${role} handback unique direction` }] }), async dispose() {} };
+  } } });
+  apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, "named-order/routing.json"), roles: routes } });
+  const message = userMessage("让 Claude 定方向，Gemini 写文案，写完让 Claude 审", "named-order");
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
+  const steering = [];
+  const agent = { steer: message => steering.push(message), session: { header: { cwd: testDshHome }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const signal = new AbortController().signal;
+  const preStep = ctx.captured.handlers.get("agent/pre-step");
+  const stopping = ctx.captured.handlers.get("agent/turn-stopping");
+  await preStep({ agent, turn: 1, step: 1, signal }, async () => ({ kind: "enter", messages: [message] }));
+  assert.deepEqual(starts.map(item => item.role), ["creative"]);
+  assert.ok(ctx.captured.guards.some(guard => guard({ agent, name: "write" })?.startsWith("ODAI_NAMED_START_PENDING")), JSON.stringify(events.filter(event => event.type.startsWith("odai/"))));
+  await preStep({ agent, turn: 1, step: 2, signal }, async () => ({ kind: "enter", messages: [] }));
+  assert.deepEqual(starts.map(item => item.role), ["creative", "writer"]);
+  assert.match(starts[1].prompt, /creative handback unique direction/);
+  assert.equal(steering.length, 0);
+  stopping({ agent, turn: 1, signal });
+  stopping({ agent, turn: 1, signal });
+  assert.equal(events.some(event => event.data.reason === "NAMED_REQUEST_INCOMPLETE_AFTER_PROMPT"), false);
+  assert.equal(steering.length, 1, JSON.stringify(events.filter(event => event.type.includes("gap") || event.type.includes("decided"))));
+  await preStep({ agent, turn: 1, step: 3, signal }, async () => ({ kind: "enter", messages: [] }));
+  assert.deepEqual(starts.map(item => item.role), ["creative", "writer", "creative"]);
+  stopping({ agent, turn: 1, signal });
+  stopping({ agent, turn: 1, signal });
+  assert.equal(steering.length, 1);
+  assert.equal(events.filter(event => event.type === "odai/responsibility-gap" && event.data.userNamed).length, 3);
+});
+
+for (const scenario of ["failure", "unverified", "supersede", "continue", "cancel", "off", "child", "early", "mismatch", "missing", "aborted", "unexecuted"]) test(`named request lifecycle: ${scenario}`, async () => {
+  const route = { provider: "google", model: "gemini" };
+  const starts = [];
+  const steering = [];
+  const ctx = fakeContext({ subagents: { async start(_provider, request) {
+    starts.push(request);
+    return { ...(scenario === "unverified" ? {} : { localAgent: { session: childSession(route) } }), result: Promise.resolve({ stopReason: scenario === "failure" ? "error" : "completed", output: [{ type: "text", text: "named handback" }] }), async dispose() {} };
+  } } });
+  apply(ctx, { skillPath, routing: { mode: scenario === "off" ? "off" : "auto", configPath: resolve(testDshHome, `named-${scenario}/routing.json`), roles: scenario === "missing" ? {} : { writer: route } } });
+  const message = userMessage(scenario === "mismatch" ? "让 Claude 写这段文案" : scenario === "missing" ? "请 writer 写文案" : "写完让 Gemini 写文案", `named-${scenario}`);
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
+  const agent = { steer: message => steering.push(message), session: { header: { cwd: testDshHome, ...(scenario === "child" ? { origin: "subagent", delegationDepth: 1 } : {}) }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const abort = new AbortController();
+  const step = (number, messages = []) => ctx.captured.handlers.get("agent/pre-step")({ agent, turn: 1, step: number, signal: abort.signal }, async () => ({ kind: "enter", messages }));
+  const stop = () => ctx.captured.handlers.get("agent/turn-stopping")({ agent, turn: 1, signal: abort.signal });
+  const first = await step(1, [message]);
+  assert.equal(starts.length, 0);
+  if (["off", "child"].includes(scenario)) {
+    assert.equal(events.some(event => event.type === "odai/named-input-checked"), false);
+    return;
+  }
+  if (["mismatch", "missing"].includes(scenario)) {
+    assert.equal(events.filter(event => event.type === "odai/named-request-unfulfilled").length, 1);
+    assert.match(first.messages.map(messageText).join("\n"), /最终答复/);
+    stop(); assert.equal(steering.length, 0); return;
+  }
+  if (["supersede", "continue", "cancel"].includes(scenario)) {
+    const followup = userMessage(scenario === "continue" ? "继续" : scenario === "cancel" ? "不用让 Gemini 写文案" : "修复另一个问题", `followup-${scenario}`);
+    events.push({ type: "user/message", seq: 100, data: followup });
+    await step(2, [followup]);
+    stop();
+    assert.equal(steering.length, scenario === "continue" ? 1 : 0);
+    if (scenario !== "continue") assert.ok(events.some(event => event.type === "odai/responsibility-gap-consumed" && ["SUPERSEDED_BY_DIRECT_USER_TASK", "CANCELED_BY_USER"].includes(event.data.reason)));
+    return;
+  }
+  if (scenario === "early") {
+    events.push({ type: "step/start", seq: 3, data: { turn: 1, step: 1 } });
+    const tool = ctx.captured.tools.find(tool => tool.name === "odai_responsibility_gap");
+    await tool.execute({ responsibility: "writer", gap: "Write this bounded copy", evidenceRefs: ["current-task"], expectedChange: "Return copy" }, { agent, name: "odai_responsibility_gap" });
+    await step(2);
+    assert.equal(starts.length, 1);
+    stop();
+    assert.equal(steering.length, 0);
+    assert.ok(events.some(event => event.type === "odai/responsibility-gap-consumed" && event.data.reason === "SATISFIED_BY_VERIFIED_ROUTE"));
+    return;
+  }
+  if (scenario === "aborted") { abort.abort(); stop(); assert.equal(steering.length, 0); return; }
+  stop();
+  assert.equal(steering.length, 1);
+  if (scenario !== "unexecuted") await step(2);
+  else agent.phase = { turn: 1, step: 2 };
+  stop(); stop();
+  if (scenario === "unexecuted") assert.ok(events.some(event => event.data.reason === "NAMED_REQUEST_INCOMPLETE_AFTER_PROMPT"));
+  assert.equal(steering.length, 1);
+  assert.equal(starts.length, scenario === "unexecuted" ? 0 : 1);
+  if (["failure", "unverified"].includes(scenario)) assert.ok(events.some(event => event.type === "odai/route-result" && event.data.status !== "completed"));
+});
+
+for (const outcome of ["commit", "reject"]) test(`named start waits for native admission: ${outcome}`, async () => {
+  const route = { provider: "google", model: "gemini" };
+  const starts = [];
+  const steering = [];
+  const ctx = fakeContext({ subagents: { async start(_provider, request) {
+    starts.push(request);
+    return { localAgent: { session: childSession(route) }, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: "draft" }] }), async dispose() {} };
+  } } });
+  apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, `named-admit-${outcome}/routing.json`), roles: { writer: route } } });
+  const message = userMessage("文案让 Gemini 写", `named-admit-${outcome}`);
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "agent/inbox/spliced", seq: 2, data: { removedCount: 1, inserted: [], target: "next-turn", start: 0 } }];
+  const agent = { ctx: { on() {} }, phase: { turn: 1, step: 1 }, steer: message => steering.push(message), session: { id: `named-admit-${outcome}`, header: { id: `named-admit-${outcome}`, cwd: testDshHome }, snapshotEvents: () => events, append(type, data) { events.push({ type, seq: events.length + 1, data }); } } };
+  const signal = new AbortController().signal;
+  ctx.captured.handlers.get("agent/inbox/claimed")({ agent, turn: 1, message });
+  const preStep = ctx.captured.handlers.get("agent/pre-step");
+  await preStep({ agent, turn: 1, step: 1, signal }, async () => ({ kind: outcome === "reject" ? "reject" : "enter", messages: [message] }));
+  assert.equal(starts.length, 0);
+  assert.equal(events.some(event => event.type === "odai/responsibility-gap"), false);
+  if (outcome === "reject") return;
+  agent.session.append("step/start", { turn: 1, step: 1 });
+  agent.session.append("user/message", message);
+  const admitted = events.at(-1);
+  ctx.captured.handlers.get("session/event")(agent.session, admitted);
+  assert.ok(readStoredSessionEvidence(evidenceRoots.get(ctx), agent.session.id).some(event => event.type === "odai/responsibility-gap" && event.data.userNamed));
+  assert.ok(ctx.captured.guards.some(guard => guard({ agent, name: "write" })?.startsWith("ODAI_NAMED_START_PENDING")));
+  ctx.captured.handlers.get("agent/turn-stopping")({ agent, turn: 1, signal });
+  assert.equal(steering.length, 1);
+  await preStep({ agent, turn: 1, step: 2, signal }, async () => ({ kind: "enter", messages: [] }));
+  assert.equal(starts.length, 1);
+});
+
+for (const [role, text] of Object.entries({ researcher: "请 researcher 调研重试事实", planner: "请 planner 规划任务", reviewer: "请 reviewer 验收改动", frontend: "请 frontend 做界面", creative: "请 creative 定方向", writer: "请 writer 写文案" })) test(`named configured slot uses existing child dispatch: ${role}`, async () => {
+  const route = { provider: "slot-provider", model: "slot-model" };
+  const starts = [];
+  const ctx = fakeContext({ subagents: { async start(_provider, request) {
+    starts.push(request);
+    return { localAgent: { session: childSession(route) }, result: Promise.resolve({ stopReason: "completed", output: [{ type: "text", text: role === "researcher" ? researchPacketText() : `${role} contribution` }] }), async dispose() {} };
+  } } });
+  apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, `named-slot-${role}/routing.json`), roles: { [role]: route }, dispatch: { [role]: "child" } } });
+  const message = userMessage(text, `named-slot-${role}`);
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
+  const steering = [];
+  const agent = { steer: message => steering.push(message), session: { header: { cwd: researchProjectRoot }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const signal = new AbortController().signal;
+  const preStep = ctx.captured.handlers.get("agent/pre-step");
+  await preStep({ agent, turn: 1, step: 1, signal }, async () => ({ kind: "enter", messages: [message] }));
+  if (role === "reviewer") {
+    assert.equal(starts.length, 0);
+    ctx.captured.handlers.get("agent/turn-stopping")({ agent, turn: 1, signal });
+    assert.equal(steering.length, 1);
+    await preStep({ agent, turn: 1, step: 2, signal }, async () => ({ kind: "enter", messages: [] }));
+  }
+  assert.equal(starts.length, 1);
+  assert.ok(starts[0].label.startsWith(`odai-${role}:`));
+  assert.ok(events.some(event => event.type === (role === "researcher" ? "odai/research-result" : "odai/route-result") && event.data.status === "completed"));
+  ctx.captured.handlers.get("agent/turn-stopping")({ agent, turn: 1, signal });
+  assert.equal(steering.length, role === "reviewer" ? 1 : 0);
+});
+
+test("manual writer API labels apply the mapped contract and read-only child boundary", async () => {
+  const ctx = fakeContext();
+  const route = { provider: "writer-provider", model: "writer-model", reasoningEffort: "high" };
+  apply(ctx, { skillPath, routing: { configPath: resolve(testDshHome, "manual-writer/routing.json"), roles: { writer: route } } });
+  const inherited = { provider: "base", model: "controller" };
+  for (const label of ["odai-writer: bounded copy task", "writer copy task", "odai-writer-other: task"]) {
+    const events = [{ type: "subagent/descriptor", data: { label } }];
+    const child = { session: { header: { origin: "subagent" }, snapshotEvents: () => events,
+      append(type, data) { events.push({ type, data }); } } };
+    const mapped = label.startsWith("odai-writer:");
+    const request = await ctx.captured.handlers.get("agent/request")({ agent: child, turn: 1, step: 1 }, async () => inherited);
+    assert.deepEqual(request, mapped ? route : inherited);
+    if (!mapped) continue;
+    const assembly = { tools: [{ name: "read" }, { name: "bash" }, { name: "write" }, { name: "subagent" }], sections: [...ctx.captured.sections] };
+    const composed = await ctx.captured.handlers.get("system-prompt/assemble")(assembly, { agent: child }, async () => assembly);
+    const contract = composed.sections.find(section => section.name === "odai:child-responsibility-contract").text;
+    assert.ok(contract.includes(loadSkillBundle(skillPath).roleContracts.writer));
+    assert.match(contract, /DSH writer execution boundary/);
+    assert.deepEqual(composed.tools.map(tool => tool.name), ["read"]);
+  }
+});
+
+for (const outcome of ["pass", "changes-requested", "invalid", "failure", "readonly", "off", "child", "merge"]) test(`lead mode lifecycle: ${outcome}`, async () => {
+  const route = { provider: "slot-provider", model: "slot-model" };
+  const starts = [];
+  const ctx = fakeContext({ subagents: { async start(_provider, request) {
+    starts.push(request);
+    return { localAgent: { session: childSession(route) }, result: Promise.resolve({ stopReason: outcome === "failure" ? "error" : "completed", output: [{ type: "text", text: outcome === "invalid" ? "No verdict" : `Review notes\nVERDICT: ${outcome === "changes-requested" ? outcome : "pass"}` }] }), async dispose() {} };
+  } } });
+  apply(ctx, { skillPath, routing: { mode: outcome === "off" ? "off" : "auto", configPath: resolve(testDshHome, `lead-${outcome}/routing.json`), roles: { planner: route, reviewer: route }, dispatch: { planner: "child", reviewer: "child" } } });
+  const message = userMessage("开启主导模式" + (outcome === "merge" ? "，先让 planner 规划，做完让 reviewer 验收" : ""), `lead-${outcome}`);
+  const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
+  const steering = [];
+  const agent = { phase: { turn: 1, step: 1 }, steer: message => steering.push(message), inject() {}, session: { header: { cwd: researchProjectRoot, ...(outcome === "child" ? { origin: "subagent" } : {}) }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const signal = new AbortController().signal;
+  const preStep = ctx.captured.handlers.get("agent/pre-step");
+  const stop = ctx.captured.handlers.get("agent/turn-stopping");
+  const step = async n => { agent.phase.step = n; await preStep({ agent, turn: 1, step: n, signal }, async () => ({ kind: "enter", messages: n === 1 ? [message] : [] })); };
+  await step(1);
+  if (["off", "child"].includes(outcome)) { assert.equal(events.some(event => event.type === "odai/lead-mode"), false); return; }
+  assert.equal(events.find(event => event.type === "odai/lead-mode").data.enabled, true);
+  assert.equal(ctx.captured.guards.some(guard => guard({ agent, name: "read" })), false);
+  if (outcome === "readonly") { stop({ agent, turn: 1, signal }); assert.equal(starts.length, 0); return; }
+  if (outcome !== "merge") {
+    assert.equal(starts.length, 0);
+    assert.ok(ctx.captured.guards.some(guard => guard({ agent, name: "write", callId: "lead-write" })?.startsWith("ODAI_NAMED_START_PENDING")));
+    await step(2);
+  }
+  assert.equal(starts.length, 1);
+  ctx.captured.handlers.get("tools/result")({ agent, name: "write", callId: "lead-write" }, { output: [{ type: "text", text: "written" }] });
+  stop({ agent, turn: 1, signal });
+  await step(3);
+  assert.equal(starts.length, 2);
+  assert.match(blockText(starts[1].prompt[0]), /VERDICT: pass/);
+  for (let n = 4; n < 12; n++) { stop({ agent, turn: 1, signal }); await step(n); }
+  stop({ agent, turn: 1, signal });
+  assert.equal(starts.length, outcome === "changes-requested" ? 4 : 2);
+  const reviews = events.filter(event => event.type === "odai/lead-review");
+  assert.equal(reviews.length, outcome === "changes-requested" ? 3 : 1);
+  assert.equal(events.filter(event => event.type === "odai/responsibility-gap" && event.data.responsibility === "planner").length, 1);
 });

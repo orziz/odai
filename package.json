@@ -4,7 +4,8 @@
   "type": "module",
   "imports": {
     "#odai-contracts": "./skills/odai-orchestration/scripts/compose-contracts.mjs",
-    "#odai-local-cli": "./skills/odai-orchestration/scripts/local-cli.mjs"
+    "#odai-local-cli": "./skills/odai-orchestration/scripts/local-cli.mjs",
+    "#odai-recognize-routing": "./skills/odai-orchestration/scripts/recognize-routing.mjs"
   },
   "scripts": {
     "test:version-policy": "node --test scripts/version-policy.test.mjs",

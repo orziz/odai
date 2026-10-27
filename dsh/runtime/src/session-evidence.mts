@@ -114,6 +114,10 @@ function evidenceId(type: string, data: RuntimeEventData): string {
     && typeof data.childSessionId === "string" && data.childSessionId !== ""
     && typeof data.childReceiptId === "string" && data.childReceiptId !== "") {
     identity = stableJson(["child-route-receipt", type, data.childSessionId, data.childReceiptId]);
+  } else if (["odai/responsibility-gap", "odai/responsibility-gap-consumed", "odai/responsibility-gap-deferred", "odai/named-request-prompted"].includes(type) && typeof data.stateDigest === "string" && data.stateDigest.startsWith("user-named:")) {
+    identity = stableJson([type, data.turn, data.step, data.stateDigest]);
+  } else if (type === "odai/named-request-unfulfilled") {
+    identity = stableJson([type, data.taskMessageId, data.responsibility, data.timing, data.name]);
   } else if (type === "odai/route-protection") {
     // A failed responsibility can release its scope and establish a different
     // protection in the same request. Coexisting runtimes must observe both.

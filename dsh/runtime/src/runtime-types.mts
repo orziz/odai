@@ -7,6 +7,7 @@ export function isUnknownRecord(value: unknown): value is UnknownRecord {
 }
 
 export interface ApiModelRoute extends UnknownRecord {
+  session?: "fresh" | "continue";
   provider: string;
   model: string;
   reasoningEffort?: string;
@@ -149,6 +150,7 @@ export interface ToolRestriction {
 export interface DshAgent {
   session: DshSession;
   inject?(message: DshMessage): void;
+  steer?(message: DshMessage): void;
   phase?: { turn?: number; step?: number };
   options?: UnknownRecord;
   ctx?: {

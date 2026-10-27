@@ -55,7 +55,7 @@ interface RouteFailure {
 
 function isResponsibilityGapProposal(data: RuntimeEventData): data is RuntimeEventData & ResponsibilityGapProposal {
   return typeof data.responsibility === "string"
-    && ["researcher", "planner", "reviewer", "frontend", "creative", "user"].includes(data.responsibility)
+    && ["researcher", "planner", "reviewer", "frontend", "creative", "writer", "user"].includes(data.responsibility)
     && typeof data.gap === "string"
     && Array.isArray(data.evidenceRefs)
     && data.evidenceRefs.every((value) => typeof value === "string")
@@ -189,9 +189,41 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     const consumed = new Set(events.flatMap((event) => (
       event.type === "odai/responsibility-gap-consumed" ? [event.data?.stateDigest] : []
     )));
+    // Named requests share the existing gap queue, consumption and reviewer deferral.
+    for (const event of events) {
+      const data = event.data;
+      if (event.type !== "odai/responsibility-gap" || data.userNamed !== true || consumed.has(data.stateDigest) || !isResponsibilityGapProposal(data)) continue;
+      const message = latestDirectUserMessage(agent);
+      if (!message) continue;
+      if (message.id !== data.taskMessageId && classifyPendingReviewerText(extractLatestUserText([message])) !== "continue") {
+        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SUPERSEDED_BY_DIRECT_USER_TASK" });
+        continue;
+      }
+      const satisfied = events.slice(events.indexOf(event) + 1).some(result => {
+        let actualRoute = result.data.actualRoute;
+        let startStep = result.data.step;
+        if (result.type === "odai/responsibility-returned" && result.data.returned === true && result.data.responsibility === data.responsibility) {
+          const receipt = events.find(item => item.type === "odai/route-applied" && item.data.responsibilityScopeId === result.data.scopeId && item.data.status === "applied");
+          const scope = events.find(item => item.type === "odai/responsibility-scope-started" && item.data.scopeId === result.data.scopeId);
+          actualRoute = receipt?.data.actualRoute;
+          startStep = scope?.data.startStep;
+          if (!receipt || !scope) return false;
+        } else if (!["odai/route-result", "odai/research-result"].includes(result.type) || result.data.role !== data.responsibility || result.data.status !== "completed" || result.data.routeReceiptStatus !== "applied") return false;
+        if (!actualRoute || (data.requestedRoute && !sameRequestModelRoute(actualRoute, data.requestedRoute))) return false;
+        if (result.data.userNamed === true && result.data.stateDigest !== data.stateDigest) return false;
+        const decision = events.find(item => item.type === "odai/route-decided" && item.data.turn === result.data.turn && item.data.step === startStep);
+        return !events.some(item => item.type === "odai/responsibility-gap" && item.data.userNamed === true && item.data.stateDigest === decision?.data.stateDigest && item.data.stateDigest !== data.stateDigest);
+      });
+      if (satisfied) {
+        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SATISFIED_BY_VERIFIED_ROUTE" });
+        continue;
+      }
+      if (data.timing === "completion" && !events.some(item => item.type === "odai/named-request-prompted" && item.data.stateDigest === data.stateDigest)) continue;
+      return data;
+    }
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const event = events[index];
-      if (event.data?.turn !== turn
+      if (event.data?.userNamed === true || event.data?.turn !== turn
         || event.type !== "odai/responsibility-gap"
         || typeof event.data?.step !== "number"
         || !Number.isSafeInteger(event.data.step)
@@ -222,6 +254,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const event = events[index];
       if (event.type !== "odai/responsibility-gap"
+        || event.data?.userNamed === true
         || event.data?.responsibility !== "reviewer"
         || typeof event.data.turn !== "number"
         || event.data.turn >= turn
@@ -256,6 +289,13 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     failure: RouteFailure,
     position: RuntimeEventData = {},
   ): RouteInvalidation => {
+    const parent = childReceiptParents.get(agent.session);
+    const scope = responsibilityScopes.get(agent);
+    const decisionOwner = parent?.parent ?? agent;
+    const decisionTurn = parent?.turn ?? scope?.turn ?? position.turn;
+    const decisionStep = parent?.step ?? scope?.startStep ?? position.step;
+    const namedDecision = evidence.events(decisionOwner).some(event => ["odai/route-decided", "odai/research-decided"].includes(event.type) && event.data.turn === decisionTurn && event.data.step === decisionStep && (event.data.role === role || event.data.targetRole === role) && typeof event.data.stateDigest === "string" && event.data.stateDigest.startsWith("user-named:"));
+    if (namedDecision) return Object.freeze({ invalidated: false, reason: "user-named-route-preserved" });
     let invalidation: RouteInvalidation = Object.freeze({ invalidated: false, reason: "not-deterministic-or-not-persisted" });
     if (failure.kind === "deterministic" && source === "persisted-mapping") {
       try {

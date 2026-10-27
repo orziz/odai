@@ -528,3 +528,24 @@ test("delegation prompt requires a canonical role contract and bounded context",
   const prompt = renderDelegationPrompt(decision, "task", "Canonical planner body.");
   assert.match(prompt, /Canonical planner body\.[\s\S]*Task:\ntask/u);
 });
+
+ test("writer splits production from direction only when configured", () => {
+  const options = { creativeConfigured: true, writerConfigured: true };
+  for (const text of ["帮我润色这段对白", "给新地图写三版商店页宣传语", "把这段文案翻译成英文", "rewrite the store page copy", "这段话 AI 味太重，帮我改改", "优化一下这段介绍"]) {
+    assert.equal(decideRoute({ text, ...options }).role, "writer", text);
+  }
+  for (const text of ["审一下第二章的台词有没有 AI 味", "这个玩法的数值平衡你评估一下", "给这个功能起个名字", "写一下世界观设定"]) {
+    assert.equal(decideRoute({ text, ...options }).role, "creative", text);
+  }
+  for (const text of ["写一下玩法的单元测试", "优化一下剧情的加载速度", "审一下玩法代码", "把剧情写进存档", "文案写到配置里", "write a copy of the config to /tmp", "review the balance sheet export", "优化剧情系统的性能", "评估一下玩法逻辑的复杂度", "翻译这段报错", "把这个变量的名字改一下"]) {
+    assert.equal(decideRoute({ text, ...options }).action, "direct", text);
+  }
+  const decision = decideRoute({ text: "继续", proposal: gap("writer"), ...options });
+  assert.equal(decision.role, "writer");
+  assert.ok(decision.signals.includes("evidence-grounded-responsibility-gap"));
+  assert.ok(decision.signals.includes(`state:${gap("writer").stateDigest}`));
+  for (const text of ["这个玩法挺好的", "你的名字叫什么", "这个点子不错，先记下", "I have some ideas about the refactor", "check the balance first", "改一下项目名称", "这个创意来自用户反馈", "我们用这个名字当包名吧", "the gameplay loop feels slow, profile it", "用户说玩法太难了"]) {
+    assert.equal(decideRoute({ text, ...options }).action, "direct", text);
+    assert.equal(decideRoute({ text, creativeConfigured: true }).action, "direct", text);
+  }
+ });

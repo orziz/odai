@@ -1,6 +1,8 @@
 <!-- Language toggle -->
 **English** · [中文](README.zh-CN.md)
 
+Optional writer (写作) handles drafting, rewriting, translation, and localization once direction is settled. Creative owns direction, ideation, and taste review; without a writer mapping, creative continues to handle writing as before. Writer is read-only and child-only on API and local CLI routes, returning drafts or replacement text for the controller to verify and apply.
+
 # odai
 
 <p align="center">
@@ -96,7 +98,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The current `0.2.56` source candidate uses DSH `0.2.1-rc.2` as its minimum supported baseline. The Agent admits `>=0.2.1-rc.2`, including later prereleases, and both npm peers remain open (`*`). Later releases still need compatible host APIs and are not certified without testing. Earlier DSH versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
+The current `0.2.57` source candidate uses DSH `0.2.1-rc.2` as its minimum supported baseline. The Agent admits `>=0.2.1-rc.2`, including later prereleases, and both npm peers remain open (`*`). Later releases still need compatible host APIs and are not certified without testing. Earlier DSH versions are outside current support; published releases retain their historical compatibility entries. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
@@ -106,7 +108,7 @@ Both DSH packages default output to **soft concise**. Users can explicitly selec
 
 A complete independently installed Odai skill can update faster than either DSH package without changing the default. The user must explicitly ask Odai to switch the skill source to `auto` or `user`; `auto` can select compatible project `.dsh`/`.agents` bundles and newer user installs, while `user` ignores project roots. An explicit deployment path remains highest priority. Plugin and Agent deliberately installed together share one per-agent/per-turn snapshot, so prompt governance and routing role contracts cannot select different bundles.
 
-Neither DSH package chooses responsibility models or dispatch overrides. Tell Odai naturally, for example, `use provider/model for planning with high reasoning and dispatch planning as child`; the runtime persists only those explicit choices for both surfaces. Researcher, planner, reviewer, and frontend can each use `same-turn` or `child`; optional creative supports only read-only `child` dispatch on API and local CLI routes, returning writing candidates, tradeoffs, or review findings. The controller owns integration, validation, and final delivery. DSH children remain read-only and can return unapplied patches when explicitly assigned patch preparation; research, planning, and review retain their narrower contracts. Later requests stay ordinary: role words are not commands, task state selects direct, inline, same-turn, or child dispatch; read-only same-turn responsibilities return only to the controller, an identical planner/controller model is not called twice, and the controller continues an already-authorized implementation after planning. If a needed responsibility is still unconfigured, Odai names it and asks for the model instead of claiming that route ran. Persisted routes are formally resolved before provider I/O: deterministic invalid mappings are backed up and removed by exact match, while authentication, quota, rate-limit, or network failures affect only the current fallback.
+Neither DSH package chooses responsibility models or dispatch overrides. Tell Odai naturally, for example, `use provider/model for planning with high reasoning and dispatch planning as child`; the runtime persists only those explicit choices for both surfaces. Researcher, planner, reviewer, and frontend can each use `same-turn` or `child`; optional creative and writer support only read-only `child` dispatch on API and local CLI routes, returning writing candidates, tradeoffs, or review findings. The controller owns integration, validation, and final delivery. DSH children remain read-only and can return unapplied patches when explicitly assigned patch preparation; research, planning, and review retain their narrower contracts. Later requests stay ordinary: tasks work without role words, while explicit requests to delegate to a configured responsibility or its mapped model are honored at the requested time; task state otherwise selects direct, inline, same-turn, or child dispatch; read-only same-turn responsibilities return only to the controller, an identical planner/controller model is not called twice, and the controller continues an already-authorized implementation after planning. If a needed responsibility is still unconfigured, Odai names it and asks for the model instead of claiming that route ran. Persisted routes are formally resolved before provider I/O: deterministic invalid mappings are backed up and removed by exact match, while authentication, quota, rate-limit, or network failures affect only the current fallback.
 
 DSH human-safety continuity is separate from generic semantic memory. Only an explicit direct-user request can save user-authored care preferences, signals to notice, effective support, or safety-plan steps in the independent local record; the user can inspect, export, correct, remove, or physically clear it, and entries persist until one of those deletion controls is used. New sessions treat it as historical care preference, never as present-risk evidence, diagnosis, or a hidden score, and child agents never receive it.
 
@@ -120,7 +122,7 @@ The controller is the persistent task thread that owns the goal, global state, c
 
 This routing is constrained by the host; skill text alone cannot mechanically guarantee it. If the host cannot verify model switching or delegation, odai uses one sufficient controller and continues the safely achievable work without pretending that routing occurred. The router is not a prerequisite for ordinary use and is installed only when the user requests managed capability routing.
 
-Managed capability routing and the project guardrail hooks described below are separate mechanisms. Routing registers host roles and does not install a task runner or hidden per-turn hook. Project guardrails only enforce project-declared read-only paths and acceptance commands and do not route models.
+Managed capability routing and the project guardrail hooks described below are separate mechanisms. Routing registers host roles by default. Explicit `--named-dispatch` or `--lead-mode` on Claude Code or Codex adds declared routing hooks for named responsibilities or optional planning before writes and review after writes; uninstall them through the routing installer (`--uninstall --yes`). Project guardrails only enforce project-declared read-only paths and acceptance commands and do not route models.
 
 Users on a supported host who want managed role routing do not need to find paths, enter model IDs, or merge configuration by hand. After installing the skill, say:
 
@@ -128,7 +130,7 @@ Users on a supported host who want managed role routing do not need to find path
 /odai install and verify capability routing for this project.
 ```
 
-odai configures one controller plus planner and reviewer from the host's actual capability catalog, with optional researcher, frontend, and creative mappings, explains the persistent effect, asks for one confirmation, and installs them with conflict checks. The default `auto` policy only registers capabilities: one controller owns complete delivery and may delegate bounded production within host permissions; optional responsibilities run only when independent work can change the result. It adds no hidden per-turn preflight or stage runner. Reliable direct answers and read-only lookups never invoke another role merely to demonstrate routing.
+odai configures one controller plus planner and reviewer from the host's actual capability catalog, with optional researcher, frontend, creative, and writer mappings, explains the persistent effect, asks for one confirmation, and installs them with conflict checks. The default `auto` policy only registers capabilities: one controller owns complete delivery and may delegate bounded production within host permissions; optional responsibilities run only when independent work can change the result. It adds no hidden per-turn preflight or stage runner. Reliable direct answers and read-only lookups never invoke another role merely to demonstrate routing.
 
 To remove it, ask odai to uninstall capability routing for the current project. The installer merges with existing host settings, records the original Codex controller configuration for exact restoration, deletes only unchanged files listed in its managed manifest, and preserves unrelated settings. Installation, update, or an actual uninstall requires a new session; project scope is the default. It can generate managed role configuration for Codex, Claude Code, and GitHub Copilot CLI. Codex additionally supports native role verification; the other two hosts must not claim equivalent runtime routing evidence until comparable verification exists.
 
@@ -283,7 +285,7 @@ Then open **Codex Settings → Pets**, refresh the list, and select `dai` or `od
 
 The skill supplies judgment; hooks only turn already-explicit project boundaries into mechanical guardrails. They are not installed or enabled by default and do not change odai's main flow. Once a project defines `.odai/hooks.json`, they can protect explicit read-only paths for supported structured write tools, including Claude Code's `NotebookEdit`, and run explicitly declared acceptance commands that match the current change. With no policy file, they are silent no-ops.
 
-These are the only per-turn hooks managed by odai. The capability-routing installer does not install hooks and cannot substitute for project guardrails.
+Project guardrails are independent of the optional `--named-dispatch` routing hooks. Each manages its own configuration; neither substitutes for the other.
 
 The repository keeps one dependency-free runtime and generates native host adapters on demand instead of maintaining six platform mirrors:
 
@@ -306,7 +308,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.2.56` / governance `0.7.1` (runtime contract `9`) / orchestration `0.2.2`; the latest published Odai DSH release is `0.2.55` (with the session-format fix; `0.2.50` adds DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
+The current source candidate is DSH `0.2.57` / governance `0.7.1` (runtime contract `9`) / orchestration `0.2.3`; the latest published Odai DSH release is `0.2.56` (with the session-format fix; `0.2.50` adds DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

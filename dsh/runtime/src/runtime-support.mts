@@ -1,3 +1,5 @@
+import { executeRouteSession } from "./route-session.mjs";
+import type { RouteSessionEvidence } from "./route-session.mjs";
 import { renderLocalCliReviewEvidence } from "./review-evidence.mjs";
 import { randomUUID } from "node:crypto";
 import { executeLocalCli } from "#odai-local-cli";
@@ -62,6 +64,9 @@ export interface RoutedRoleOutcome extends UnknownRecord {
   cliReportedCostUsd?: number;
   reasoningEffortVerification?: "verified" | "mismatch" | "requested-only";
   deniedActionsCount?: number;
+  sessionAction?: "created" | "resumed" | "resume-failed-created";
+  routeSessionId?: string;
+  sessionNotice?: string;
 }
 
 export interface SkillSelection {
@@ -261,7 +266,9 @@ export async function runRoutedRole({
   roleRoute,
   roleBundle,
   reviewEvidence,
+  sessionEvidence,
 }: {
+  sessionEvidence?: RouteSessionEvidence;
   subagents?: SubagentsService;
   provider: string;
   decision: Pick<RouteDecision, "role">;
@@ -274,7 +281,7 @@ export async function runRoutedRole({
   reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   if (roleRoute?.backend === "local-cli") {
-    return runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence });
+    return runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence, sessionEvidence });
   }
   let run: RoutedRun | undefined;
   let outcome: Readonly<RoutedRoleOutcome>;
@@ -389,7 +396,7 @@ export async function runRoutedRole({
   }
 }
 
-async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence }: {
+async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence, sessionEvidence }: {
   decision: Pick<RouteDecision, "role">;
   taskText: string;
   roleContract: string;
@@ -397,11 +404,12 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
   agent: unknown;
   signal: AbortSignal;
   roleRoute: LocalCliRoute;
+  sessionEvidence?: RouteSessionEvidence;
   reviewEvidence?: import("./review-evidence.mjs").ReviewEvidenceSnapshot;
 }): Promise<Readonly<RoutedRoleOutcome>> {
   try {
     signal.throwIfAborted();
-    if (!["researcher", "planner", "reviewer", "frontend", "creative"].includes(decision.role)) throw new Error("unsupported local-cli responsibility");
+    if (!["researcher", "planner", "reviewer", "frontend", "creative", "writer"].includes(decision.role)) throw new Error("unsupported local-cli responsibility");
     if (decision.role === "reviewer" && !reviewEvidence) throw new Error("local-cli reviewer requires a task-bound captured evidence snapshot");
     const capturedEvidence = decision.role === "reviewer" && reviewEvidence ? renderLocalCliReviewEvidence(reviewEvidence) : "";
     const cwd = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
@@ -410,7 +418,7 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
     const readBoundary = {
       claude: "Read files using Read, Glob, and Grep; shell commands are unavailable.",
       codex: "Read files using read-only commands within the read-only sandbox. Child agents are disabled.",
-      antigravity: "Read files only with view_file, grep_search, list_dir, and find_by_name. Shell commands are unavailable and will be denied in plan mode.",
+      antigravity: "Use read-only tools to read only files whose paths are supplied in the task packet. Do not list directories, search for files, execute commands, write or edit files: denied actions invalidate this call. Report any missing files needed in the handback without attempting to find them. In agy 1.4.7 plan mode is ineffective with slash expansion disabled; request-review permissions and post-execution checks enforce this boundary.",
       grok: "Read files using read_file, grep, and list_dir within the read-only sandbox. Shell commands and Agent delegation are unavailable.",
     }[roleRoute.cli];
     const prompt = [
@@ -419,8 +427,12 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
       decision.role === "researcher" ? "Return only the required research packet JSON. Repository quotations are checked against source paths and lines before acceptance." : "",
       `Local CLI execution boundary: read-only. ${readBoundary} There are no DSH tools. Return plain text to the controller. For production work, return an unapplied patch; do not modify files.`,
     ].join("\n\n");
-    const result = await executeLocalCli({ route: roleRoute, prompt, cwd, signal });
+    const result = await executeRouteSession({ agent: agent as DshAgent, route: roleRoute, evidence: sessionEvidence, signal,
+      execute: resumeSessionId => executeLocalCli({ route: roleRoute, prompt, cwd, signal, resumeSessionId }),
+    });
     const metadata = {
+      ...(result.sessionAction ? { sessionAction: result.sessionAction, routeSessionId: result.routeSessionId, sessionNotice: result.sessionNotice } : {}),
+      ...(result.boundaryStatus ? { boundaryStatus: result.boundaryStatus, boundaryTools: result.boundaryTools } : {}),
       durationMs: result.durationMs,
       ...(result.usage ? { usage: result.usage } : {}),
       ...(result.cliReportedCostUsd === undefined ? {} : { cliReportedCostUsd: result.cliReportedCostUsd }),
@@ -547,6 +559,7 @@ export function latestRouteReceipt(events: readonly DshEvent[]): Readonly<Unknow
         routeSource: data.routeSource,
         fallbackUsed: data.fallbackUsed,
         requestedRoute: data.requestedRoute,
+        ...(data.sessionAction ? { sessionAction: data.sessionAction, routeSessionId: data.routeSessionId, sessionNotice: data.sessionNotice } : {}),
         ...(data.reasoningEffortVerification ? { reasoningEffortVerification: data.reasoningEffortVerification } : {}),
         ...(typeof data.deniedActionsCount === "number" ? { deniedActionsCount: data.deniedActionsCount } : {}),
         ...(data.actualRoute ? { actualRoute: data.actualRoute } : {}),
@@ -566,6 +579,7 @@ export function latestRouteReceipt(events: readonly DshEvent[]): Readonly<Unknow
         routeSource: data.routeSource,
         fallbackUsed: routeReceiptStatus !== "applied",
         requestedRoute: data.requestedRoute,
+        ...(data.sessionAction ? { sessionAction: data.sessionAction, routeSessionId: data.routeSessionId, sessionNotice: data.sessionNotice } : {}),
         ...(data.reasoningEffortVerification ? { reasoningEffortVerification: data.reasoningEffortVerification } : {}),
         ...(typeof data.deniedActionsCount === "number" ? { deniedActionsCount: data.deniedActionsCount } : {}),
         ...(data.actualRoute ? { actualRoute: data.actualRoute } : {}),
@@ -592,7 +606,7 @@ export function routedRoleOf(agent: DshAgent): string | undefined {
     if (event?.type !== "subagent/descriptor") continue;
     const label = event.data?.label;
     if (typeof label !== "string") return undefined;
-    const match = /^odai-(researcher|planner|reviewer|frontend|creative)(?:$|[\s:])/u.exec(label.trim());
+    const match = /^odai-(researcher|planner|reviewer|frontend|creative|writer)(?:$|[\s:])/u.exec(label.trim());
     return match && (ROUTED_ROLES as readonly string[]).includes(match[1]) ? match[1] : undefined;
   }
   return undefined;

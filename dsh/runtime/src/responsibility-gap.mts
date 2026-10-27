@@ -76,7 +76,12 @@ export interface ResponsibilityGapProposal {
   readonly question?: string;
   readonly taskMessageId?: string;
   readonly stateDigest: string;
+  readonly userNamed?: boolean;
+  readonly timing?: "start" | "completion";
 }
+
+export { recognizeNamedRequests } from "#odai-recognize-routing";
+export type { NamedRequest } from "#odai-recognize-routing";
 
 export interface ResponsibilityGapResult {
   recorded: true;

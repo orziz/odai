@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import { loadSkillBundle, readSkillBundleFile } from "../build/skill-bundle.mjs";
+import { chooseSkillBundle, loadSkillBundle, readSkillBundleFile } from "../build/skill-bundle.mjs";
 import { canonicalPrompt } from "../build/runtime-support.mjs";
 const root = resolve(import.meta.dirname, "../../../skills/odai");
 test("canonical rendering omits metadata while retaining body, source identity, and selection notices", () => {
@@ -16,10 +16,11 @@ test("canonical rendering omits metadata while retaining body, source identity, 
     rejections: [],
   });
   assert.ok(prompt.endsWith(bundle.skillBody));
+  assert.ok(bundle.roleContracts.writer.includes(readFileSync(resolve(root, "references/craft.md"), "utf8").trim()));
   assert.ok(bundle.skillText.startsWith("---\nname: odai\n"));
   assert.doesNotMatch(prompt, /^name: odai$|^description:/mu);
   assert.equal(prompt.includes(bundle.orchestration.skillBody), false);
-  assert.deepEqual(new Set(Object.keys(bundle.roleContracts)), new Set(["researcher", "planner", "reviewer", "frontend", "creative"]));
+  assert.deepEqual(new Set(Object.keys(bundle.roleContracts)), new Set(["researcher", "planner", "reviewer", "frontend", "creative", "writer"]));
   assert.ok(prompt.includes(`Canonical source: ${bundle.source} (${bundle.provider})`));
   assert.ok(prompt.includes(`runtime contract: ${bundle.manifest.runtimeContract}`));
   assert.ok(prompt.includes(`governance digest: ${bundle.governance.digest}`));
@@ -74,4 +75,33 @@ test("body extraction preserves LF, CRLF, and Markdown separators and rejects in
   }
   writeFileSync(entry, "---\nname: odai\n---\n");
   assert.throws(() => loadSkillBundle(entry), TypeError);
+});
+
+test("orchestration 0.2.2 without writer fails full role validation", (t) => {
+  const scratch = mkdtempSync(resolve(tmpdir(), "odai-old-orchestration-"));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  cpSync(resolve(root, "../odai-orchestration"), scratch, { recursive: true });
+  const file = resolve(scratch, "manifest.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  manifest.version = "0.2.2";
+  delete manifest.roleFiles.writer;
+  delete manifest.rolePresets.writer;
+  manifest.requiredFiles = manifest.requiredFiles.filter(file => !file.endsWith("/writer.md"));
+  writeFileSync(file, JSON.stringify(manifest));
+  const bundled = loadSkillBundle(resolve(root, "SKILL.md"));
+  let candidateError;
+  try {
+    loadSkillBundle(resolve(root, "SKILL.md"), { orchestrationRoot: scratch });
+  } catch (error) {
+    candidateError = error;
+  }
+  assert.match(candidateError?.message ?? "", /roleFiles has invalid fields/u);
+  for (const mode of ["auto", "user"]) {
+    const selection = chooseSkillBundle({ mode, bundled, candidateError });
+    assert.equal(selection.bundle, bundled);
+    assert.equal(selection.status, "fallback");
+    assert.equal(selection.reasonCode, "external-invalid");
+    assert.match(canonicalPrompt({ ...selection, rejections: [] }), /Selection fallback: external-invalid.*roleFiles has invalid fields/u);
+    assert.ok(selection.bundle.roleContracts.writer);
+  }
 });

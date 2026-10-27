@@ -279,3 +279,48 @@ test("local route probes do not call the API resolver and equality includes back
   assert.equal(sameModelRoute(api, { ...api }), true);
   assert.equal(sameModelRoute(api, { ...api, maxTokens: 500 }), false);
 });
+
+test("writer mappings persist API and local CLI options without an implicit dispatch or in-place budget", async (t) => {
+  const path = fixture(t);
+  const tool = createRoutingConfigTool(path);
+  assert.ok(tool.parameters.properties.responsibility.enum.includes("writer"));
+  assert.ok(tool.output.schema.properties.roles.properties.writer);
+  for (const route of [api, local]) {
+    const configured = resolveConfig({ routing: { roles: { writer: route } } });
+    assert.deepEqual(configured.routing.roles.writer, route);
+    assert.equal(configured.routing.dispatch.writer, undefined);
+    const result = await applyRoutingConfigAction(path, { action: "set", responsibility: "writer", ...route });
+    assert.deepEqual(result.roles.writer, route);
+    assert.equal(result.dispatch.writer, undefined);
+    assert.deepEqual(readRoutingStore(path).roles.writer, route);
+    assert.equal(readRoutingStore(path).schemaVersion, route.backend === "local-cli" ? 3 : 2);
+    assert.deepEqual(resolveInPlaceResponsibilityOutputBudgets({ concise: true, maxTokens: 500 }, { writer: route }), undefined);
+    await applyRoutingConfigAction(path, { action: "set-dispatch", responsibility: "writer", dispatch: "child" });
+    assert.equal(readRoutingStore(path).dispatch.writer, "child");
+    await applyRoutingConfigAction(path, { action: "reset-dispatch", responsibility: "writer" });
+    assert.equal(readRoutingStore(path).dispatch.writer, undefined);
+  }
+  await applyRoutingConfigAction(path, { action: "remove", responsibility: "writer" });
+  assert.deepEqual(readRoutingStore(path).roles, {});
+  assert.equal(readRoutingStore(path).schemaVersion, 2);
+});
+
+test("writer rejects same-turn for API, local CLI, and dispatch-only configuration without writing", async (t) => {
+  const path = fixture(t);
+  const error = /writer.*child.*same-turn/;
+  for (const route of [api, local, undefined]) {
+    const roles = route ? { writer: route } : {};
+    store(path, roles, {}, route?.backend === "local-cli" ? 3 : 2);
+    const before = readFileSync(path, "utf8");
+    await assert.rejects(applyRoutingConfigAction(path, { action: "set-dispatch", responsibility: "writer", dispatch: "same-turn" }), error);
+    assert.equal(readFileSync(path, "utf8"), before);
+    assert.throws(() => resolveConfig({ routing: { roles, dispatch: { writer: "same-turn" } } }), error);
+    assert.throws(() => effectiveRoutingSnapshot(path, {}, { writer: "same-turn" }), error);
+    await assert.rejects(applyRoutingConfigAction(path, { action: "set", responsibility: "writer", ...(route ?? api) }, {
+      configuredDispatch: { writer: "same-turn" },
+    }), error);
+    assert.equal(readFileSync(path, "utf8"), before);
+    store(path, roles, { writer: "same-turn" });
+    assert.throws(() => readRoutingStore(path), error);
+  }
+});

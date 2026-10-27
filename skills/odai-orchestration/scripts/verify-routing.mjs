@@ -9,12 +9,12 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const mappings = new Map([["odai_researcher", "researcher"], ["odai_planner", "planner"], ["odai_reviewer", "reviewer"], ["odai_frontend", "frontend"], ["odai_creative", "creative"]]);
+const mappings = new Map([["odai_researcher", "researcher"], ["odai_planner", "planner"], ["odai_reviewer", "reviewer"], ["odai_frontend", "frontend"], ["odai_creative", "creative"], ["odai_writer", "writer"]]);
 
 if (args.help) {
   console.log(`Usage:
   node odai-verify-routing.mjs --host codex --project <directory> \\
-    --role <odai_researcher|odai_planner|odai_reviewer|odai_frontend|odai_creative> --after <ISO timestamp> \\
+    --role <odai_researcher|odai_planner|odai_reviewer|odai_frontend|odai_creative|odai_writer> --after <ISO timestamp> \\
     [--agent-path </root/task>] [--sessions <directory>]
 
 只读取近期 Codex rollout metadata，把实际角色、模型与推理档和 odai 托管清单对账。`);

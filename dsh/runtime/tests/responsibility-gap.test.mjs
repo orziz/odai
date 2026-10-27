@@ -6,6 +6,63 @@ import {
   isBoundRequirementLedger,
   resolveResponsibilityGap,
 } from "../build/responsibility-gap.mjs";
+import { recognizeNamedRequests } from "../build/responsibility-gap.mjs";
+export const namedRoutes = {
+  planner: { backend: "local-cli", cli: "claude", model: "opus" },
+  reviewer: { backend: "local-cli", cli: "claude", model: "opus" },
+  creative: { backend: "local-cli", cli: "claude", model: "opus" },
+  writer: { backend: "local-cli", cli: "antigravity", model: "gemini" },
+  frontend: { backend: "local-cli", cli: "antigravity", model: "gemini" },
+};
+export const namedExamples = [
+  ["先让 Claude 规划一下再动手", [["planner", "start"]]],
+  ["做完让 Claude 验收", [["reviewer", "completion"]]],
+  ["先让 Claude 规划，做完再让 Claude 验收", [["planner", "start"], ["reviewer", "completion"]]],
+  ["文案让 Gemini 写", [["writer", "start"]]],
+  ["让 Claude 定方向，Gemini 写文案，写完让 Claude 审", [["creative", "start"], ["writer", "start"], ["creative", "completion"]]],
+  ["让 Claude 写这段文案", [["creative", "start"]]],
+  ["用 Gemini 做这个页面的界面", [["frontend", "start"]]],
+  ["have Claude plan this first, then let Claude review when done", [["planner", "start"], ["reviewer", "completion"]]],
+];
+export const notNamedExamples = [
+  '“让 Claude 规划”', '"让 Claude 规划"', '`让 Claude 规划`', '‘让 Claude 规划’', '> 让 Claude 规划',
+  "你规划了吗", "上次 Claude 审过了", "Claude 的规划写得不错",
+  "规划用本机 claude opus，推理档 max", "以后文案都让 Gemini 写",
+  "给 odai 加一个让 Claude 规划的开关", "写一下让 Claude 审查代码的测试", "先规划一下再做",
+];
+for (const [text, expected] of namedExamples) test(`named delegation: ${text}`, () => {
+  assert.deepEqual(recognizeNamedRequests(text, namedRoutes).map(({ responsibility, timing }) => [responsibility, timing]), expected);
+});
+for (const text of notNamedExamples) test(`not a named delegation: ${text}`, () => assert.deepEqual(recognizeNamedRequests(text, namedRoutes), []));
+test("named mappings fail closed and cancellation does not request dispatch", () => {
+  assert.equal(recognizeNamedRequests("让 Claude 规划", { ...namedRoutes, planner: { provider: "openai", model: "gpt" } })[0].issue, "mapping-mismatch");
+  assert.equal(recognizeNamedRequests("文案让 Gemini 写", { ...namedRoutes, writer: undefined })[0].issue, "mapping-mismatch");
+  assert.equal(recognizeNamedRequests("不用让 Claude 审了", namedRoutes)[0].canceled, true);
+});
+export const reviewExamples = [
+  ["做完让 Claude 验收，记得跑测试", namedRoutes, [["reviewer", "completion"]]],
+  ["先让 Claude 规划一下配置文件的迁移", namedRoutes, [["planner", "start"]]],
+  ["先让 Claude 规划，做完跑一下单元测试，再让 Claude 验收", namedRoutes, [["planner", "start"], ["reviewer", "completion"]]],
+  ["做完让 Claude 验收，默认分支是 main", namedRoutes, [["reviewer", "completion"]]],
+  ["先让 Claude 规划一下这个开关怎么实现", namedRoutes, [["planner", "start"]]],
+  ...["请审查一下这段代码", "请规划一下路线", "请调查一下这个报错的原因"].map(text => [text, namedRoutes, []]),
+  ["让 Claude 定方向，GPT 实现，做完让 Claude 验收代码", namedRoutes, [["creative", "start"], ["reviewer", "completion"]]],
+  ["做完让 Kimi 验收", { reviewer: { provider: "kimi", model: "kimi-coding" } }, [["reviewer", "completion"]]],
+  ["做完让 DeepSeek 验收", { reviewer: { provider: "custom", model: "deepseek-v4-pro" } }, [["reviewer", "completion"]]],
+  ["做完让 KIMI 验收", { reviewer: { provider: "custom", model: "kimi-coding" } }, [["reviewer", "completion"]]],
+  ["做完让 Kimi 验收", namedRoutes, []],
+];
+for (const [text, routes, expected] of reviewExamples) test(`review regression: ${text} (${JSON.stringify(routes)})`, () => {
+  const actual = recognizeNamedRequests(text, routes);
+  assert.deepEqual(actual.map(({ responsibility, timing }) => [responsibility, timing]), expected);
+  assert.ok(actual.every(item => !item.issue));
+});
+for (const text of ["交给审查", "让审查职责检查代码", "请 reviewer 检查代码"]) test(`explicit role object: ${text}`, () => {
+  assert.equal(recognizeNamedRequests(text, namedRoutes)[0]?.responsibility, "reviewer");
+});
+for (const text of ["做完让 ordinary 验收", "做完让 Kimiko 验收", "给 odai 写一个让 Kimi 验收的测试"]) test(`bounded names: ${text}`, () => {
+  assert.deepEqual(recognizeNamedRequests(text, { reviewer: { provider: "custom", model: "kimi-coding" } }), []);
+});
 test("responsibility gaps are structured, grounded, and content addressed", () => {
   const proposal = resolveResponsibilityGap({
     responsibility: "planner",

@@ -7,6 +7,7 @@ export interface LocalCliRoute {
   /** Validated by the selected CLI adapter. */
   reasoningEffort?: string;
   timeoutSeconds?: number;
+  session?: "fresh" | "continue";
   provider?: never;
   maxTokens?: never;
 }
@@ -31,6 +32,8 @@ export interface LocalCliParsedResult {
   actualReasoningEffort?: string;
   sessionId?: string;
   deniedActionsCount?: number;
+  boundaryStatus?: "boundary-violation";
+  boundaryTools?: string[];
 }
 
 export interface LocalCliExecutionResult extends Omit<LocalCliParsedResult, "status"> {
@@ -45,6 +48,7 @@ export interface ExecuteLocalCliOptions {
   prompt: string;
   cwd: string;
   signal?: AbortSignal;
+  resumeSessionId?: string;
   env?: NodeJS.ProcessEnv;
   /** Test seam. Injected spawns use child.kill unless killProcess is also supplied. */
   spawnProcess?: typeof spawn;
@@ -57,6 +61,8 @@ export interface ExecuteLocalCliOptions {
 }
 
 export interface LocalCliContext {
+  sessionId?: string;
+  resumeSessionId?: string;
   cwd?: string;
   prompt?: string;
   promptFile?: string;
@@ -73,3 +79,5 @@ export function parseLocalCliResult(stdout: string, requestedRoute: string | Loc
  * the direct child; process-tree cleanup on Windows is not verified.
  */
 export function executeLocalCli(options: ExecuteLocalCliOptions): Promise<LocalCliExecutionResult>;
+
+export const AGY_READ_ONLY_TOOLS: readonly string[];

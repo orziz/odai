@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 process.on("uncaughtException", (error) => {
   console.error(error?.message || String(error));
@@ -15,17 +15,18 @@ process.on("uncaughtException", (error) => {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const supportedRoles = new Set(["controller", "researcher", "planner", "reviewer", "frontend", "creative"]);
+const supportedRoles = new Set(["controller", "researcher", "planner", "reviewer", "frontend", "creative", "writer"]);
 
 if (args.help) {
   console.log(`Usage:
-  node .codex/odai-run-role.mjs --role <controller|researcher|planner|reviewer|frontend|creative> \\
+  node .codex/odai-run-role.mjs --role <controller|researcher|planner|reviewer|frontend|creative|writer> \\
     [--input FILE] [--output FILE] [--evidence FILE] [--cwd PATH] [--manifest FILE] \\
-    [--codex-bin FILE] [--sandbox MODE] [--session-id ID] [--closeout-ids A1,A2]
+    [--session-key KEY] [--codex-bin FILE] [--sandbox MODE] [--session-id ID] [--closeout-ids A1,A2]
 
 从 odai 托管清单取得角色、模型与推理档，运行一次实际责任并记录可核对证据。
-Claude 宿主使用 .claude/odai-run-role.mjs，仅支持非 controller 的 codex/antigravity/grok 本机 CLI 映射；
-未传 --evidence 时保存到执行器同目录 role-evidence/。--timeout 可覆盖本机 CLI 超时（1–7200 整数秒）。
+Claude 宿主使用 .claude/odai-run-role.mjs；Codex 宿主支持 claude/antigravity/grok 本机 CLI。
+--session-key 为缺少宿主环境变量时显式提供的宿主会话唯一键；
+未传 --evidence 时，Codex 本机 CLI 保存到当前项目 .odai/role-evidence/，Claude 保存到执行器同目录 role-evidence/。--timeout 可覆盖本机 CLI 超时（1–7200 整数秒）。
 --codex-bin、--sandbox、--session-id、--closeout-ids 仅用于 Codex 宿主。`);
   process.exit(0);
 }
@@ -36,13 +37,14 @@ const manifest = readJson(manifestFile, "路由清单");
 if (manifest.id !== "odai-routing-installation" || !["codex", "claude"].includes(manifest.host)) fail("路由清单不是 Codex 或 Claude odai 托管安装");
 const mapping = manifest.mapping?.[args.role];
 if (manifest.host === "codex" && !mapping?.model) fail(`路由清单缺少 ${args.role} 映射`);
-if (manifest.host === "codex" && mapping.backend === "local-cli") fail("Codex 宿主尚不支持 local-cli 映射");
+
 
 const workdir = path.resolve(args.cwd || process.cwd());
-if (manifest.host === "claude") await runLocalRole();
+if (manifest.host === "claude" || mapping?.backend === "local-cli") await runLocalRole();
 else runCodexRole();
 
 function runCodexRole() {
+  if (mapping.session === "continue") fail("Codex 原生角色暂不支持会话续接：证据不足");
   const input = args.input ? readFileSync(path.resolve(args.input), "utf8").trim() : readFileSync(0, "utf8").trim();
   if (!input) fail("角色输入为空");
   const contractFile = path.join(scriptDir, "role-contracts", `odai-${args.role}.md`);
@@ -56,7 +58,7 @@ function runCodexRole() {
   mkdirSync(path.dirname(outputFile), { recursive: true });
 
   try {
-    const readOnly = ["researcher", "planner", "reviewer", "creative"].includes(args.role);
+    const readOnly = ["researcher", "planner", "reviewer", "creative", "writer"].includes(args.role);
     const closeoutIds = parseCloseoutIds(args.closeoutIds);
     const schemaFile = closeoutIds.length > 0 ? writeCloseoutSchema(temporary, closeoutIds) : "";
     const hostOwnsRouting = process.env.ODAI_ROUTING_ACTIVE === "1";
@@ -143,20 +145,23 @@ function runCodexRole() {
 }
 
 async function runLocalRole() {
-  const evidenceFile = path.resolve(args.evidence || path.join(scriptDir, "role-evidence", `${args.role}-${Date.now()}-${randomUUID()}.json`));
+  const stateBase = manifest.host === "codex" ? path.join(workdir, ".odai") : scriptDir;
+  const evidenceFile = path.resolve(args.evidence || path.join(stateBase, "role-evidence", `${args.role}-${Date.now()}-${randomUUID()}.json`));
   const outputFile = args.output ? path.resolve(args.output) : null;
   const startedAt = new Date().toISOString();
   const started = Date.now();
   let result;
   let error;
+  let sessionEvidence;
+  let unlock;
   try {
-    if (args.role === "controller") fail("Claude 宿主的 controller 不支持 local-cli 映射");
-    if (mapping?.backend !== "local-cli" || !["codex", "antigravity", "grok"].includes(mapping.cli)) {
+    if (args.role === "controller") fail("controller 不支持 local-cli 映射");
+    if (mapping?.backend !== "local-cli" || !(manifest.host === "codex" ? ["claude", "antigravity", "grok"] : ["codex", "antigravity", "grok"]).includes(mapping.cli)) {
       fail("Claude 宿主执行器仅接受 codex、antigravity 或 grok 的 local-cli 映射");
     }
     const unsupported = ["--codex-bin", "--sandbox", "--session-id", "--closeout-ids"].filter((option) => args.supplied.has(option));
     if (unsupported.length) fail(`Claude 本机 CLI 分支不支持 Codex 专有选项：${unsupported.join("、")}`);
-    const allowedFields = new Set(["backend", "cli", "model", "reasoning_effort", "timeoutSeconds"]);
+    const allowedFields = new Set(["backend", "cli", "model", "reasoning_effort", "timeoutSeconds", "session"]);
     for (const key of Object.keys(mapping)) {
       if (!allowedFields.has(key)) fail(`未知本机 CLI 映射字段：${key}`);
     }
@@ -166,6 +171,7 @@ async function runLocalRole() {
     const route = validateLocalCliRoute({
       backend: mapping.backend, cli: mapping.cli, model: mapping.model,
       ...(mapping.reasoning_effort != null ? { reasoningEffort: mapping.reasoning_effort } : {}),
+      ...(mapping.session !== undefined ? { session: mapping.session } : {}),
       ...(mapping.timeoutSeconds !== undefined ? { timeoutSeconds: mapping.timeoutSeconds } : {}),
     });
     // Only an explicit flag overrides the shared executor's 1200-second default.
@@ -176,7 +182,54 @@ async function runLocalRole() {
     const contractFile = path.join(scriptDir, "role-contracts", `odai-${args.role}.md`);
     if (!existsSync(contractFile)) fail(`缺少角色契约：${contractFile}`);
     const contract = readFileSync(contractFile, "utf8");
-    result = await executeLocalCli({ route, prompt: `${contract}\n\n${input}`, cwd: workdir });
+    const invoke = resumeSessionId => executeLocalCli({ route, prompt: `${contract}\n\n${input}`, cwd: workdir, ...(resumeSessionId ? { resumeSessionId } : {}) });
+    let stateFile;
+    let previous;
+    if (route.session === "continue") {
+      const hostSession = (manifest.host === "codex" ? process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID : process.env.CLAUDE_CODE_SESSION_ID || process.env.CODEX_THREAD_ID) || args.sessionKey;
+      if (!hostSession) fail("会话续接缺少宿主会话键；请显式传 --session-key");
+      const key = createHash("sha256").update(JSON.stringify([manifest.host, hostSession, route.backend, route.cli, route.model])).digest("hex");
+      const stateRoot = path.join(stateBase, "role-sessions");
+      mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+      stateFile = path.join(stateRoot, `${key}.json`);
+      const lock = `${stateFile}.lock`;
+      const deadline = Date.now() + args.timeout * 1000;
+      while (true) {
+        try { mkdirSync(lock, { mode: 0o700 }); break; }
+        catch (failure) {
+          if (failure.code !== "EEXIST") throw failure;
+          if (Date.now() >= deadline) fail(`等待会话锁超时：${lock}；确认没有运行进程后再移除遗留锁`);
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      unlock = () => rmSync(lock, { recursive: true });
+      try {
+        if (existsSync(stateFile)) {
+          previous = JSON.parse(readFileSync(stateFile, "utf8")).sessionId;
+          if (typeof previous !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(previous)) throw new Error("Invalid saved session ID");
+        }
+      }
+      catch { sessionEvidence = { mode: "resume-failed-created", notice: "续接状态损坏，已新开" }; }
+    }
+    result = await invoke(previous);
+    if (previous) {
+      sessionEvidence = { mode: "resumed" };
+      if (result.status === "error" && !result.boundaryStatus) {
+        result = await invoke();
+        sessionEvidence = { mode: "resume-failed-created", notice: "续接失败，已新开" };
+      }
+    }
+    if (stateFile && result.status === "completed" && !result.sessionId) { result = { ...result, status: "error", error: "后端未提供可续接会话标识" }; }
+    if (stateFile) {
+      sessionEvidence ||= { mode: "created" };
+      if (sessionEvidence.notice) console.error(sessionEvidence.notice);
+      // Clear stale state after failed resume; only verified handbacks become reusable.
+      if (result.status === "completed" && result.modelVerified && result.modelVerification === "verified" && result.reasoningEffortVerification !== "mismatch" && result.text?.trim() && result.sessionId) {
+        const temporaryState = `${stateFile}.${randomUUID()}.tmp`;
+        writeFileSync(temporaryState, JSON.stringify({ sessionId: result.sessionId }), { mode: 0o600 });
+        renameSync(temporaryState, stateFile);
+      } else if (existsSync(stateFile)) rmSync(stateFile);
+    }
     if (result.status !== "completed") fail(result.error || `本机 CLI 未完成：${result.status}`);
     if (result.exitCode !== 0) fail(`本机 CLI 退出状态异常：${result.exitCode ?? "unknown"}`);
     if (typeof result.text !== "string" || !result.text.trim()) fail("角色没有形成输出");
@@ -195,6 +248,7 @@ async function runLocalRole() {
   } catch (failure) {
     error = failure instanceof Error ? failure : new Error(String(failure));
   }
+  if (unlock) unlock();
   const provider = `local-cli:${mapping?.cli || "unknown"}`;
   const evidence = {
     version: 1,
@@ -203,6 +257,7 @@ async function runLocalRole() {
     observed: {
       provider,
       session_id: result?.sessionId || null,
+      ...(sessionEvidence ? { session: sessionEvidence } : {}),
       models: result?.actualModel ? [result.actualModel] : [],
       model_verified: result?.modelVerified === true,
       model_verification: result?.modelVerification || "missing",
@@ -308,7 +363,7 @@ function parseArgs(values) {
   const result = { role: "", input: "", output: "", evidence: "", cwd: "", manifest: "", codexBin: "", sandbox: "workspace-write", sessionId: "", closeoutIds: "", timeout: 900, help: false, supplied: new Set() };
   const fields = new Map([
     ["--role", "role"], ["--input", "input"], ["--output", "output"], ["--evidence", "evidence"], ["--cwd", "cwd"],
-    ["--manifest", "manifest"], ["--codex-bin", "codexBin"], ["--sandbox", "sandbox"], ["--session-id", "sessionId"], ["--closeout-ids", "closeoutIds"], ["--timeout", "timeout"],
+    ["--session-key", "sessionKey"], ["--manifest", "manifest"], ["--codex-bin", "codexBin"], ["--sandbox", "sandbox"], ["--session-id", "sessionId"], ["--closeout-ids", "closeoutIds"], ["--timeout", "timeout"],
   ]);
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];

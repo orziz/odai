@@ -2,9 +2,9 @@
 export const RUNTIME_CONTRACT = 9;
 export const MANIFEST_SCHEMA = 1;
 export const ORCHESTRATION_URL = new URL("../", import.meta.url);
-export const ROLE_NAMES = Object.freeze(["controller", "researcher", "planner", "reviewer", "frontend", "creative"]);
+export const ROLE_NAMES = Object.freeze(["controller", "researcher", "planner", "reviewer", "frontend", "creative", "writer"]);
 export const REFERENCE_NAMES = Object.freeze(["dao", "planning", "craft", "verification", "memory", "leverage", "care", "human-safety", "orchestration"]);
-const REQUIRED_REFERENCES = { controller: ["orchestration"], researcher: [], planner: ["planning"], reviewer: ["verification"], frontend: ["craft"], creative: ["craft"] };
+const REQUIRED_REFERENCES = { controller: ["orchestration"], researcher: [], planner: ["planning"], reviewer: ["verification"], frontend: ["craft"], creative: ["craft"], writer: ["craft"] };
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
   return value;
@@ -24,13 +24,14 @@ export function validateCompositionManifest(manifest) {
   if (typeof manifest.version !== "string" || !manifest.version) throw new TypeError("orchestration version is required");
   if (!Array.isArray(manifest.requiredFiles) || manifest.requiredFiles.some(file => !safePath(file))
     || new Set(manifest.requiredFiles).size !== manifest.requiredFiles.length) throw new TypeError("invalid orchestration requiredFiles");
-  exactKeys(manifest.roleFiles, ROLE_NAMES, "roleFiles");
-  exactKeys(manifest.rolePresets, ROLE_NAMES, "rolePresets");
+  const roles = ROLE_NAMES;
+  exactKeys(manifest.roleFiles, roles, "roleFiles");
+  exactKeys(manifest.rolePresets, roles, "rolePresets");
   exactKeys(manifest.referenceFiles, ["orchestration"], "referenceFiles");
   const owned = [manifest.delegationFile, ...Object.values(manifest.roleFiles), ...Object.values(manifest.referenceFiles)];
   if (new Set(owned).size !== owned.length || owned.some(file => !safePath(file) || !manifest.requiredFiles.includes(file))) throw new TypeError("orchestration owners must use distinct declared files");
   const presets = {};
-  for (const role of ROLE_NAMES) {
+  for (const role of roles) {
     const preset = manifest.rolePresets[role];
     exactKeys(preset, ["references"], `rolePresets.${role}`);
     if (!Array.isArray(preset.references) || new Set(preset.references).size !== preset.references.length

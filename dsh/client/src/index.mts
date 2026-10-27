@@ -1,11 +1,12 @@
 type ClientModule = Record<string | symbol, unknown>;
 type ClientRequire = (id: string) => any;
 type UnknownRecord = Record<string, any>;
-type Role = "controller" | "researcher" | "planner" | "reviewer" | "frontend" | "creative";
+type Role = "controller" | "researcher" | "planner" | "reviewer" | "frontend" | "creative" | "writer";
 type Responsibility = Exclude<Role, "controller">;
 type TraceState = "proposal" | "accepted" | "decision" | "direct" | "same-turn" | "child" | "handback" | "blocked" | "interrupted" | "configured" | "evidence";
 
 interface ModelRoute {
+  session?: "fresh" | "continue";
   backend?: "local-cli";
   cli?: "claude" | "codex" | "antigravity" | "grok";
   timeoutSeconds?: number;
@@ -82,7 +83,7 @@ window.__ModuleLoader__.load({
     const ReactDOM = require_("react-dom");
     const { createElement: h, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React;
     const PACKAGE_ID: string = "__ODAI_CLIENT_PACKAGE__";
-    const ROLES: readonly Responsibility[] = Object.freeze(["researcher", "planner", "reviewer", "frontend", "creative"]);
+    const ROLES: readonly Responsibility[] = Object.freeze(["researcher", "planner", "reviewer", "frontend", "creative", "writer"]);
     const ROLE_LABELS: Readonly<Record<Role, string>> = Object.freeze({
       controller: "总控",
       researcher: "调查",
@@ -90,6 +91,7 @@ window.__ModuleLoader__.load({
       reviewer: "审查",
       frontend: "设计",
       creative: "创意",
+      writer: "写作",
     });
     const STATE_LABELS: Readonly<Record<TraceState, string>> = Object.freeze({
       proposal: "已提议",
@@ -136,7 +138,7 @@ window.__ModuleLoader__.load({
       return ROLES.includes(role);
     }
 
-    interface RouteForm { backend: "provider" | "local-cli"; cli: string; provider: string; model: string; effort: string; maxTokens: string; timeoutSeconds: string }
+    interface RouteForm { backend: "provider" | "local-cli"; cli: string; provider: string; model: string; effort: string; maxTokens: string; timeoutSeconds: string; session?: "fresh" | "continue" }
 
     // Returns the set payload, or undefined while the form cannot be saved.
     function routeEditorPayload(role: Responsibility, form: RouteForm): RoutingAction | undefined {
@@ -148,6 +150,7 @@ window.__ModuleLoader__.load({
         const timeout = form.timeoutSeconds.trim();
         if (timeout && (!positiveInteger(timeout) || Number(timeout) > 7200)) return undefined;
         return {
+          ...(form.session ? { session: form.session } : {}),
           action: "set", responsibility: role, backend: "local-cli", cli: form.cli, model,
           ...(effort ? { reasoningEffort: effort } : {}),
           ...(timeout ? { timeoutSeconds: Number(timeout) } : {}),
@@ -157,6 +160,7 @@ window.__ModuleLoader__.load({
       const maxTokens = form.maxTokens.trim();
       if (!provider || (maxTokens && !positiveInteger(maxTokens))) return undefined;
       return {
+        ...(form.session ? { session: form.session } : {}),
         action: "set", responsibility: role, provider, model,
         ...(effort ? { reasoningEffort: effort } : {}),
         ...(maxTokens ? { maxTokens: Number(maxTokens) } : {}),
@@ -224,6 +228,7 @@ window.__ModuleLoader__.load({
       if (!route || !text(route.model)) return undefined;
       if (route.backend === "local-cli" && (route.cli === "claude" || route.cli === "codex" || route.cli === "antigravity" || route.cli === "grok")) return Object.freeze({
         backend: "local-cli", cli: route.cli, model: text(route.model),
+        ...(route.session === "fresh" || route.session === "continue" ? { session: route.session } : {}),
         reasoningEffort: text(route.reasoningEffort) || undefined,
         timeoutSeconds: positiveInteger(route.timeoutSeconds),
       });
@@ -231,6 +236,7 @@ window.__ModuleLoader__.load({
       return Object.freeze({
         provider: text(route.provider),
         model: text(route.model),
+        ...(route.session === "fresh" || route.session === "continue" ? { session: route.session } : {}),
         reasoningEffort: text(route.reasoningEffort) || undefined,
         maxTokens: positiveInteger(route.maxTokens),
       });
@@ -568,12 +574,13 @@ window.__ModuleLoader__.load({
       const route = config?.roles?.[role];
       const source = config?.sources?.[role];
       const localCli = route?.backend === "local-cli";
-      const childOnly = role === "creative" || localCli;
+      const childOnly = role === "creative" || role === "writer" || localCli;
       const dispatch = config?.dispatch?.[role];
       const dispatchSource = config?.dispatchSources?.[role];
       const [editing, setEditing] = useState(false);
       const [provider, setProvider] = useState(route?.provider ?? "");
       const [model, setModel] = useState(route?.model ?? "");
+      const [session, setSession] = useState(route?.session ?? "fresh");
       const [effort, setEffort] = useState(route?.reasoningEffort ?? "");
       const [maxTokens, setMaxTokens] = useState(route?.maxTokens ? String(route.maxTokens) : "");
       const [timeoutSeconds, setTimeoutSeconds] = useState(route?.timeoutSeconds ? String(route.timeoutSeconds) : "");
@@ -587,6 +594,7 @@ window.__ModuleLoader__.load({
         setCli(route?.cli ?? "claude");
         setProvider(route?.provider ?? "");
         setModel(route?.model ?? "");
+        setSession(route?.session ?? "fresh");
         setEffort(route?.reasoningEffort ?? "");
         setMaxTokens(route?.maxTokens ? String(route.maxTokens) : "");
         setTimeoutSeconds(route?.timeoutSeconds ? String(route.timeoutSeconds) : "");
@@ -594,7 +602,7 @@ window.__ModuleLoader__.load({
 
       const formCli = backend === "local-cli";
       const efforts = LOCAL_CLI_OPTIONS.find((option) => option.id === cli)?.efforts;
-      const payload = routeEditorPayload(role, { backend, cli, provider, model, effort, maxTokens, timeoutSeconds });
+      const payload = routeEditorPayload(role, { backend, cli, provider, model, effort, maxTokens, timeoutSeconds, session });
       const save = () => payload ? onApply(payload).then(() => setEditing(false)) : undefined;
       const remove = () => {
         if (!window.confirm(`确认移除“${ROLE_LABELS[role]}”的本地模型映射？`)) return;
@@ -610,7 +618,7 @@ window.__ModuleLoader__.load({
           h(RoleBadge, { role }),
           h("div", { className: "odaiCC__routeValue" },
             h("strong", null, formatRoute(route)),
-            h("span", null, sourceLabel(source)),
+            h("span", null, sourceLabel(source), route?.session === "continue" ? " · 会话续接" : ""),
           ),
           h("button", { type: "button", className: "odaiCC__quietButton", onClick: () => setEditing((value: boolean) => !value), disabled: busy }, editing ? "取消" : "编辑"),
         ),
@@ -646,6 +654,7 @@ window.__ModuleLoader__.load({
           formCli
             ? h("label", null, h("span", null, "超时（秒）"), h("input", { value: timeoutSeconds, onChange: (event: { target: { value: string } }) => setTimeoutSeconds(event.target.value), inputMode: "numeric", placeholder: "可选，默认 1200", disabled: busy }))
             : h("label", null, h("span", null, "最大 tokens"), h("input", { value: maxTokens, onChange: (event: { target: { value: string } }) => setMaxTokens(event.target.value), inputMode: "numeric", placeholder: "可选", disabled: busy })),
+          h("label", null, h("span", null, "会话续接"), h("select", { value: session, onChange: (event: { target: { value: string } }) => setSession(event.target.value), disabled: busy }, h("option", { value: "fresh" }, "每次新开（默认）"), h("option", { value: "continue" }, "续接（不支持的后端会明确报错）"))),
           h("div", { className: "odaiCC__formActions" },
             route ? h("button", { type: "button", className: "odaiCC__dangerButton", onClick: remove, disabled: busy }, "移除映射") : null,
             h("button", { type: "button", className: "odaiCC__primaryButton", onClick: save, disabled: busy || !payload }, busy ? "正在验证…" : (formCli ? "保存" : "验证并保存")),

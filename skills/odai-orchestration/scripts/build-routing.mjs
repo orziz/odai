@@ -43,17 +43,21 @@ function printHelp() {
   console.log(`Usage:
   node skills/odai-orchestration/scripts/build-routing.mjs --host <codex|claude|copilot> --out <directory> [--governance-root <path>] \\
     --controller-model <model> --planner-model <model> --reviewer-model <model> \\
-    [--researcher-model <model>] [--frontend-model <model>] [--creative-model <model>] [--controller-effort <effort>] \\
+    [--researcher-model <model>] [--frontend-model <model>] [--creative-model <model>] [--writer-model <model>] [--controller-effort <effort>] \\
     [--researcher-effort <effort>] [--planner-effort <effort>] [--reviewer-effort <effort>] \\
-    [--frontend-effort <effort>] [--creative-effort <effort>] [--verifier-command <command>]
-  Claude Code only: [--<role>-cli <codex|antigravity|grok>] (non-controller roles)
+    [--frontend-effort <effort>] [--creative-effort <effort>] [--writer-effort <effort>] [--verifier-command <command>]
+  Claude: [--<role>-cli <codex|antigravity|grok>]; Codex: [--<role>-cli <claude|antigravity|grok>]\n  [--<role>-session <fresh|continue>] (non-controller roles)\n  [--named-dispatch] [--lead-mode] (Claude / Codex only)
 
-生成 odai 的可选宿主 auto 路由适配器。一个持续总控负责实施整合与最终交付，只在证据压缩、独立规划、独立验收、前端专业制作或创意专业判断能改变结果时调用相应责任；researcher、frontend 与 creative 映射默认不生成。Claude Code 可把非 controller 职责显式映射到只读本机 CLI；不增加第二总控或隐藏的每轮前置流程。`);
+生成 odai 的可选宿主 auto 路由适配器。一个持续总控负责实施整合与最终交付，只在证据压缩、独立规划、独立验收、前端专业制作或创意专业判断能改变结果时调用相应责任；researcher、frontend、creative 与 writer 映射默认不生成。Claude Code 可把非 controller 职责显式映射到只读本机 CLI；不增加第二总控或隐藏的每轮前置流程。`);
   process.exit(0);
 }
 
 assertKnownArgs();
 const host = option("--host");
+const leadMode = argv.includes("--lead-mode");
+if (leadMode && !["claude", "codex"].includes(host)) throw new Error("--lead-mode requires claude or codex");
+const namedDispatch = argv.includes("--named-dispatch");
+if (namedDispatch && !["claude", "codex"].includes(host)) throw new Error("--named-dispatch requires claude or codex");
 const out = option("--out");
 const models = {
   controller: option("--controller-model"),
@@ -62,6 +66,7 @@ const models = {
   reviewer: option("--reviewer-model"),
   frontend: option("--frontend-model"),
   creative: option("--creative-model"),
+  writer: option("--writer-model"),
 };
 const efforts = {
   controller: option("--controller-effort"),
@@ -70,20 +75,31 @@ const efforts = {
   reviewer: option("--reviewer-effort"),
   frontend: option("--frontend-effort"),
   creative: option("--creative-effort"),
+  writer: option("--writer-effort"),
 };
 const localRoutes = {};
-for (const role of ["researcher", "planner", "reviewer", "frontend", "creative"]) {
+for (const role of ["researcher", "planner", "reviewer", "frontend", "creative", "writer"]) {
   const cli = option(`--${role}-cli`);
   if (!cli) continue;
-  if (host !== "claude") throw new Error(`--${role}-cli is only supported with --host claude`);
-  if (!["codex", "antigravity", "grok"].includes(cli)) throw new Error(`--${role}-cli must be codex, antigravity, or grok`);
+  if (!["claude", "codex"].includes(host)) throw new Error(`--${role}-cli requires claude or codex`);
+  if (!(host === "codex" ? ["claude", "antigravity", "grok"] : ["codex", "antigravity", "grok"]).includes(cli)) throw new Error(`--${role}-cli must be ${host === "codex" ? "claude" : "codex"}, antigravity, or grok`);
   localRoutes[role] = validateLocalCliRoute({ backend: "local-cli", cli, model: models[role],
     ...(efforts[role] ? { reasoningEffort: efforts[role] } : {}) });
+}
+const sessions = {};
+for (const role of Object.keys(models)) {
+  const session = option(`--${role}-session`);
+  if (!session) continue;
+  if (role === "controller" || host === "copilot" || !models[role] || !["fresh", "continue"].includes(session)) throw new Error("Invalid role session mapping");
+  if (session === "continue" && localRoutes[role]) validateLocalCliRoute({ ...localRoutes[role], session });
+  if (session === "continue" && host === "codex" && !localRoutes[role]) throw new Error("Codex 原生角色暂不支持会话续接：证据不足");
+  sessions[role] = session;
 }
 const hasLocalRoutes = Object.keys(localRoutes).length > 0;
 const roleMapping = (role) => ({
   ...(localRoutes[role] ? { backend: "local-cli", cli: localRoutes[role].cli } : { provider: host }),
   model: models[role], reasoning_effort: efforts[role] || null,
+  ...(sessions[role] ? { session: sessions[role] } : {}),
 });
 const verifierCommand = option("--verifier-command") || "node .codex/odai-verify-routing.mjs";
 const requiredRoles = ["controller", "planner", "reviewer"];
@@ -92,8 +108,10 @@ const roles = Object.freeze([
   ...(models.researcher ? ["researcher"] : []),
   ...(models.frontend ? ["frontend"] : []),
   ...(models.creative ? ["creative"] : []),
+  ...(models.writer ? ["writer"] : []),
 ]);
 const descriptions = {
+  writer: "只在方向已定、需要起草、改写或翻译面向用户或读者的文字时提供成稿或候选。",
   controller: "持续持有用户目标、全局状态、修正回路与最终交付。",
   researcher: "只为会改变决定的事实缺口返回有界来源账本，调用前有收益依据，回交后验贡献。",
   planner: "只在独立判断能改变路线时形成有界的证据化规划。",
@@ -107,6 +125,7 @@ if (!out) throw new Error("--out requires a directory");
 for (const role of requiredRoles) if (!models[role]) throw new Error(`--${role}-model is required`);
 if (efforts.researcher && !models.researcher) throw new Error("--researcher-effort requires --researcher-model");
 if (efforts.frontend && !models.frontend) throw new Error("--frontend-effort requires --frontend-model");
+if (efforts.writer && !models.writer) throw new Error("--writer-effort requires --writer-model");
 if (efforts.creative && !models.creative) throw new Error("--creative-effort requires --creative-model");
 if (host === "copilot" && Object.values(efforts).some(Boolean)) {
   throw new Error("Copilot custom-agent profiles do not provide a portable reasoning-effort field");
@@ -142,21 +161,23 @@ const metadata = {
     creative_activation: models.creative
       ? "only-when-player-or-user-facing-content-needs-specialist-creative-judgment"
       : "unconfigured",
+    writer_activation: models.writer ? "only-when-reader-facing-writing-needs-specialist-production" : "unconfigured",
     controller_owns_implementation: true,
     sufficient_controller_defaults_to_single_pass: true,
   },
-  runtime_verification: host === "codex"
+  runtime_verification: host === "codex" && !hasLocalRoutes
     ? { mode: "post-run-executable", command: verifierCommand }
     : hasLocalRoutes ? {
       mode: "per-role-evidence-required",
       roles: Object.fromEntries(roles.map(role => [role, localRoutes[role]
-        ? { mode: "role-executor-evidence", command: `node .claude/odai-run-role.mjs --role ${role} --input <file>` }
+        ? { mode: "role-executor-evidence", command: `node .${host}/odai-run-role.mjs --role ${role} --input <file>` }
         : { mode: "host-native-evidence-required", command: null }])),
     } : { mode: "host-native-evidence-required", command: null },
   activation: activation(host),
   profiles: roles.map((role) => ({ name: `odai-${role}`, purpose: descriptions[role] })),
 };
 writeFileSync(path.join(target, "ADAPTER.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+if (namedDispatch || leadMode) buildNamedDispatch();
 console.log(target);
 
 function buildCodex(root) {
@@ -172,13 +193,17 @@ function buildCodex(root) {
     __ODAI_CONTROLLER_BODY__: roleBody("controller", "codex"),
     __ODAI_AGENT_SECTIONS__: codexAgentSections(),
   });
-  for (const role of roles.slice(1)) {
+  for (const role of roles.slice(1).filter(role => !localRoutes[role])) {
     writeRendered(path.join(sourceDir, "role.toml"), path.join(agentsRoot, `odai-${role}.toml`), {
       __ODAI_ROLE_MODEL__: JSON.stringify(models[role]),
       __ODAI_ROLE_EFFORT_LINE__: tomlEffortLine(efforts[role]),
-      __ODAI_ROLE_SANDBOX_LINE__: role === "creative" ? 'sandbox_mode = "read-only"' : "",
+      __ODAI_ROLE_SANDBOX_LINE__: ["creative", "writer"].includes(role) ? 'sandbox_mode = "read-only"' : "",
       __ODAI_ROLE_BODY__: roleBody(role, "codex"),
     });
+  }
+  if (hasLocalRoutes) {
+    copyScript("local-cli.mjs", path.join(configRoot, "odai-local-cli.mjs"));
+    writeFileSync(path.join(configRoot, "odai-routing.json"), `${JSON.stringify({ id: "odai-routing-installation", host: "codex", mapping: Object.fromEntries(roles.map(role => [role, roleMapping(role)])) }, null, 2)}\n`);
   }
   copyScript("verify-routing.mjs", path.join(configRoot, "odai-verify-routing.mjs"));
   copyScript("run-role.mjs", path.join(configRoot, "odai-run-role.mjs"));
@@ -190,7 +215,7 @@ function buildClaude(root) {
   const agentsRoot = path.join(root, ".claude", "agents");
   // Never leave a native proxy beside a local route, or reuse a stale local manifest.
   // Build output has no installation ownership record: reject instead of deleting files.
-  for (const role of ["researcher", "planner", "reviewer", "frontend", "creative"]) {
+  for (const role of ["researcher", "planner", "reviewer", "frontend", "creative", "writer"]) {
     const opposite = localRoutes[role] ? `agents/odai-${role}.md` : `role-contracts/odai-${role}.md`;
     if (existsSync(path.join(root, ".claude", opposite))) throw new Error(`Conflicting previous routing output: ${opposite}; use a fresh --out directory`);
   }
@@ -210,7 +235,7 @@ function buildClaude(root) {
       __ODAI_ROLE_DESCRIPTION__: descriptions[role],
       __ODAI_ROLE_MODEL__: models[role],
       __ODAI_ROLE_EFFORT_LINE__: yamlEffortLine(efforts[role]),
-      __ODAI_PERMISSION_MODE__: ["researcher", "planner", "reviewer", "creative"].includes(role) ? "plan" : "default",
+      __ODAI_PERMISSION_MODE__: ["researcher", "planner", "reviewer", "creative", "writer"].includes(role) ? "plan" : "default",
       __ODAI_TOOLS_LINE__: "",
       __ODAI_ROLE_BODY__: roleBody(role, "claude"),
     });
@@ -240,7 +265,7 @@ function buildCopilot(root) {
       __ODAI_ROLE_MODEL__: models[role],
       __ODAI_DISABLE_MODEL_INVOCATION__: role === "controller" ? "true" : "false",
       __ODAI_USER_INVOCABLE__: role === "controller" ? "true" : "false",
-      __ODAI_TOOLS__: ["researcher", "creative"].includes(role)
+      __ODAI_TOOLS__: ["researcher", "creative", "writer"].includes(role)
         ? '["view", "glob", "grep"]'
         : ["planner", "reviewer"].includes(role) ? '["view", "glob", "grep", "shell"]' : '["*"]',
       __ODAI_ROLE_BODY__: roleBody(role, "copilot"),
@@ -257,11 +282,11 @@ function roleBody(role, hostName) {
   const source = path.join(skillRoot, manifest.roleFiles[role]);
   if (!existsSync(source)) throw new Error(`Missing canonical routing role body: ${source}`);
   const names = hostName === "codex"
-    ? { researcher: "odai_researcher", planner: "odai_planner", reviewer: "odai_reviewer", frontend: "odai_frontend", creative: "odai_creative" }
-    : { researcher: "odai-researcher", planner: "odai-planner", reviewer: "odai-reviewer", frontend: "odai-frontend", creative: "odai-creative" };
-  if (hostName === "claude") {
+    ? { researcher: "odai_researcher", planner: "odai_planner", reviewer: "odai_reviewer", frontend: "odai_frontend", creative: "odai_creative", writer: "odai_writer" }
+    : { researcher: "odai-researcher", planner: "odai-planner", reviewer: "odai-reviewer", frontend: "odai-frontend", creative: "odai-creative", writer: "odai-writer" };
+  if (["claude", "codex"].includes(hostName)) {
     for (const [localRole, route] of Object.entries(localRoutes)) {
-      names[localRole] += `（本机 ${route.cli}，只读；把有界任务包写入文件后运行 node .claude/odai-run-role.mjs --role ${localRole} --input <文件>）`;
+      names[localRole] += `（本机 ${route.cli}，只读；把有界任务包写入文件后运行 node .${hostName}/odai-run-role.mjs --role ${localRole} --input <文件>）`;
     }
   }
   const rendered = renderText(composeRoleContract(role, governance, manifest, contractContents), {
@@ -270,19 +295,24 @@ function roleBody(role, hostName) {
     __ODAI_PLANNER_ROLE__: names.planner,
     __ODAI_REVIEWER_ROLE__: names.reviewer,
     __ODAI_FRONTEND_ROLE__: models.frontend ? names.frontend : "frontend（当前适配器未配置映射，不能调用）",
+    __ODAI_WRITER_ROLE__: models.writer ? names.writer : "writer（当前适配器未配置映射，不能调用）",
     __ODAI_CREATIVE_ROLE__: models.creative ? names.creative : "creative（当前适配器未配置映射，不能调用）",
     __ODAI_RUNTIME_VERIFICATION__: hostName === "codex"
-      ? "实际路由必须用宿主返回的线程、角色、模型与用量证据核对，不从调用请求推断成功。"
+      ? (hasLocalRoutes ? "原生角色用宿主运行证据核对；本机 CLI 只接受执行器退出 0 且模型已核实的 version 1 证据，证据路径见 stderr；非 0 退出时不能接收正文为成功。" : "实际路由必须用宿主返回的线程、角色、模型与用量证据核对，不从调用请求推断成功。")
       : hasLocalRoutes
         ? "原生子代理用宿主运行证据核实角色与模型；本机 CLI 用角色执行器的 version 1 证据核实，证据路径见 stderr。执行器非 0 退出时不能接收正文为成功；显式请求的推理档也必须核实。"
         : "只有宿主原生运行证据能识别实际角色与模型时，路由才算已核实。",
     __ODAI_HOST_NOTE__: hostName === "copilot" ? "Copilot Auto 会覆盖角色模型选择；需要区分角色时不使用 Auto。" : "",
   }, source);
-  return rendered;
+  return rendered + (role === "controller" ? [
+    ...(hostName === "codex" && hasLocalRoutes ? ["\n\n默认 workspace-write 沙箱中，本机 CLI 职责实测因无法联网而失败（claude 零 token、退出码 1）。运行上述具体执行器命令时，需要申请越出沙箱，理由是需要联网，并写入本机 CLI 自己的目录；由用户按自己的审批策略批准该命令。用户拒绝或当前审批策略不允许时，如实报告该职责不可用，不改用别的模型。安装器不修改沙箱或联网设置。越出后 CLI 可联网并写用户目录；撤回时拒绝后续批准，恢复用户自行修改的配置。"] : []),
+    ...Object.keys(sessions).filter(r => sessions[r] === "continue" && !localRoutes[r] && hostName === "claude").map(r => `\n\n${r} 开启会话续接时，用 SendMessage 继续上次派出的同一个 odai-${r} 子代理（可按名字或 agentId 续发，已完成的子代理也可以续发），不新派。`),
+    ...(Object.values(sessions).includes("continue") && hasLocalRoutes ? ["\n\n本机 CLI 续接键按清单宿主优先取对应环境变量（Claude: CLAUDE_CODE_SESSION_ID；Codex: CODEX_THREAD_ID），另一变量作为后备；缺失时调用执行器须传 --session-key <宿主会话唯一键>。"] : []),
+  ].join("") : "");
 }
 
 function codexAgentSections() {
-  return roles.slice(1).flatMap((role) => [
+  return roles.slice(1).filter(role => !localRoutes[role]).flatMap((role) => [
     `[agents.odai_${role}]`,
     `description = ${JSON.stringify(descriptions[role])}`,
     `config_file = ${JSON.stringify(`agents/odai-${role}.toml`)}`,
@@ -311,13 +341,15 @@ function copyScript(name, targetFile) {
 
 function assertKnownArgs() {
   const known = new Set([
+    ...["researcher", "planner", "reviewer", "frontend", "creative", "writer"].map(role => `--${role}-session`),
     "--host", "--out", "--governance-root", "--controller-model", "--researcher-model", "--planner-model",
-    "--reviewer-model", "--frontend-model", "--creative-model", "--controller-effort", "--researcher-effort",
-    "--planner-effort", "--reviewer-effort", "--frontend-effort", "--creative-effort", "--verifier-command",
-    "--researcher-cli", "--planner-cli", "--reviewer-cli", "--frontend-cli", "--creative-cli",
+    "--reviewer-model", "--frontend-model", "--creative-model", "--writer-model", "--controller-effort", "--researcher-effort",
+    "--planner-effort", "--reviewer-effort", "--frontend-effort", "--creative-effort", "--writer-effort", "--verifier-command",
+    "--researcher-cli", "--planner-cli", "--reviewer-cli", "--frontend-cli", "--creative-cli", "--writer-cli",
   ]);
   for (let index = 0; index < argv.length; index += 2) {
     const name = argv[index];
+    if (["--named-dispatch", "--lead-mode"].includes(name)) { index -= 1; continue; }
     if (!known.has(name)) throw new Error(`Unknown option: ${name}`);
     const value = argv[index + 1] || "";
     if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
@@ -345,4 +377,26 @@ function renderText(input, replacements, source = "generated routing text") {
   const unresolved = text.match(/__ODAI_[A-Z0-9_]+__/g);
   if (unresolved) throw new Error(`Unresolved routing template fields in ${source}: ${[...new Set(unresolved)].join(", ")}`);
   return text;
+}
+
+function buildNamedDispatch() {
+  const config = path.join(target, `.${host}`);
+  const hooks = Object.fromEntries(["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"].map(event => [event, [{ matcher: "*", hooks: [{ type: "command", command: `node "${host === "codex" ? "${PLUGIN_ROOT}/../.." : ".claude"}/odai-route-hook.mjs"`, timeout: 10 }] }]]));
+  copyScript("route-hook.mjs", path.join(config, "odai-route-hook.mjs"));
+  copyScript("recognize-routing.mjs", path.join(config, "recognize-routing.mjs"));
+  writeFileSync(path.join(config, "odai-named-dispatch.json"), JSON.stringify({ id: "odai-named-dispatch", host, ...(leadMode ? { leadMode: true, namedDispatch } : {}), mapping: metadata.mapping }, null, 2) + "\n");
+  if (host === "claude") {
+    const file = path.join(config, "settings.patch.json");
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), hooks }, null, 2) + "\n");
+  } else {
+    const plugin = path.join(config, "named-dispatch-plugin");
+    mkdirSync(path.join(plugin, ".codex-plugin"), { recursive: true });
+    mkdirSync(path.join(plugin, "hooks"), { recursive: true });
+    mkdirSync(path.join(config, ".agents/plugins"), { recursive: true });
+    writeFileSync(path.join(config, ".agents/plugins/marketplace.json"), JSON.stringify({ name: "odai-local-routing", plugins: [{ name: "odai-named-dispatch", source: "./named-dispatch-plugin" }] }, null, 2) + "\n");
+    // PLUGIN_ROOT is the plugin directory, whose parent contains the executor.
+    for (const groups of Object.values(hooks)) groups[0].hooks[0].command = 'node "${PLUGIN_ROOT}/../odai-route-hook.mjs"';
+    writeFileSync(path.join(plugin, ".codex-plugin/plugin.json"), JSON.stringify({ id: "odai-named-dispatch", name: "odai-named-dispatch", version: "0.2.3", description: "Optional named responsibility routing" }));
+    writeFileSync(path.join(plugin, "hooks/hooks.json"), JSON.stringify({ hooks }, null, 2));
+  }
 }

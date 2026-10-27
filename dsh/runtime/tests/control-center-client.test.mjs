@@ -392,6 +392,8 @@ test("route editor creates API or local CLI mappings and blocks invalid forms", 
   // The client runs in another realm; compare plain JSON values.
   const routeEditorPayload = (role, form) => { const value = client.routeEditorPayload(role, form); return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); };
   const api = { backend: "provider", cli: "claude", provider: " openai ", model: " gpt-6-astra ", effort: "", maxTokens: "", timeoutSeconds: "" };
+  assert.equal(routeEditorPayload("planner", { ...api, session: "continue" }).session, "continue");
+  assert.equal(routeEditorPayload("planner", { ...api, session: "fresh" }).session, "fresh");
   assert.deepEqual(routeEditorPayload("planner", api), { action: "set", responsibility: "planner", provider: "openai", model: "gpt-6-astra" });
   assert.deepEqual(routeEditorPayload("planner", { ...api, effort: "high", maxTokens: "4096" }),
     { action: "set", responsibility: "planner", provider: "openai", model: "gpt-6-astra", reasoningEffort: "high", maxTokens: 4096 });
@@ -399,10 +401,12 @@ test("route editor creates API or local CLI mappings and blocks invalid forms", 
   const cli = { ...api, backend: "local-cli", provider: "", maxTokens: "4096" };
   assert.deepEqual(routeEditorPayload("creative", { ...cli, model: " opus ", effort: "high", timeoutSeconds: "600" }),
     { action: "set", responsibility: "creative", backend: "local-cli", cli: "claude", model: "opus", reasoningEffort: "high", timeoutSeconds: 600 });
+  assert.deepEqual(routeEditorPayload("writer", api), { action: "set", responsibility: "writer", provider: "openai", model: "gpt-6-astra" });
+  assert.deepEqual(routeEditorPayload("writer", { ...cli, model: "m" }), { action: "set", responsibility: "writer", backend: "local-cli", cli: "claude", model: "m" });
   for (const id of ["codex", "antigravity", "grok"]) {
     assert.deepEqual(routeEditorPayload("frontend", { ...cli, cli: id, model: "m" }), { action: "set", responsibility: "frontend", backend: "local-cli", cli: id, model: "m" });
   }
-  for (const role of ["planner", "frontend", "creative"]) assert.equal(localCliAllowed(role), true, role);
+  for (const role of ["planner", "frontend", "creative", "writer"]) assert.equal(localCliAllowed(role), true, role);
   for (const role of ["researcher", "reviewer"]) {
     assert.equal(localCliAllowed(role), true, role);
     assert.deepEqual(routeEditorPayload(role, { ...cli, model: "m" }), { action: "set", responsibility: role, backend: "local-cli", cli: "claude", model: "m" });
@@ -415,4 +419,27 @@ test("route editor creates API or local CLI mappings and blocks invalid forms", 
     { ...cli, model: "m", timeoutSeconds: "7201" },
     { ...cli, model: "m", timeoutSeconds: "1.5" },
   ]) assert.equal(routeEditorPayload("frontend", invalid), undefined, JSON.stringify(invalid));
+});
+
+test("Control Center projects writer API and local CLI children with the writer role label", async () => {
+  const client = await loadClient("odai-dsh-plugin", ["odai-dsh-plugin"]);
+  for (const route of [
+    { provider: "openai", model: "writer-model" },
+    { backend: "local-cli", cli: "claude", model: "claude-opus-5" },
+    { backend: "local-cli", cli: "codex", model: "gpt-6.1-sol" },
+    { backend: "local-cli", cli: "antigravity", model: "gemini-3.8-flash-high" },
+    { backend: "local-cli", cli: "grok", model: "grok-code" },
+  ]) {
+    const trace = client.projectTrace([{ seq: 1, type: "odai/route-result", data: {
+      turn: 1, step: 1, role: "writer", action: "delegate", status: "completed", routeReceiptStatus: "applied",
+      actualRoute: route,
+    } }]);
+    assert.equal(trace.currentRoles.writer.role, "writer");
+    assert.equal(trace.currentRoles.writer.state, "child");
+    assert.match(trace.currentRoles.writer.title, /^写作/);
+    assert.equal(trace.currentRoles.writer.route.model, route.model);
+    assert.equal(trace.currentRoles.writer.route.backend, route.backend);
+    assert.equal(trace.currentRoles.writer.route.provider, route.provider);
+    assert.equal(trace.currentRoles.writer.route.cli, route.cli);
+  }
 });

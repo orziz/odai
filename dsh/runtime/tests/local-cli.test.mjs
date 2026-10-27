@@ -485,7 +485,7 @@ test("Antigravity uses bounded argv prompt, measured plan flags and no stdin", a
   const configured = { ...agyRoute, reasoningEffort: "high", timeoutSeconds: 30 };
   const invocation = buildLocalCliInvocation(configured, { ODAI_AGY_COMMAND: "/fake/agy" }, { prompt: "Read" });
   assert.equal(invocation.command, "/fake/agy");
-  assert.match(invocation.args[1], /^Read\n\n.*view_file.*grep_search.*list_dir.*find_by_name/);
+  assert.match(invocation.args[1], /^Read\n\n只用只读工具.*任务包.*read_file.*view_file.*不要列目录、搜索文件、执行命令、写入或编辑文件.*本次调用作废.*回交/);
   assert.deepEqual(invocation.args, ["-p", invocation.args[1], "--output-format", "stream-json", "--mode", "plan", "--disable-slash-commands", "--model", agyRoute.model, "--effort", "high", "--print-timeout", "30s"]);
   const defaultArgs = buildLocalCliInvocation(agyRoute, {}, { prompt: "Read" }).args;
   assert.equal(defaultArgs.includes("--effort"), false);
@@ -629,4 +629,29 @@ test("Grok verifies the requested model when a helper model used more tokens", (
   } }), grokRoute);
   assert.equal(result.modelVerified, true);
   assert.equal(result.actualModel, grokRoute.model);
+});
+
+test("agy actual denied write fixture is distinct from DONE boundary violations", () => {
+  const init = { event: "init", init: { model: agyRoute.model, tools: ["view_file", "list_dir", "grep_search", "find_by_name", "write_to_file"] } };
+  const step = { step_type: "tool", tool_name: "write_file", state: "ERROR", tool_info: { name: "write_file", parameters: { Path: "…/probe.txt" }, error: { type: "TOOL_ERROR", message: "permission check failed …" } } };
+  const denied = { event: "result", result: { status: "SUCCESS", response: "", denied_actions: [{ action: "write_file", display_name: "WriteFile" }] } };
+  const readSteps = [
+    { event: "step_update", step_update: { step_type: "tool", tool_name: "read_file", state: "DONE" } },
+    { event: "step_update", step_update: { step_type: "tool", tool_name: "read_file", state: "ERROR" } },
+    { event: "step_update", step_update: { step_type: "tool", tool_name: "run_command", state: "ERROR" } },
+  ];
+  const read = parseLocalCliResult(ndjson(init, ...readSteps, { event: "result", result: { status: "SUCCESS", response: "", denied_actions: [{ action: "command" }] } }), agyRoute);
+  assert.equal(read.boundaryStatus, undefined);
+  assert.equal(read.text, "");
+  assert.equal(read.deniedActionsCount, 1);
+  const parsed = parseLocalCliResult(ndjson(init, { event: "step_update", step_update: step }, denied), agyRoute);
+  assert.equal(parsed.status, "completed");
+  assert.equal(parsed.deniedActionsCount, 1);
+  for (const tool of ["write_file", "edit_file", "run_command", "unknown_tool"]) {
+    const result = parseLocalCliResult(ndjson(init, { event: "step_update", step_update: { ...step, tool_name: tool, state: "DONE" } }, { event: "result", result: { status: "SUCCESS", response: "DO NOT LEAK" } }), agyRoute);
+    assert.equal(result.status, "error"); assert.equal(result.text, "");
+    assert.equal(result.boundaryStatus, "boundary-violation"); assert.deepEqual(result.boundaryTools, [tool]);
+    assert.match(result.error, /permissions.allow/);
+  }
+  for (const tool of ["read_file", "search_web", "ask_question", "manage_task", "view_file", "grep_search", "list_dir", "find_by_name"]) assert.equal(parseLocalCliResult(ndjson(init, { event: "step_update", step_update: { ...step, tool_name: tool, state: "DONE" } }, denied), agyRoute).status, "completed");
 });
