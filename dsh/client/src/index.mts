@@ -807,9 +807,58 @@ window.__ModuleLoader__.load({
       ), document.body);
     }
 
+    function SessionControls({ sessionId, connection }: { sessionId?: string; connection: any }) {
+      const [state, setState] = useState(null as any);
+      const [error, setError] = useState("");
+      const [busy, setBusy] = useState(false);
+      const lifetime = useRef(null as AbortController | null);
+      const sequence = useRef(0);
+      const mutating = useRef(false);
+      const request = async (payload: any, signal: AbortSignal) => {
+        const current = ++sequence.current;
+        const response = await connection.rpc.call("/api", "odai-control-center/session", { sessionId, ...payload }, signal);
+        if (!response?.ok || !response.value?.ok) throw new Error(response?.value?.error?.message || response?.error?.message || "会话控制不可用");
+        if (!signal.aborted && current === sequence.current) { setState(response.value.session); setError(""); }
+      };
+      useEffect(() => {
+        const controller = new AbortController(); lifetime.current = controller;
+        setState(null); setError(""); setBusy(false);
+        let pending = false;
+        const refresh = async () => {
+          if (!sessionId || pending || mutating.current) return;
+          pending = true;
+          try { await request({ action: "show" }, controller.signal); }
+          catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+          finally { pending = false; }
+        };
+        void refresh(); const timer = setInterval(refresh, 2500);
+        return () => { controller.abort(); clearInterval(timer); };
+      }, [sessionId, connection]);
+      const change = async (payload: any) => {
+        const controller = lifetime.current;
+        if (!controller || busy) return;
+        mutating.current = true; setBusy(true);
+        try { await request(payload, controller.signal); }
+        catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+        finally { mutating.current = false; if (!controller.signal.aborted) setBusy(false); }
+      };
+      const details = state?.continuation.roles.map((r: any) => `${r.responsibility}：${r.reason || (r.effective === "continue" ? "续接" : "新开")}`).join("；");
+      return h("span", { style: { display: "inline-flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+        h("button", { type: "button", className: "odaiCC__launcher", role: "switch", "aria-checked": !!state?.lead.enabled,
+          disabled: busy || !state || (!state.lead.enabled && !state.lead.available), title: state?.lead.reason || "本会话：首次写入前规划，写入后审查；不取消正在运行的调用",
+          onClick: () => change({ action: "set-lead", enabled: !state.lead.enabled }) }, `主导：${state ? state.lead.enabled ? "开" : "关" : "…"}`),
+        h("label", { title: details || state?.continuation.reason }, "职责续接 ", h("select", {
+          "aria-label": "本会话职责续接", disabled: busy || !state, value: state?.continuation.override ?? "inherit",
+          onChange: (event: any) => change({ action: "set-continuation", value: event.target.value }) },
+          h("option", { value: "inherit" }, "按映射"), h("option", { value: "fresh" }, "关闭"),
+          h("option", { value: "continue", disabled: !state?.continuation.available }, "开启（支持的职责）"))),
+        error ? h("span", { role: "alert" }, error) : state?.lead.reason || state?.continuation.reason ? h("small", null, state.lead.reason || state.continuation.reason) : null);
+    }
+
     function Launcher(props: { sessionId?: string; traceSource: (sessionId: string | undefined) => any; connection: any }) {
       const [open, setOpen] = useState(false);
       return h(React.Fragment, null,
+        h(SessionControls, { key: props.sessionId, sessionId: props.sessionId, connection: props.connection }),
         h("button", {
           type: "button",
           className: "odaiCC__launcher",

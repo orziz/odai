@@ -1,3 +1,4 @@
+import { applySessionControl, type SessionControlsSnapshot } from "./session-controls.mjs";
 import {
   applyRoutingConfigAction,
   type RoleDispatches,
@@ -16,6 +17,7 @@ import { isUnknownRecord } from "./runtime-types.mjs";
 const CONTROL_CENTER_CHANNEL = "/odai-control-center";
 const CONTROL_CENTER_ENDPOINT = "routing";
 const CONTROL_CENTER_EVIDENCE_ENDPOINT = "evidence";
+const CONTROL_CENTER_SESSION_ENDPOINT = "session";
 const MAX_EVIDENCE_EVENTS = 2_000;
 
 interface RpcFailure {
@@ -25,6 +27,7 @@ interface RpcFailure {
 
 export interface ControlCenterResponse {
   ok: boolean;
+  session?: SessionControlsSnapshot;
   config?: Omit<RoutingConfigResult, "configPath" | "latestRoute">;
   events?: readonly SessionEvidenceEvent[];
   revision?: string;
@@ -56,7 +59,7 @@ function registerControlCenter(connection: HostConnection,
   handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<ConnectionRpcResult>,
 ): () => Promise<void> {
   if (!connection.fetch) return connection.rpc.handle(CONTROL_CENTER_CHANNEL, handler, { authority: "loopback" });
-  const disposers = [CONTROL_CENTER_ENDPOINT, CONTROL_CENTER_EVIDENCE_ENDPOINT].map((endpoint) => {
+  const disposers = [CONTROL_CENTER_ENDPOINT, CONTROL_CENTER_EVIDENCE_ENDPOINT, CONTROL_CENTER_SESSION_ENDPOINT].map((endpoint) => {
     const method = `${CONTROL_CENTER_CHANNEL.slice(1)}/${endpoint}`;
     return connection.fetch!.register({
       path: `/api/${method}`, methods: ["POST"], requestBody: "buffered",
@@ -88,6 +91,7 @@ type ControlCenterGlobal = typeof globalThis & {
 
 export interface ControlCenterRuntimeOptions {
   configPath: string;
+  routingMode?: string;
   evidenceRoot?: string;
   configuredRoles?: Readonly<RoleRoutes>;
   configuredDispatch?: Readonly<RoleDispatches>;
@@ -100,7 +104,8 @@ function effectiveOptions(owners: ReadonlyMap<symbol, ControlCenterRuntimeOption
   for (const options of owners.values()) {
     const weight = Object.keys(options.configuredRoles ?? {}).length
       + Object.keys(options.configuredDispatch ?? {}).length;
-    if (selected === undefined || weight > selectedWeight) {
+    if (selected === undefined || weight > selectedWeight
+      || (weight === selectedWeight && selected.routingMode === undefined && options.routingMode !== undefined)) {
       selected = options;
       selectedWeight = weight;
     }
@@ -222,11 +227,12 @@ export function installControlCenterRuntime(
 
   const owners = new Map<symbol, ControlCenterRuntimeOptions>([[owner, options]]);
   const dispose = registerControlCenter(connection, async (endpoint, payload, signal) => {
-    if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT) {
+    if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT && endpoint !== CONTROL_CENTER_SESSION_ENDPOINT) {
       return { ok: true, value: { ok: false, error: { code: "unavailable", message: "unknown Odai Control Center endpoint" } } };
     }
     const active = effectiveOptions(owners);
     try {
+      if (endpoint === CONTROL_CENTER_SESSION_ENDPOINT) return { ok: true, value: { ok: true, session: applySessionControl(payload, { ...active, evidenceRoot: active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath) }) } };
       if (endpoint === CONTROL_CENTER_EVIDENCE_ENDPOINT) {
         const request = evidenceRequest(payload);
         const evidenceRoot = active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath);

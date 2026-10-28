@@ -10,6 +10,24 @@ import { activeRouteProtection } from "../build/governance.mjs";
 function testAgent(id, events = []) {
   return { session: { header: { id }, snapshotEvents: () => events, append() {} } };
 }
+test("live session observes controls saved by another owner without leaking to other sessions", () => {
+  const root = mkdtempSync(resolve(tmpdir(), "odai-session-controls-"));
+  try {
+    const evidence = createSessionEvidence({ root });
+    const live = testAgent("one"), ui = testAgent("one"), other = testAgent("two");
+    assert.equal(evidence.events(live).length, 0);
+    evidence.append(ui, "odai/lead-mode", { enabled: true, requestId: "on" });
+    assert.equal(evidence.events(live).at(-1).data.enabled, true);
+    evidence.append(live, "odai/lead-write", { taskMessageId: "task" });
+    evidence.append(ui, "odai/lead-mode", { enabled: false, requestId: "off" });
+    assert.deepEqual(evidence.events(live).map(event => event.type), ["odai/lead-mode", "odai/lead-write", "odai/lead-mode"]);
+    assert.equal(evidence.events(live).at(-1).data.enabled, false);
+    assert.equal(evidence.events(testAgent("one")).at(-1).data.enabled, false);
+    assert.equal(evidence.events(other).length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test("new evidence stays outside a real DSH session log and reloads by session id", () => {
   const scratch = mkdtempSync(resolve(tmpdir(), "odai-session-evidence-"));
   const warnings = [];

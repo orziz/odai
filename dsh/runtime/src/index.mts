@@ -76,6 +76,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   const logger = loggerFor(ctx);
   const disposeControlCenter = installControlCenterRuntimeWhenAvailable(ctx, {
     configPath: config.routing.configPath,
+    routingMode: config.routing.mode,
     configuredRoles: config.routing.roles,
     configuredDispatch: config.routing.dispatch,
     logger,

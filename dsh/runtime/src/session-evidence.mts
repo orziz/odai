@@ -30,6 +30,7 @@ interface EvidenceState {
   events: SessionEvidenceEvent[];
   ids: Set<string>;
   sessionId?: string;
+  revision?: string;
 }
 
 interface SessionEvidenceSharedState {
@@ -222,10 +223,11 @@ function stateFor(agent: DshAgent | undefined, root: string, logger: EvidenceLog
     shared.bySession.set(owner, roots);
   }
   const existing = roots.get(root);
-  if (existing) return existing;
-
   const sessionId = sessionIdOf(agent);
-  const state: EvidenceState = { events: [], ids: new Set(), sessionId };
+  const revision = sessionId ? storedSessionEvidenceRevision(root, sessionId) : undefined;
+  if (existing && existing.revision === revision) return existing;
+
+  const state: EvidenceState = { events: [], ids: new Set(), sessionId, revision };
   if (sessionId) mergeUnique(state, readStoredState(root, sessionId, logger).events);
   roots.set(root, state);
   return state;
@@ -287,7 +289,7 @@ export function storedSessionEvidenceRevision(root: string, sessionId: string): 
     const snapshot = statSync(path);
     return `${snapshot.size}:${snapshot.mtimeMs}`;
   } catch (error) {
-    if (isUnknownRecord(error) && error.code === "ENOENT") return "0";
+    if (isUnknownRecord(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return "0";
     throw error;
   }
 }

@@ -182,7 +182,10 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     const text = extractLatestUserText([message]);
     const routes: Partial<Record<Responsibility, ModelRoute>> = {};
     for (const role of CONFIGURABLE_ROLES) { const route = configuredRole(agent, role, turn).route; if (route) routes[role] = route; }
-    const change = recognizeLeadSwitch(text, routes);
+    const change = recognizeLeadSwitch(text, {
+      ...(routes.planner ? { planner: routes.planner } : {}),
+      ...(routes.reviewer ? { reviewer: routes.reviewer } : {}),
+    });
     if (change && !hasSessionEvent(agent, "odai/lead-switch-checked", data => data.taskMessageId === message.id)) {
       appendEvent(agent, "odai/lead-switch-checked", { taskMessageId: message.id });
       if (!change.issue) {

@@ -1,3 +1,4 @@
+import { effectiveSessionRoute } from "./session-controls.mjs";
 import { executeRouteSession } from "./route-session.mjs";
 import type { RouteSessionEvidence } from "./route-session.mjs";
 import { renderLocalCliReviewEvidence } from "./review-evidence.mjs";
@@ -427,8 +428,9 @@ async function runLocalCliRole({ decision, taskText, roleContract, roleBundle, a
       decision.role === "researcher" ? "Return only the required research packet JSON. Repository quotations are checked against source paths and lines before acceptance." : "",
       `Local CLI execution boundary: read-only. ${readBoundary} There are no DSH tools. Return plain text to the controller. For production work, return an unapplied patch; do not modify files.`,
     ].join("\n\n");
-    const result = await executeRouteSession({ agent: agent as DshAgent, route: roleRoute, evidence: sessionEvidence, signal,
-      execute: resumeSessionId => executeLocalCli({ route: roleRoute, prompt, cwd, signal, resumeSessionId }),
+    const effectiveRoute = effectiveSessionRoute(roleRoute, agent as DshAgent, sessionEvidence);
+    const result = await executeRouteSession({ agent: agent as DshAgent, route: effectiveRoute, evidence: sessionEvidence, signal,
+      execute: resumeSessionId => executeLocalCli({ route: effectiveRoute, prompt, cwd, signal, resumeSessionId }),
     });
     const metadata = {
       ...(result.sessionAction ? { sessionAction: result.sessionAction, routeSessionId: result.routeSessionId, sessionNotice: result.sessionNotice } : {}),
