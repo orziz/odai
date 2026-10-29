@@ -70,6 +70,6 @@ function codexModels(signal?: AbortSignal): Promise<CliModelChoice[]> {
       }
     });
     if (signal?.aborted) abort();
-    else send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'odai-model-catalog', version: '0.3.1' } } });
+    else send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'odai-model-catalog', version: '0.3.2' } } });
   });
 }
