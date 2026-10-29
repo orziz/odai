@@ -61,7 +61,7 @@ const wrapper = [
   "  scopeOwner.claim(protectedController, probeScope, { step: 1, baseRoute: { provider: 'probe-provider', model: 'controller' }, temporaryRoute: probeRoute, routeMode: 'same-turn' });",
   "  const probes = [",
   `    { callId: 'odai-child-boundary-probe', path: ${JSON.stringify(deniedWritePath)}, agent: child, prefix: 'ODAI_SUBAGENT_BOUNDARY:' },`,
-  `    { callId: 'odai-route-protection-probe', path: ${JSON.stringify(protectedWritePath)}, agent: protectedController, prefix: 'ODAI_HIGH_IMPACT_ROUTE_BLOCKED:' },`,
+  `    { callId: 'odai-responsibility-read-only-probe', path: ${JSON.stringify(protectedWritePath)}, agent: protectedController, prefix: 'ODAI_RESPONSIBILITY_READ_ONLY:' },`,
   "  ];",
   "  const guardsReady = Promise.all(probes.map((probe) => ctx.tools.execute({",
   "    callId: probe.callId,",
