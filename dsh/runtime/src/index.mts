@@ -1,3 +1,5 @@
+import { leadState } from "./lead-mode.mjs";
+import { latestRequestRoute } from "./runtime-support.mjs";
 import {
   applyCompactionStateProtocol,
   applyCompactionTarget,
@@ -173,6 +175,13 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   const configuredRole = (agent: DshAgent, role: string, turn = currentAgentTurn(agent)) => {
     const state = routingSnapshotFor(agent, turn);
     if (state.error || !state.snapshot) return state;
+    const lead = leadState(evidence.events(agent));
+    if (!state.snapshot.roles[role] && config.routing.mode !== "off" && !agent.session.header.parentSession && agent.session.header.origin !== "subagent"
+      && (role === "planner" || role === "reviewer") && lead?.enabled === true && Array.isArray(lead.roles) && lead.roles.includes(role)) {
+      const route = routeFromConfig(agent.options) ?? latestRequestRoute(agent);
+      if (route) return { route, dispatch: state.snapshot.dispatch[role] ?? "child" as const,
+        dispatchSource: state.snapshot.dispatchSources[role] };
+    }
     return {
       route: state.snapshot.roles[role],
       source: state.snapshot.sources[role],

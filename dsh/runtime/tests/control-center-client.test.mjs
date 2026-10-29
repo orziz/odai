@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-async function loadClientModule(packageId, entries) {
+async function loadClientModule(packageId, entries, overrides = {}) {
   const template = await readFile(resolve(import.meta.dirname, "../../client/build/client.js"), "utf8");
   const source = template.replaceAll("__ODAI_CLIENT_PACKAGE__", packageId);
   let registration;
@@ -13,6 +13,7 @@ async function loadClientModule(packageId, entries) {
       querySelector() {
         return {};
       },
+      ...overrides.document,
     },
     window: {
       __ModuleLoader__: {
@@ -43,6 +44,7 @@ async function loadClientModule(packageId, entries) {
           return getSnapshot();
         },
         Fragment: Symbol("Fragment"),
+        ...overrides.react,
       };
     if (name === "react-dom")
       return {
@@ -56,6 +58,46 @@ async function loadClientModule(packageId, entries) {
 async function loadClient(packageId, entries) {
   return (await loadClientModule(packageId, entries)).__testing;
 }
+test("drawer refresh preserves input focus when the host replaces its close callback", async () => {
+  const effects = [], refs = [];
+  let effectIndex = 0, refIndex = 0, active = 'input', focusCount = 0, keyHandler, closed = '';
+  const client = (await loadClientModule('odai-dsh-plugin', ['odai-dsh-plugin'], {
+    document: {
+      addEventListener(_name, handler) { keyHandler = handler; },
+      removeEventListener(_name, handler) { if (keyHandler === handler) keyHandler = undefined; },
+    },
+    react: {
+      useRef(initial) { const i = refIndex++; return refs[i] ??= { current: initial }; },
+      useEffect(run, deps) {
+        const i = effectIndex++, previous = effects[i];
+        if (!previous || deps.some((dep, j) => dep !== previous.deps[j])) {
+          previous?.cleanup?.(); effects[i] = { deps, run };
+        }
+      },
+      createElement(_type, props) {
+        if (props?.ref) props.ref.current = { focus() { active = 'close'; focusCount++; } };
+      },
+    },
+  })).__testing;
+  const source = { subscribe() {}, getSnapshot() { return { events: [] }; } };
+  const render = onClose => {
+    effectIndex = 0; refIndex = 0;
+    client.ControlCenter({ traceSource: () => source, connection: {}, onClose });
+    for (const effect of effects) if (effect.run) { effect.cleanup = effect.run(); effect.run = undefined; }
+  };
+  render(() => { closed = 'old'; });
+  assert.equal(active, 'close');
+  active = 'model-input';
+  render(() => { closed = 'latest'; });
+  render(() => { closed = 'latest'; });
+  assert.equal(active, 'model-input');
+  assert.equal(focusCount, 1);
+  keyHandler({ key: 'Escape' });
+  assert.equal(closed, 'latest');
+  for (const effect of effects) effect.cleanup?.();
+  assert.equal(keyHandler, undefined);
+});
+
 test("Control Center host failure explains that no separate install is required", async () => {
   const client = await loadClient("odai-dsh-plugin", ["odai-dsh-plugin"]);
   assert.equal(

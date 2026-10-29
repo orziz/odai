@@ -1,7 +1,12 @@
 import { resolveResponsibilityGap } from "./responsibility-gap.mjs";
 import type { DshEvent } from "./runtime-types.mjs";
 
-export { recognizeLeadSwitch } from "#odai-recognize-routing";
+import { recognizeLeadSwitch as recognizeMappedLeadSwitch } from "#odai-recognize-routing";
+export function recognizeLeadSwitch(...args: Parameters<typeof recognizeMappedLeadSwitch>) {
+  const direct = recognizeMappedLeadSwitch(args[0], {});
+  if (direct?.issue && direct.issue !== "mapping-mismatch") return { enabled: true, roles: ["planner", "reviewer"] };
+  return recognizeMappedLeadSwitch(...args);
+}
 export const leadState = (events: readonly DshEvent[]) => events.findLast(event => event.type === "odai/lead-mode")?.data;
 export function leadTaskId(events: readonly DshEvent[], messageId: string | undefined, continuing: boolean): string | undefined {
   return continuing ? (events.findLast(event => event.type === "odai/lead-task")?.data.taskMessageId as string | undefined) ?? messageId : messageId;

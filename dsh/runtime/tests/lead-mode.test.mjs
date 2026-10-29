@@ -11,7 +11,8 @@ for (const text of ["开启主导模式", "这个会话开主导模式", "enable
 });
 for (const text of ["你来主导", "恢复正常", "服务恢复正常了吗", "开启主导模式吗", "是否开启主导模式", "“开启主导模式”", "`enable lead mode`", "> 开启主导模式", "配置主导模式", "以后默认开启主导模式", "写一下开启主导模式的测试", "给 odai 加一个主导模式开关", "这个会话由 Unknown 主导吗"]) test(`lead switch negative: ${text}`, () => assert.equal(recognizeLeadSwitch(text, routes), undefined));
 test("lead mode optional slots, mismatch and evidence rehydration", () => {
-  assert.equal(recognizeLeadSwitch("开启主导模式", {}).enabled, false);
+  assert.deepEqual(recognizeLeadSwitch("开启主导模式", {}), { enabled: true, roles: ["planner", "reviewer"] });
+  assert.deepEqual(recognizeLeadSwitch("开启主导模式", { planner: routes.planner }).roles, ["planner", "reviewer"]);
   assert.equal(recognizeLeadSwitch("这个会话由 Gemini 主导", routes).issue, "mapping-mismatch");
   const both = { planner: routes.reviewer, reviewer: routes.reviewer };
   assert.deepEqual(recognizeLeadSwitch("这个会话由 Claude 主导", both).roles, ["planner", "reviewer"]);

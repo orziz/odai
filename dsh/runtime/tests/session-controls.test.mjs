@@ -28,6 +28,10 @@ test('session controls persist independently, consume lead gaps, and override on
   call('set-continuation',{value:'inherit'});
   assert.equal(effectiveSessionRoute(route,agent,evidence),route);
   assert.equal(existsSync(options.configPath),false);
+  const inherited = applySessionControl({sessionId:'inherited', action:'set-lead', enabled:true}, {...options, configuredRoles:{}});
+  assert.equal(inherited.lead.enabled,true);
+  assert.equal(inherited.lead.available,true);
+  assert.deepEqual(inherited.lead.roles,['planner','reviewer']);
   assert.throws(()=>call('set-lead',{enabled:'true'}));
   assert.throws(()=>call('set-continuation',{value:'invalid'}));
   assert.throws(()=>applySessionControl({sessionId:'a',action:'set-lead',enabled:true},{...options,routingMode:'off'}));

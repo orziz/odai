@@ -39,6 +39,9 @@ test("Control Center registers exact authenticated transport routes and validate
       },
     },
   };
+  ctx.llm.listProviders = () => [{ id: 'custom-channel', name: 'Custom', secret: 'never-send' }];
+  ctx.llm.listModels = async provider => { assert.equal(provider, 'custom-channel'); return [{ id: 'custom-model', name: 'Model' }]; };
+  ctx.llm.resolveModelInfo = async (provider, model) => { assert.equal(provider, 'custom-channel'); assert.equal(model, 'custom-model'); return { reasoning: { efforts: [{ id: 'deep', name: 'Deep' }] } }; };
   const dispose = installControlCenterRuntime(ctx, { configPath: resolve(scratch, "routing.json") });
   try {
     const path = "/api/odai-control-center/routing";
@@ -69,6 +72,13 @@ test("Control Center registers exact authenticated transport routes and validate
     assert.equal(body.rpcId, "probe");
     assert.equal(body.result.value.ok, true);
     assert.ok(body.result.value.config);
+    for (const [fields, expected] of [[{}, [{id:'custom-channel',name:'Custom'}]], [{provider:'custom-channel'}, [{id:'custom-model',name:'Model'}]], [{provider:'custom-channel',model:'custom-model'}, [{id:'deep',name:'Deep'}]]]) {
+      const result = await call({type:'client-request',rpcId:'choices',method:'odai-control-center/routing',payload:{action:'choices',...fields}});
+      assert.deepEqual((await result.json()).result.value.choices, expected);
+    }
+    delete ctx.llm.listProviders;
+    const unavailable = await call({type:'client-request',rpcId:'choices',method:'odai-control-center/routing',payload:{action:'choices'}});
+    assert.equal((await unavailable.json()).result.value.ok, false);
   } finally {
     await dispose?.();
     await rm(scratch, { recursive: true, force: true });

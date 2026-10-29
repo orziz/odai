@@ -192,7 +192,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         appendEvent(agent, "odai/lead-mode", { taskMessageId: message.id, ...change });
         if (!change.enabled) for (const event of namedGaps(agent)) if (event.data.source === "lead-mode" && !gapConsumed(agent, event.data.stateDigest)) appendEvent(agent, "odai/responsibility-gap-consumed", { stateDigest: event.data.stateDigest, reason: "LEAD_MODE_DISABLED" });
       }
-      agent.inject?.(pluginMessage(`主导模式：${change.issue ?? (change.enabled ? "已开启" : "已关闭")}。规划与审查插槽：${JSON.stringify(Object.fromEntries(change.roles.map(role => [role, routes[role as Responsibility]])))}。未启用的插槽不调用；关闭说“关闭主导模式”。请向用户说明。`, "odai lead mode"));
+      agent.inject?.(pluginMessage(`主导模式：${change.issue ?? (change.enabled ? "已开启" : "已关闭")}。规划与审查插槽：${JSON.stringify(Object.fromEntries(change.roles.map(role => [role, routes[role as Responsibility] ?? "继承当前会话模型"])))}。未启用的插槽不调用；关闭说“关闭主导模式”。请向用户说明。`, "odai lead mode"));
     }
     const taskMessageId = leadTaskId(evidence.events(agent), message.id, classifyPendingReviewerText(text) === "continue");
     if (leadState(evidence.events(agent))?.enabled && !hasSessionEvent(agent, "odai/lead-task", data => data.taskMessageId === taskMessageId)) appendEvent(agent, "odai/lead-task", { taskMessageId });

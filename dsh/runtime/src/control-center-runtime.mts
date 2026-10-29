@@ -1,3 +1,4 @@
+import { discoverCliModels } from "./local-cli-catalog.mjs";
 import { applySessionControl, type SessionControlsSnapshot } from "./session-controls.mjs";
 import {
   applyRoutingConfigAction,
@@ -28,6 +29,7 @@ interface RpcFailure {
 export interface ControlCenterResponse {
   ok: boolean;
   session?: SessionControlsSnapshot;
+  choices?: Array<{ id: string; name: string }>;
   config?: Omit<RoutingConfigResult, "configPath" | "latestRoute">;
   events?: readonly SessionEvidenceEvent[];
   revision?: string;
@@ -232,6 +234,27 @@ export function installControlCenterRuntime(
     }
     const active = effectiveOptions(owners);
     try {
+      if (endpoint === CONTROL_CENTER_ENDPOINT && isUnknownRecord(payload) && payload.action === "choices") {
+        if (typeof payload.cli === "string") return { ok: true, value: { ok: true, choices: await discoverCliModels(payload.cli, signal) } };
+        const llm = ctx.llm as unknown as {
+          listProviders?(): Array<{ id: string; name: string }>;
+          listModels?(provider: string): Promise<Array<{ id: string; name: string }>>;
+          resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<{ reasoning?: { efforts: Array<{ id: string; name: string }> } }>;
+        };
+        if (!llm?.listProviders) throw new TypeError("宿主未提供模型目录，请手动输入");
+        if (payload.provider !== undefined && typeof payload.provider !== "string") throw new TypeError("invalid provider");
+        if (payload.model !== undefined && typeof payload.model !== "string") throw new TypeError("invalid model");
+        let choices;
+        if (typeof payload.provider !== "string" || !payload.provider) choices = llm.listProviders();
+        else if (typeof payload.model !== "string" || !payload.model) {
+          if (!llm.listModels) throw new TypeError("宿主未提供模型列表，请手动输入");
+          choices = await llm.listModels(payload.provider);
+        } else {
+          if (!llm.resolveModelInfo) throw new TypeError("宿主未提供推理档位，请手动输入");
+          choices = (await llm.resolveModelInfo(payload.provider, payload.model, signal)).reasoning?.efforts ?? [];
+        }
+        return { ok: true, value: { ok: true, choices: choices.map(({ id, name }) => ({ id, name })) } };
+      }
       if (endpoint === CONTROL_CENTER_SESSION_ENDPOINT) return { ok: true, value: { ok: true, session: applySessionControl(payload, { ...active, evidenceRoot: active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath) }) } };
       if (endpoint === CONTROL_CENTER_EVIDENCE_ENDPOINT) {
         const request = evidenceRequest(payload);

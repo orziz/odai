@@ -570,7 +570,35 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function RouteEditor({ role, config, busy, onApply }: { role: Responsibility; config: RoutingConfig; busy: boolean; onApply(payload: RoutingAction): Promise<RoutingConfig> }) {
+    function RouteChoice({ connection, value, onChange, provider, model, disabled, placeholder, localChoices, cli }: any) {
+      const [choices, setChoices] = useState([] as Array<{ id: string; name: string }>);
+      const [custom, setCustom] = useState(false);
+      const [error, setError] = useState("");
+      useEffect(() => {
+        const controller = new AbortController();
+        setChoices(localChoices ?? []); setError("");
+        if (localChoices || (!cli && (provider === "" || model === ""))) return () => controller.abort();
+        const timer = setTimeout(async () => {
+          try {
+            const response = await connection.rpc.call("/api", "odai-control-center/routing", { action: "choices", ...(cli ? { cli } : {}), ...(provider !== undefined ? { provider } : {}), ...(model !== undefined ? { model } : {}) }, controller.signal);
+            if (!response?.ok || !response.value?.ok) throw new Error(response?.value?.error?.message || "目录不可用");
+            if (!controller.signal.aborted) setChoices(response.value.choices ?? []);
+          } catch (cause) { if (!controller.signal.aborted) setError(String(cause)); }
+        }, 200);
+        return () => { clearTimeout(timer); controller.abort(); };
+      }, [connection, provider, model, localChoices, cli]);
+      return h("span", { className: "odaiCC__routeChoice", title: error || undefined },
+        h("select", { disabled, "aria-label": placeholder, value: custom ? "__custom__" : value,
+          onChange: (event: any) => { const next = event.target.value; setCustom(next === "__custom__"); if (next !== "__custom__") onChange(next); } },
+          h("option", { value: "" }, model !== undefined || localChoices ? "默认" : "请选择"),
+          value && !choices.some((choice: { id: string; name: string }) => choice.id === value) ? h("option", { value }, value) : null,
+          choices.map((choice: { id: string; name: string }) => h("option", { key: choice.id, value: choice.id }, choice.name === choice.id ? choice.id : `${choice.name} (${choice.id})`)),
+          h("option", { value: "__custom__" }, "手动输入…")),
+        error ? h("small", { role: "status" }, error) : null,
+        custom ? h("input", { value, placeholder, disabled, "aria-label": `${placeholder}自定义值`, onChange: (event: any) => onChange(event.target.value) }) : null);
+    }
+
+    function RouteEditor({ role, config, busy, onApply, connection }: { connection: any; role: Responsibility; config: RoutingConfig; busy: boolean; onApply(payload: RoutingAction): Promise<RoutingConfig> }) {
       const route = config?.roles?.[role];
       const source = config?.sources?.[role];
       const localCli = route?.backend === "local-cli";
@@ -602,6 +630,7 @@ window.__ModuleLoader__.load({
 
       const formCli = backend === "local-cli";
       const efforts = LOCAL_CLI_OPTIONS.find((option) => option.id === cli)?.efforts;
+      const localEfforts = useMemo(() => (cli === "codex" ? [] : (efforts ?? "").split(" / ").filter(Boolean)).map(id => ({ id, name: id })), [efforts, cli]);
       const payload = routeEditorPayload(role, { backend, cli, provider, model, effort, maxTokens, timeoutSeconds, session });
       const save = () => payload ? onApply(payload).then(() => setEditing(false)) : undefined;
       const remove = () => {
@@ -646,11 +675,11 @@ window.__ModuleLoader__.load({
             formCli ? h("small", null, "本机 CLI 只读运行，固定子代理调度，需已安装并登录对应 CLI") : null,
           ) : null,
           formCli
-            ? h("label", null, h("span", null, "本机 CLI"), h("select", { value: cli, onChange: (event: { target: { value: string } }) => setCli(event.target.value), disabled: busy },
+            ? h("label", null, h("span", null, "本机 CLI"), h("select", { value: cli, onChange: (event: { target: { value: string } }) => { setCli(event.target.value); setModel(""); setEffort(""); }, disabled: busy },
               LOCAL_CLI_OPTIONS.map((option) => h("option", { key: option.id, value: option.id }, option.label))))
-            : h("label", null, h("span", null, "Provider"), h("input", { value: provider, onChange: (event: { target: { value: string } }) => setProvider(event.target.value), placeholder: "Provider ID", disabled: busy })),
-          h("label", null, h("span", null, "模型"), h("input", { value: model, onChange: (event: { target: { value: string } }) => setModel(event.target.value), placeholder: formCli ? "模型 ID 或别名" : "模型 ID", disabled: busy })),
-          h("label", null, h("span", null, "推理档位"), h("input", { value: effort, onChange: (event: { target: { value: string } }) => setEffort(event.target.value), placeholder: formCli && efforts ? `可选：${efforts}` : "可选", disabled: busy })),
+            : h("label", null, h("span", null, "Provider"), h(RouteChoice, { connection, value: provider, onChange: (next: string) => { setProvider(next); setModel(""); setEffort(""); }, placeholder: "渠道", disabled: busy })),
+          h("label", null, h("span", null, "模型"), h(RouteChoice, { connection, provider: formCli ? undefined : provider, cli: formCli ? cli : undefined, value: model, onChange: (next: string) => { setModel(next); setEffort(""); }, placeholder: "模型", disabled: busy })),
+          h("label", null, h("span", null, "推理档位"), h(RouteChoice, { connection, provider, model, localChoices: formCli ? localEfforts : undefined, value: effort, onChange: setEffort, placeholder: "推理档位", disabled: busy })),
           formCli
             ? h("label", null, h("span", null, "超时（秒）"), h("input", { value: timeoutSeconds, onChange: (event: { target: { value: string } }) => setTimeoutSeconds(event.target.value), inputMode: "numeric", placeholder: "可选，默认 1200", disabled: busy }))
             : h("label", null, h("span", null, "最大 tokens"), h("input", { value: maxTokens, onChange: (event: { target: { value: string } }) => setMaxTokens(event.target.value), inputMode: "numeric", placeholder: "可选", disabled: busy })),
@@ -700,6 +729,7 @@ window.__ModuleLoader__.load({
           config,
           busy: busyRole === role,
           onApply: apply,
+          connection,
         }))) : loading ? h("div", { className: "odaiCC__empty" }, "正在加载路由配置…") : null,
       );
     }
@@ -741,9 +771,12 @@ window.__ModuleLoader__.load({
           if (event.key === "Escape") onClose();
         };
         document.addEventListener("keydown", onKey);
-        closeRef.current?.focus();
         return () => document.removeEventListener("keydown", onKey);
       }, [onClose]);
+      // Focus only when the drawer opens; host updates may replace onClose.
+      useEffect(() => {
+        closeRef.current?.focus();
+      }, []);
       useEffect(() => {
         setStoredEvidence([]);
         evidenceFingerprintRef.current = traceFingerprint(traceView.events ?? []);
@@ -843,16 +876,16 @@ window.__ModuleLoader__.load({
         finally { mutating.current = false; if (!controller.signal.aborted) setBusy(false); }
       };
       const details = state?.continuation.roles.map((r: any) => `${r.responsibility}：${r.reason || (r.effective === "continue" ? "续接" : "新开")}`).join("；");
-      return h("span", { style: { display: "inline-flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-        h("button", { type: "button", className: "odaiCC__launcher", role: "switch", "aria-checked": !!state?.lead.enabled,
-          disabled: busy || !state || (!state.lead.enabled && !state.lead.available), title: state?.lead.reason || "本会话：首次写入前规划，写入后审查；不取消正在运行的调用",
-          onClick: () => change({ action: "set-lead", enabled: !state.lead.enabled }) }, `主导：${state ? state.lead.enabled ? "开" : "关" : "…"}`),
-        h("label", { title: details || state?.continuation.reason }, "职责续接 ", h("select", {
+      return h("span", { className: "odaiCC__sessionControls", "aria-label": "本会话控制" },
+        h("button", { type: "button", className: "odaiCC__leadSwitch", role: "switch", "aria-label": "本会话主导模式", "aria-checked": !!state?.lead.enabled,
+          disabled: busy || !state || (!state.lead.enabled && !state.lead.available), title: state?.lead.reason || "本会话：首次写入前规划，写入后审查；未配置的规划、审查使用当前会话模型；关闭不取消正在运行的调用",
+          onClick: () => change({ action: "set-lead", enabled: !state.lead.enabled }) }, h("span", null, "主导"), h("span", { className: "odaiCC__switchTrack", "aria-hidden": true })),
+        h("label", { className: "odaiCC__continuation", title: state?.continuation.reason || details }, h("span", null, "续接"), h("select", {
           "aria-label": "本会话职责续接", disabled: busy || !state, value: state?.continuation.override ?? "inherit",
           onChange: (event: any) => change({ action: "set-continuation", value: event.target.value }) },
           h("option", { value: "inherit" }, "按映射"), h("option", { value: "fresh" }, "关闭"),
-          h("option", { value: "continue", disabled: !state?.continuation.available }, "开启（支持的职责）"))),
-        error ? h("span", { role: "alert" }, error) : state?.lead.reason || state?.continuation.reason ? h("small", null, state.lead.reason || state.continuation.reason) : null);
+          h("option", { value: "continue", disabled: !state?.continuation.available }, "开启")), h("span", { className: "odaiCC__selectChevron", "aria-hidden": true })),
+        error ? h("span", { className: "odaiCC__sessionNotice", role: "alert", title: error }, error) : state?.lead.reason || state?.continuation.reason ? h("small", { className: "odaiCC__sessionNotice", title: state.lead.reason || state.continuation.reason }, state.lead.reason || state.continuation.reason) : null);
     }
 
     function Launcher(props: { sessionId?: string; traceSource: (sessionId: string | undefined) => any; connection: any }) {
@@ -878,8 +911,26 @@ window.__ModuleLoader__.load({
       tag.dataset.plugin = PACKAGE_ID;
       tag.dataset.pluginCss = styleId;
       tag.textContent = `
-.odaiCC__launcher,.odaiCC{--odai-cc-bg:#f5f7fa;--odai-cc-panel:#fff;--odai-cc-surface:#f8fafc;--odai-cc-surface-2:#edf1f5;--odai-cc-text:#151922;--odai-cc-text-2:#4c5665;--odai-cc-text-3:#778190;--odai-cc-border:#d8dee7;--odai-cc-border-strong:#bdc6d2;--odai-cc-hover:#edf3ff;--odai-cc-accent:#2f6feb}
-.odaiCC__launcher{box-sizing:border-box;height:28px;border:1px solid var(--odai-cc-border);border-radius:6px;background:transparent;color:var(--odai-cc-text-2);display:inline-flex;align-items:center;gap:6px;padding:0 8px;cursor:pointer;font:600 11px/1 inherit;letter-spacing:0}.odaiCC__launcher:hover{background:var(--odai-cc-hover);color:var(--odai-cc-text)}
+.odaiCC__sessionControls{display:inline-flex;align-items:center;gap:0;box-sizing:border-box;min-height:28px;border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);color:var(--odai-cc-text-2);font-family:inherit;font-size:11px;line-height:1;white-space:nowrap}
+.odaiCC__leadSwitch{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:26px;padding:0 9px;border:0;border-radius:7px 0 0 7px;background:transparent;color:inherit;font-family:inherit;font-size:11px;font-weight:500;cursor:pointer}
+.odaiCC__leadSwitch:hover:not(:disabled){background:var(--odai-cc-hover)}
+.odaiCC__leadSwitch[aria-checked="true"]{color:var(--odai-cc-accent)}
+.odaiCC__switchTrack{position:relative;display:inline-block;width:23px;height:13px;border-radius:8px;background:var(--odai-cc-border-strong);transition:background .15s;flex:none}
+.odaiCC__switchTrack:after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0002;transition:transform .15s}
+.odaiCC__leadSwitch[aria-checked="true"] .odaiCC__switchTrack{background:var(--odai-cc-accent)}
+.odaiCC__leadSwitch[aria-checked="true"] .odaiCC__switchTrack:after{transform:translateX(10px)}
+.odaiCC__continuation{position:relative;display:inline-flex;align-items:center;gap:5px;min-height:26px;padding-left:9px;border-left:1px solid var(--odai-cc-border);font-size:11px;color:var(--odai-cc-text-3)}
+.odaiCC__continuation select{appearance:none;-webkit-appearance:none;box-sizing:border-box;width:65px;min-height:26px;margin:0;padding:0 19px 0 3px;border:0;border-radius:0 7px 7px 0;background:transparent;color:var(--odai-cc-text-2);font-family:inherit;font-size:11px;font-weight:500;line-height:normal;cursor:pointer}
+.odaiCC__continuation select:hover:not(:disabled){background:var(--odai-cc-hover)}
+.odaiCC__continuation option{color:var(--odai-cc-text);background:var(--odai-cc-panel)}
+.odaiCC__selectChevron{position:absolute;right:9px;top:9px;width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);pointer-events:none}
+.odaiCC__leadSwitch:focus-visible,.odaiCC__continuation select:focus-visible{outline:2px solid var(--odai-cc-accent);outline-offset:2px}
+.odaiCC__leadSwitch:disabled,.odaiCC__continuation select:disabled{opacity:.5;cursor:not-allowed}
+.odaiCC__sessionNotice{max-width:160px;overflow:hidden;text-overflow:ellipsis;padding:0 8px;font-size:11px;color:var(--odai-cc-text-3)}
+@media(prefers-reduced-motion:reduce){.odaiCC__switchTrack,.odaiCC__switchTrack:after{transition:none}}
+
+.odaiCC__sessionControls,.odaiCC__launcher,.odaiCC{--odai-cc-bg:#f5f7fa;--odai-cc-panel:#fff;--odai-cc-surface:#f8fafc;--odai-cc-surface-2:#edf1f5;--odai-cc-text:#151922;--odai-cc-text-2:#4c5665;--odai-cc-text-3:#778190;--odai-cc-border:#d8dee7;--odai-cc-border-strong:#bdc6d2;--odai-cc-hover:#edf3ff;--odai-cc-accent:#2f6feb}
+.odaiCC__launcher{box-sizing:border-box;height:28px;border:1px solid var(--odai-cc-border);border-radius:6px;background:transparent;color:var(--odai-cc-text-2);display:inline-flex;align-items:center;gap:6px;padding:0 8px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;line-height:1;letter-spacing:0}.odaiCC__launcher:hover{background:var(--odai-cc-hover);color:var(--odai-cc-text)}
 .odaiCC__graphIcon{position:relative;width:17px;height:15px;display:inline-block;flex:none}.odaiCC__graphNode{position:absolute;width:5px;height:5px;border:1.5px solid currentColor;border-radius:50%;box-sizing:border-box}.odaiCC__graphNode--a{left:0;top:5px}.odaiCC__graphNode--b{right:0;top:0}.odaiCC__graphNode--c{right:0;bottom:0}.odaiCC__graphLine{position:absolute;left:5px;top:7px;width:7px;height:1px;background:currentColor}.odaiCC__graphLine:before,.odaiCC__graphLine:after{content:"";position:absolute;right:0;width:5px;height:1px;background:currentColor;transform-origin:right center}.odaiCC__graphLine:before{transform:rotate(-38deg)}.odaiCC__graphLine:after{transform:rotate(38deg)}
 .odaiCC{position:fixed;inset:0;z-index:120;color:var(--odai-cc-text);font-family:inherit;letter-spacing:0}.odaiCC *{box-sizing:border-box}.odaiCC__backdrop{position:absolute;inset:0;border:0;background:rgba(0,0,0,.28)}.odaiCC__drawer{position:absolute;inset:14px;max-width:1180px;margin-left:auto;border:1px solid var(--odai-cc-border-strong);border-radius:8px;background:var(--odai-cc-panel);box-shadow:0 24px 80px rgba(0,0,0,.42);display:flex;flex-direction:column;overflow:hidden}.odaiCC__header{min-height:62px;border-bottom:1px solid var(--odai-cc-border);display:grid;grid-template-columns:minmax(230px,1fr) auto minmax(44px,1fr);align-items:center;gap:16px;padding:10px 14px}.odaiCC__brand{display:flex;align-items:center;gap:10px;min-width:0}.odaiCC__brand>.odaiCC__graphIcon{width:22px;height:19px;color:var(--odai-cc-accent)}.odaiCC__brand h2{font-size:16px;line-height:22px;margin:0}.odaiCC__brand span{display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__tabs{display:flex;border:1px solid var(--odai-cc-border);border-radius:6px;padding:2px;background:var(--odai-cc-surface)}.odaiCC__tabs button{height:30px;min-width:72px;border:0;border-radius:4px;background:transparent;color:var(--odai-cc-text-3);cursor:pointer;font:600 12px/1 inherit}.odaiCC__tabs button.is-active{background:var(--odai-cc-panel);color:var(--odai-cc-text);box-shadow:0 1px 4px rgba(0,0,0,.2)}.odaiCC__close{justify-self:end;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--odai-cc-text-2);font-size:22px;line-height:1;cursor:pointer}.odaiCC__close:hover{background:var(--odai-cc-hover)}.odaiCC__body{min-height:0;flex:1;overflow:auto}.odaiCC__live{padding:14px}.odaiCC__kicker{display:block;color:var(--odai-cc-text-3);font:700 9px/14px inherit;letter-spacing:.08em}.odaiCC__sectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}.odaiCC__sectionHead h3{font-size:12px;line-height:18px;margin:0}.odaiCC__eventCount{color:var(--odai-cc-text-3);font-size:10px}.odaiCC__flow{border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:12px}.odaiCC__flowGrid{display:grid;grid-template-columns:minmax(160px,220px) minmax(360px,1fr);gap:22px;align-items:center;min-height:265px}.odaiCC__controllerNode{border:1px solid rgba(119,167,255,.45);border-radius:8px;background:rgba(119,167,255,.08);padding:18px}.odaiCC__controllerNode strong,.odaiCC__roleNode strong{display:block;font-size:12px;line-height:18px}.odaiCC__controllerNode small,.odaiCC__roleNode small{display:block;color:var(--odai-cc-text-3);font-size:10px;line-height:15px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.odaiCC__nodeEyebrow{color:#2f6feb;font-size:9px;font-weight:700}.odaiCC__roleStack{display:flex;flex-direction:column;gap:8px}.odaiCC__flowRole{display:grid;grid-template-columns:92px minmax(0,1fr);align-items:center;border:0;background:transparent;color:inherit;padding:0;text-align:left}.odaiCC__flowRole:not(:disabled){cursor:pointer}.odaiCC__flowRole:disabled{opacity:1}.odaiCC__edge{position:relative;height:1px;background:var(--odai-cc-border-strong);margin-right:12px}.odaiCC__edge i{position:absolute;right:-1px;top:-3px;width:7px;height:7px;border-top:1px solid currentColor;border-right:1px solid currentColor;transform:rotate(45deg)}.odaiCC__edge em{position:absolute;left:5px;top:-17px;color:var(--odai-cc-text-3);font:500 9px/12px inherit;font-style:normal}.odaiCC__edge[data-state=proposal],.odaiCC__edge[data-state=decision]{background:repeating-linear-gradient(90deg,#65c6b8 0 5px,transparent 5px 9px);color:#65c6b8}.odaiCC__edge[data-state=same-turn]{background:#b99cff;color:#b99cff}.odaiCC__edge[data-state=child]{background:var(--odai-cc-accent);color:var(--odai-cc-accent)}.odaiCC__edge[data-state=handback]{background:#f1bb61;color:#f1bb61}.odaiCC__edge[data-state=blocked],.odaiCC__edge[data-state=interrupted]{background:#ef7e78;color:#ef7e78}.odaiCC__roleNode{border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);padding:8px 10px;min-width:0}.odaiCC__flowRole:not(:disabled):hover .odaiCC__roleNode{border-color:var(--odai-cc-accent)}.odaiCC__role{display:inline-flex;align-items:center;gap:5px;color:var(--odai-cc-text-2);font-size:9px;line-height:14px}.odaiCC__role i{width:6px;height:6px;border-radius:50%;background:#8f969e}.odaiCC__role--controller i{background:var(--odai-cc-accent)}.odaiCC__role--researcher i{background:#65c6b8}.odaiCC__role--planner i{background:#b99cff}.odaiCC__role--reviewer i{background:#f1bb61}.odaiCC__role--frontend i{background:#ef8fbd}.odaiCC__evidenceGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:12px;margin-top:12px}.odaiCC__timeline,.odaiCC__inspector{min-width:0;border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:10px}.odaiCC__turn{border-top:1px solid var(--odai-cc-border);padding:8px 0}.odaiCC__turn:first-child{border-top:0;padding-top:0}.odaiCC__turn summary{display:flex;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;font-size:10px}.odaiCC__turn summary::-webkit-details-marker{display:none}.odaiCC__turn summary span{color:var(--odai-cc-text-3)}.odaiCC__events{display:flex;flex-direction:column;gap:6px;margin-top:8px}.odaiCC__event{width:100%;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:inherit;padding:8px;text-align:left;cursor:pointer}.odaiCC__event:hover,.odaiCC__event.is-selected{border-color:var(--odai-cc-accent);background:var(--odai-cc-hover)}.odaiCC__eventTop{display:flex;align-items:center;gap:6px;color:var(--odai-cc-text-3);font-size:9px}.odaiCC__eventTop time{margin-left:auto}.odaiCC__eventTop code{font-size:9px}.odaiCC__event>strong{display:block;margin-top:5px;font-size:11px;line-height:16px}.odaiCC__eventDetail{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--odai-cc-text-2);font-size:10px;line-height:15px;margin-top:2px}.odaiCC__eventBottom{display:flex;gap:8px;align-items:center;color:var(--odai-cc-text-3);font-size:9px;margin-top:6px}.odaiCC__state{display:inline-flex;border-radius:999px;background:var(--odai-cc-surface-2);color:var(--odai-cc-text-2);padding:1px 6px;font-size:9px;line-height:13px}.odaiCC__state--proposal{background:rgba(101,198,184,.15);color:#18756b}.odaiCC__state--same-turn{background:rgba(185,156,255,.15);color:#6f42c1}.odaiCC__state--child{background:rgba(119,167,255,.15);color:#245ec7}.odaiCC__state--handback{background:rgba(241,187,97,.15);color:#946000}.odaiCC__state--blocked,.odaiCC__state--interrupted{background:rgba(239,126,120,.15);color:#b42318}.odaiCC__facts{margin:0;display:flex;flex-direction:column;gap:7px}.odaiCC__facts>div{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;font-size:10px}.odaiCC__facts dt{color:var(--odai-cc-text-3)}.odaiCC__facts dd{margin:0;overflow-wrap:anywhere}.odaiCC__facts code{font-size:9px}.odaiCC__raw{max-height:360px;overflow:auto;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:var(--odai-cc-text-2);font:9px/14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px;margin:10px 0 0}.odaiCC__empty{border:1px dashed var(--odai-cc-border-strong);border-radius:7px;color:var(--odai-cc-text-3);font-size:10px;line-height:16px;padding:18px;text-align:center}
 .odaiCC__nativeCalls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px;min-width:0}.odaiCC__flowRole.odaiCC__nativeCall{grid-template-columns:minmax(0,1fr);width:100%;min-width:0}.odaiCC__nativeCall .odaiCC__roleNode{min-width:0;height:100%}.odaiCC__nativeNote{margin:6px 0 0;color:var(--odai-cc-text-3);font-size:12px;line-height:1.5}
@@ -888,7 +939,11 @@ window.__ModuleLoader__.load({
 @media(max-width:900px){.odaiCC__routeRow{display:block}.odaiCC__dispatch{margin-top:7px}}
 @media(max-width:760px){.odaiCC__launcher span:last-child{display:none}.odaiCC__drawer{inset:6px}.odaiCC__header{grid-template-columns:minmax(0,1fr) auto auto;gap:7px;padding:8px}.odaiCC__brand span{display:none}.odaiCC__tabs button{min-width:56px}.odaiCC__live{padding:8px}.odaiCC__flowGrid{grid-template-columns:1fr;gap:10px;min-height:0}.odaiCC__controllerNode{padding:10px}.odaiCC__flowRole{grid-template-columns:65px minmax(0,1fr)}.odaiCC__evidenceGrid{grid-template-columns:1fr}.odaiCC__inspector{max-height:none}.odaiCC__routing{padding:10px}.odaiCC__controllerLock,.odaiCC__routeSummary{grid-template-columns:92px minmax(0,1fr) auto}.odaiCC__dispatch{grid-template-columns:92px 1fr}.odaiCC__dispatch small{grid-column:2}.odaiCC__routeForm{grid-template-columns:1fr 1fr;margin-left:0}.odaiCC__raw{max-height:240px}}
 @media(max-width:760px){.odaiCC__body{overflow:hidden}.odaiCC__live{gap:8px}.odaiCC__flow{max-height:30vh}.odaiCC__evidenceGrid{grid-template-rows:minmax(180px,1fr) minmax(120px,35vh);overflow:hidden}.odaiCC__timeline,.odaiCC__inspector{min-height:0;max-height:none}}
-@media(prefers-color-scheme:dark){.odaiCC__launcher,.odaiCC{--odai-cc-bg:#14171b;--odai-cc-panel:#191d22;--odai-cc-surface:#1f242a;--odai-cc-surface-2:#282e35;--odai-cc-text:#f2f4f7;--odai-cc-text-2:#c5cbd3;--odai-cc-text-3:#929ba7;--odai-cc-border:#333a43;--odai-cc-border-strong:#46505c;--odai-cc-hover:#26354b;--odai-cc-accent:#77a7ff}.odaiCC__nodeEyebrow{color:#91b7ff}.odaiCC__state--proposal,.odaiCC__alert.is-success{color:#90d9cf}.odaiCC__state--same-turn{color:#cbb8ff}.odaiCC__state--child{color:#a6c3ff}.odaiCC__state--handback{color:#f4ca84}.odaiCC__state--blocked,.odaiCC__state--interrupted,.odaiCC__dangerButton,.odaiCC__alert.is-error{color:#f3a39e}}
+@media(min-width:761px){.odaiCC__routing .odaiCC__routeForm{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.odaiCC__routeForm>label{min-width:0}
+.odaiCC__routeChoice{display:flex;flex-direction:column;gap:4px;min-width:0}
+.odaiCC__routeForm input,.odaiCC__routeForm select{min-width:0;width:100%}
+@media(prefers-color-scheme:dark){.odaiCC__sessionControls,.odaiCC__launcher,.odaiCC{--odai-cc-bg:#14171b;--odai-cc-panel:#191d22;--odai-cc-surface:#1f242a;--odai-cc-surface-2:#282e35;--odai-cc-text:#f2f4f7;--odai-cc-text-2:#c5cbd3;--odai-cc-text-3:#929ba7;--odai-cc-border:#333a43;--odai-cc-border-strong:#46505c;--odai-cc-hover:#26354b;--odai-cc-accent:#77a7ff}.odaiCC__nodeEyebrow{color:#91b7ff}.odaiCC__state--proposal,.odaiCC__alert.is-success{color:#90d9cf}.odaiCC__state--same-turn{color:#cbb8ff}.odaiCC__state--child{color:#a6c3ff}.odaiCC__state--handback{color:#f4ca84}.odaiCC__state--blocked,.odaiCC__state--interrupted,.odaiCC__dangerButton,.odaiCC__alert.is-error{color:#f3a39e}}
 @media(prefers-reduced-motion:no-preference){.odaiCC__drawer{animation:odaiCCIn .15s ease-out}}@keyframes odaiCCIn{from{opacity:.72;transform:translateX(8px)}to{opacity:1;transform:none}}
 `;
       document.head.appendChild(tag);
@@ -1023,7 +1078,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply;
     exports.inject = ["slots", "sessions", "connection"];
-    exports.__testing = { controlCenterError, conversationTraceSource, defaultTraceItem, localCliAllowed, projectTrace, routeEditorPayload, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
+    exports.__testing = { ControlCenter, controlCenterError, conversationTraceSource, defaultTraceItem, localCliAllowed, projectTrace, routeEditorPayload, stateOf, roleOf, shouldOwnSurface, traceFingerprint, windowTurnItems };
     return module.exports;
   },
 });

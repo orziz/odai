@@ -6924,18 +6924,18 @@ test("manual writer API labels apply the mapped contract and read-only child bou
   }
 });
 
-for (const outcome of ["pass", "changes-requested", "invalid", "failure", "readonly", "off", "child", "merge"]) test(`lead mode lifecycle: ${outcome}`, async () => {
+for (const outcome of ["pass", "changes-requested", "invalid", "failure", "readonly", "off", "child", "merge", "inherited"]) test(`lead mode lifecycle: ${outcome}`, async () => {
   const route = { provider: "slot-provider", model: "slot-model" };
   const starts = [];
   const ctx = fakeContext({ subagents: { async start(_provider, request) {
     starts.push(request);
     return { localAgent: { session: childSession(route) }, result: Promise.resolve({ stopReason: outcome === "failure" ? "error" : "completed", output: [{ type: "text", text: outcome === "invalid" ? "No verdict" : `Review notes\nVERDICT: ${outcome === "changes-requested" ? outcome : "pass"}` }] }), async dispose() {} };
   } } });
-  apply(ctx, { skillPath, routing: { mode: outcome === "off" ? "off" : "auto", configPath: resolve(testDshHome, `lead-${outcome}/routing.json`), roles: { planner: route, reviewer: route }, dispatch: { planner: "child", reviewer: "child" } } });
+  apply(ctx, { skillPath, routing: { mode: outcome === "off" ? "off" : "auto", configPath: resolve(testDshHome, `lead-${outcome}/routing.json`), roles: outcome === "inherited" ? {} : { planner: route, reviewer: route }, dispatch: outcome === "inherited" ? {} : { planner: "child", reviewer: "child" } } });
   const message = userMessage("开启主导模式" + (outcome === "merge" ? "，先让 planner 规划，做完让 reviewer 验收" : ""), `lead-${outcome}`);
   const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }, { type: "user/message", seq: 2, data: message }];
   const steering = [];
-  const agent = { phase: { turn: 1, step: 1 }, steer: message => steering.push(message), inject() {}, session: { header: { cwd: researchProjectRoot, ...(outcome === "child" ? { origin: "subagent" } : {}) }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
+  const agent = { options: route, phase: { turn: 1, step: 1 }, steer: message => steering.push(message), inject() {}, session: { header: { cwd: researchProjectRoot, ...(outcome === "child" ? { origin: "subagent" } : {}) }, snapshotEvents: () => events, append(type, data) { events.push({ type, data }); } } };
   const signal = new AbortController().signal;
   const preStep = ctx.captured.handlers.get("agent/pre-step");
   const stop = ctx.captured.handlers.get("agent/turn-stopping");
