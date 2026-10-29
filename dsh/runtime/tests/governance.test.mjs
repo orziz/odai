@@ -117,7 +117,7 @@ test("read-only responsibility remains enforced without risk protection", () => 
   for (const name of ["write", "edit", "bash", "pwsh", "future_side_effect", "web_fetch"]) {
     assert.match(
       denial(guard({ agent: controller, name, arguments: { file_path: "unrelated/notes.md" } })),
-      /active read-only responsibility/,
+      /^ODAI_RESPONSIBILITY_READ_ONLY: active read-only responsibility/,
     );
   }
   for (const name of ["read", "glob", "grep", "ask_user_question", "odai_responsibility_return"]) {
