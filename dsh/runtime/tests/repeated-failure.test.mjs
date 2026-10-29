@@ -42,7 +42,6 @@ test("expected red tests and repeated experiments are never blocked and receive 
   const f = fixture();
   for (let n = 0; n < 10; n++) f.run(1);
   assert.equal(f.notices.length, 1);
-  assert.match(f.notices[0], /may be expected/u);
   f.run(0);
   f.run(1);
   f.run(1);

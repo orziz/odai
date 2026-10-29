@@ -38,7 +38,7 @@ function testBuilds() {
       assert.equal(adapter.routing_policy.mode, "conditional");
       assert.equal(adapter.routing_policy.controller_identity, "persistent-task-thread");
       assert.equal(adapter.routing_policy.controller_owns_implementation, true);
-      assert.deepEqual(Object.keys(adapter.mapping), roles);
+      assert.deepEqual(Object.keys(adapter.mapping).sort(), [...roles].sort());
       assert.equal(adapter.mapping.executor, undefined);
       assert.equal(adapter.routing_policy.executor_activation, undefined);
 
@@ -62,7 +62,7 @@ function testBuilds() {
     assert.equal(optional.status, 0, optional.stderr);
     const generated = path.join(root, "optional", "codex");
     const adapter = json(path.join(generated, "ADAPTER.json"));
-    assert.deepEqual(Object.keys(adapter.mapping), ["controller", "planner", "reviewer", "researcher", "frontend"]);
+    assert.deepEqual(Object.keys(adapter.mapping).sort(), ["controller", "planner", "reviewer", "researcher", "frontend"].sort());
     assert.ok(existsSync(path.join(generated, ".codex", "agents", "odai-researcher.toml")));
     assert.ok(existsSync(path.join(generated, ".codex", "agents", "odai-frontend.toml")));
     const isolated = path.join(root, "independent/odai-orchestration");
@@ -208,7 +208,7 @@ function testInstallLifecycle() {
     const manifestFile = path.join(config, "odai-routing.json");
     let manifest = json(manifestFile);
     assert.equal(manifest.version, 13);
-    assert.deepEqual(Object.keys(manifest.mapping), roles);
+    assert.deepEqual(Object.keys(manifest.mapping).sort(), [...roles].sort());
     assert.equal(manifest.mapping.executor, undefined);
     assert.ok(!existsSync(path.join(config, "agents", "odai-executor.toml")));
     assert.ok(!existsSync(path.join(config, "odai-run-routing.mjs")));

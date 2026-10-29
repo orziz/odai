@@ -104,6 +104,8 @@ git diff --check
 
 DSH source 使用根目录 `npm run check:dsh`：构建时严格检查生产 TypeScript，再用 Node 校验经过渲染的浏览器脚本。普通行为测试、辅助代码和宿主探针使用 `.mjs`，导入构建产物，以 `node --test` 或 `node` 执行；没有测试专属 tsconfig 或 `tsx` 加载器。测试前先构建一次，此后只运行受影响的文件。若将来需要验证编译期公共类型契约，再为该具体合同增加独立类型测试，不给普通 fixture 补类型框架。两个包的 `check` 均委托根入口。
 
+`node scripts/verify-dsh-release-matrix.mjs` 在源码模式下先统一构建一次，再对每个隔离宿主运行 Plugin、Agent 与共存探针，不在各探针内重复构建。CI 已在前一步完成 `check:dsh`，因此使用 `--skip-build` 复用同一源码的产物；本地仅在刚完成构建且源码未变化时使用该选项。传入双包 tarball 的安装验证仍直接检查指定产物。单包 `verify:dsh` 保留自带构建，便于独立调用。
+
 改可选 Hooks runtime、策略示例或适配生成器时补充：
 
 ```bash

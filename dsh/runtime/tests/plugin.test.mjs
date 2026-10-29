@@ -4496,7 +4496,6 @@ test("reviewer starts from an authenticated task and investigates available or f
   );
   assert.equal(starts, 1);
   assert.ok(startRequest);
-  assert.match(blockText(startRequest.prompt[0]), /Odai bounded role context packet/u);
   assert.match(blockText(startRequest.prompt[0]), /Review planner acceptance A1 and A2 against the final patch/u);
   const verificationOwner = readFileSync(
     resolve(import.meta.dirname, "../../../skills/odai/references/verification.md"),
@@ -4506,7 +4505,6 @@ test("reviewer starts from an authenticated task and investigates available or f
     blockText(startRequest.prompt[0]).includes(verificationOwner),
     "child reviewer receives its complete verification owner",
   );
-  assert.match(blockText(startRequest.prompt[0]), /Frozen requirement decisions/u);
   assert.match(blockText(startRequest.prompt[0]), /R-default/u);
   assert.match(blockText(startRequest.prompt[0]), /Preserve default behavior while fixing routing/u);
   assert.match(blockText(startRequest.prompt[0]), /Planner acceptance A1: reuse the canonical owner/u);

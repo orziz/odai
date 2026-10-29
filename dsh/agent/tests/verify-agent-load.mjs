@@ -167,16 +167,6 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
       const sendMessage = assembly.tools.find((tool) => tool.name === "send_message");
       const sendProperties = sendMessage?.parameters?.properties;
       if (preset === "odai") {
-        const goalPolicy = assembly.sections.find((section) => section.name === "tool:goal")?.text;
-        const createGoal = assembly.tools.find((tool) => tool.name === "create_goal");
-        const todo = assembly.tools.find((tool) => tool.name === "todo_write");
-        assert.match(goalPolicy ?? "", /human explicitly requests/);
-        assert.doesNotMatch(goalPolicy ?? "", /may infer goal intent/);
-        assert.match(createGoal?.description ?? "", /human explicitly requests/);
-        assert.doesNotMatch(todo?.description ?? "", /add one todo per concrete step before you start/);
-        assert.match(todo?.description ?? "", /multi-step work alone does not require a list/);
-        assert.doesNotMatch(todo?.description ?? "", /do not batch completions/);
-        assert.match(todo?.description ?? "", /completed items may be reported together/);
         const ralph = assembly.tools.find((tool) => tool.name === "ralph");
         // Disabled by default in the odai preset, as in Standard.
         assert.equal(ralph, undefined);

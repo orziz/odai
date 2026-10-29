@@ -4,7 +4,7 @@
 
 ## 单一事实源
 
-所有案例只维护在 [`plans/odai-canary.md`](../plans/odai-canary.md)。该目录连续包含 C01-C34；题面、可观察验收、失败门、层级、权重和 suite 归属都以同一行数据为准，不再维护 A/B 或专项题本副本。
+Canonical canary 案例只维护在 [`plans/odai-canary.md`](../plans/odai-canary.md)。该目录连续包含 C01-C34；题面、可观察验收、失败门、层级、权重和 suite 归属都以同一行数据为准，不再维护 A/B 或专项题本副本。
 
 | suite | 用例 | 权重 | 加权满分 | 默认 pass 门槛 |
 |---|---|---:|---:|---:|
@@ -27,6 +27,30 @@ node scripts/odai-canary-harness.mjs --cases 20,34 --skill-mode on
 ```
 
 实际运行追加 `--run`。正式输出和工作副本必须在仓库树外。
+
+匿名多臂横评使用独立的 [盲评协议](../plans/odai-blind.md) 和 `scripts/odai-blind-harness.mjs`，不并入 canary suite，也不把其 JSON 题本替换成 canary Markdown。
+
+### 从旧 PowerShell 包装入口迁移
+
+`run-claude-canary.ps1`、`run-kimi-canary.ps1`、`run-grok-canary.ps1` 已退役：其固定选题、旧题本、仓库内输出目录和部分推理档参数已与 harness 契约漂移。底层 runner 与 judge 保留，统一通过 harness 显式配置。例如在仓库根目录使用 PowerShell：
+
+```powershell
+$repo = (Get-Location).Path
+$runnerModel = "sonnet" # 示例；按实际可用模型选择
+$judgeModel = "gpt-5.6-sol"
+$judgeEffort = "high"
+$runner = "node `"$repo/scripts/claude-canary-runner.mjs`" --prompt-file {prompt_file} --cwd {workdir} --last-message {last_message} --model `"$runnerModel`""
+$judge = "node `"$repo/scripts/codex-canary-judge.mjs`" --cwd {workdir} --schema {schema} --output {judge_output} --model `"$judgeModel`" --reasoning-effort `"$judgeEffort`""
+node scripts/odai-canary-harness.mjs `
+  --plan plans/odai-canary.md --suite ab --skill-mode on `
+  --runner-cmd $runner --judge-cmd $judge `
+  --runner-model $runnerModel --runner-reasoning-effort not-configured `
+  --judge-model $judgeModel --judge-reasoning-effort $judgeEffort
+```
+
+该命令只准备 fixture，对应旧 `-PrepareOnly`；实际执行追加 `--run`。不传 `--out` 时使用临时目录，显式输出应为仓库外的新目录。可将 `--suite ab` 换成实际需要的 suite 或 `--cases`。
+
+Grok、Kimi 分别换用 `grok-canary-runner.mjs`、`kimi-canary-runner.mjs` 并选择实际模型。上述三个 adapter 没有设置推理档的参数，`not-configured` 只是报告标签，不能当成后端实际档位；Kimi 旧包装的延迟评分行为需要显式追加 `--defer-judge`。自定义二进制仍可通过 `ODAI_CLAUDE_COMMAND`、`ODAI_GROK_COMMAND`、`ODAI_KIMI_COMMAND` 与 `ODAI_CODEX_COMMAND` 指定。不要脱离 harness 直接调用 adapter 来冒充隔离评测。
 
 ## 隔离契约
 

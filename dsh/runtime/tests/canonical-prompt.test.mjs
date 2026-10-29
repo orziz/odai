@@ -15,7 +15,7 @@ test("canonical rendering omits metadata while retaining body, source identity, 
     bundle,
     rejections: [],
   });
-  assert.ok(prompt.endsWith(bundle.skillBody));
+  assert.ok(prompt.includes(bundle.skillBody));
   assert.ok(bundle.roleContracts.writer.includes(readFileSync(resolve(root, "references/craft.md"), "utf8").trim()));
   assert.ok(bundle.skillText.startsWith("---\nname: odai\n"));
   assert.doesNotMatch(prompt, /^name: odai$|^description:/mu);

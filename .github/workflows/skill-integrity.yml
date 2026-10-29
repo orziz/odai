@@ -49,7 +49,7 @@ jobs:
           npm --prefix dsh/agent install --ignore-scripts --no-package-lock --legacy-peer-deps
           node --test dsh/runtime/tests/*.test.mjs dsh/plugin/tests/*.test.mjs scripts/dsh-web-rpc.test.mjs dsh/agent/tests/*.test.mjs
       - name: Verify isolated DSH release contract
-        run: node scripts/verify-dsh-release-matrix.mjs
+        run: node scripts/verify-dsh-release-matrix.mjs --skip-build
       - name: Verify packaged artifacts and cleanup
         run: |
           scratch=$(mktemp -d)

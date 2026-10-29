@@ -50,7 +50,7 @@ test("human-safety guidance is crisis-specific, proactive, and keeps the control
   assert.deepEqual(controller.principles, ["timely-intervention", "active-guidance", "no-secondary-harm"]);
   const rendered = tool.output.render({}, controller)[0]?.text;
   assert.ok(rendered);
-  assert.match(rendered, /及时干预、主动引导/u);
+  assert.ok(rendered.includes(contract));
   const child = await tool.execute({}, execution("odai_human_safety", true));
   assert.equal(child.userChannelOwner, "controller");
   assert.throws(() => tool.execute({ severity: "high" }, execution("odai_human_safety")), /accepts no arguments/u);

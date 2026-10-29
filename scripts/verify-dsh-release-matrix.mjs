@@ -32,6 +32,8 @@ const releases = options.versions.length === 0
     if (!release) throw new Error(`unknown DSH release contract ${version}`);
     return release;
   });
+// Standalone source verification builds once; CI may reuse its immediately preceding build.
+if (!options.pluginTgz && !options.skipBuild) run(npm, ["run", "build:dsh"]);
 const scratch = await mkdtemp(resolve(tmpdir(), "odai-dsh-release-matrix-"));
 const toolingRoot = resolve(scratch, "tooling");
 const results = [];
@@ -97,8 +99,9 @@ try {
       run(process.execPath, ["dsh/plugin/tests/verify-dsh-load.mjs"], { env: packageEnv });
       run(process.execPath, ["dsh/agent/tests/verify-agent-load.mjs"], { env: packageEnv });
     } else {
-      run(npm, ["--prefix", "dsh/plugin", "run", "verify:dsh"], { env });
-      run(npm, ["--prefix", "dsh/agent", "run", "verify:dsh"], { env });
+      run(process.execPath, ["dsh/plugin/tests/verify-legacy-session-repair.mjs"], { env });
+      run(process.execPath, ["dsh/plugin/tests/verify-dsh-load.mjs"], { env });
+      run(process.execPath, ["dsh/agent/tests/verify-agent-load.mjs"], { env });
       run(process.execPath, ["scripts/verify-dsh-coexistence.mjs"], { env });
     }
     results.push({
@@ -124,15 +127,17 @@ function parseArguments(arguments_) {
   const versions = [];
   let pluginTgz;
   let agentTgz;
+  let skipBuild = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--version") versions.push(requiredValue(arguments_, ++index, argument));
     else if (argument === "--plugin-tgz") pluginTgz = resolve(requiredValue(arguments_, ++index, argument));
     else if (argument === "--agent-tgz") agentTgz = resolve(requiredValue(arguments_, ++index, argument));
+    else if (argument === "--skip-build") skipBuild = true;
     else throw new Error(`unknown argument ${argument}`);
   }
   if (Boolean(pluginTgz) !== Boolean(agentTgz)) throw new Error("--plugin-tgz and --agent-tgz must be provided together");
-  return { versions, pluginTgz, agentTgz };
+  return { versions, pluginTgz, agentTgz, skipBuild };
 }
 
 function requiredValue(arguments_, index, option) {
