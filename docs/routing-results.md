@@ -1,6 +1,6 @@
 # Odai DSH 路由验证
 
-最新已发布双包为 `0.3.1`；源码候选为未发布 `0.3.2`，治理 `0.7.1`、runtime contract `9`、编排 `0.2.3` 保持不变。当前以 DSH `0.2.1-rc.2` 为最低支持基线，npm peer 保持开放 `*`，Agent 允许后续版本及预发布；未来版本未自动获得实测认证。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果为历史证据，不代表当前候选继续支持旧版 DSH。
+最新已发布双包为 `0.3.2`；源码候选为未发布 `0.3.3`，治理 `0.7.1`、runtime contract `9`、编排 `0.2.3` 保持不变。当前以 DSH `0.2.1-rc.2` 为最低支持基线，npm peer 保持开放 `*`，Agent 允许后续版本及预发布；未来版本未自动获得实测认证。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果为历史证据，不代表当前候选继续支持旧版 DSH。
 
 ## 本机 CLI 调查与审查（双包 0.2.56 候选）
 
