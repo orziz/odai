@@ -42,13 +42,15 @@ interface RequestRouteAgent {
 }
 
 interface RoutedRun {
+  childId?: string;
   result: Promise<RoutedRunResult>;
   localAgent?: RequestRouteAgent;
   dispose(): Promise<void>;
 }
 
 export interface SubagentsService {
-  start(provider: string, options: UnknownRecord): Promise<RoutedRun>;
+  startActivation?(spec: UnknownRecord): Promise<RoutedRun>;
+  start?(provider: string, options: UnknownRecord): Promise<RoutedRun>;
 }
 
 export interface RoutedRoleOutcome extends UnknownRecord {
@@ -233,7 +235,12 @@ export function routeMismatch(expected?: ModelRoute, actual?: ModelRoute): strin
   return routeMismatchFor(expected, actual, "child");
 }
 
-interface ManagedChildBinding { parentSessionId: string; role: string; childSession?: DshSession; bundle?: SkillBundle; reviewReader?: import("./review-evidence.mjs").ReviewEvidenceReader }
+interface ManagedChildBinding { parentSessionId: string; role: string; route?: ModelRoute; childSession?: DshSession; bundle?: SkillBundle; reviewReader?: import("./review-evidence.mjs").ReviewEvidenceReader }
+export function managedRoleRoute(agent: DshAgent, role: string): ModelRoute | undefined {
+  if (!isManagedRoleChild(agent) || routedRoleOf(agent) !== role) return undefined;
+  const descriptor = sessionEvents(agent.session).findLast(event => event.type === "subagent/descriptor");
+  return typeof descriptor?.data.label === "string" ? managedChildLabels.get(descriptor.data.label)?.route : undefined;
+}
 export function managedRoleBundle(agent: DshAgent): SkillBundle | undefined {
   if (!isManagedRoleChild(agent)) return undefined;
   const descriptor = sessionEvents(agent.session).findLast(event => event.type === "subagent/descriptor");
@@ -285,29 +292,43 @@ export async function runRoutedRole({
     return runLocalCliRole({ decision, taskText, roleContract, roleBundle, agent, signal, roleRoute, reviewEvidence, sessionEvidence });
   }
   let run: RoutedRun | undefined;
+  let disposal: Promise<void> | undefined;
+  const dispose = () => disposal ??= Promise.resolve().then(() => run?.dispose());
+  let rejectCancellation: ((reason: Error) => void) | undefined;
+  const abort = () => {
+    void dispose().catch(() => {});
+    rejectCancellation?.(new Error("Responsibility cancelled"));
+  };
   let outcome: Readonly<RoutedRoleOutcome>;
   const label = `odai-${decision.role}: managed-${randomUUID()}`;
   const parentSessionId = isUnknownRecord(agent) && isUnknownRecord(agent.session) && isUnknownRecord(agent.session.header)
     ? agent.session.header.id : undefined;
   if (typeof parentSessionId === "string" && parentSessionId) managedChildLabels.set(label, {
-    parentSessionId, role: decision.role, ...(roleBundle ? { bundle: roleBundle } : {}),
+    parentSessionId, role: decision.role, route: roleRoute, ...(roleBundle ? { bundle: roleBundle } : {}),
     ...(decision.role === "reviewer" && reviewEvidence ? { reviewReader: reviewEvidence.createReader() } : {}),
   });
   try {
   try {
     signal.throwIfAborted();
     if (!subagents) throw new Error("dsh subagents service unavailable");
-    run = await subagents.start(provider, {
-      label,
+    const request = {
       prompt: [{ type: "text", text: renderDelegationPrompt(decision, taskText,
         roleBundle ? `${roleBundle.coreContract}\n\n${roleContract}` : roleContract) }],
       parent: agent,
-      signal,
       maxDepth: 1,
       ...(roleRoute ? { agentOptions: roleAgentOptions(roleRoute) } : {}),
-    });
-    const result = await run.result;
-    const actualRoute = latestRequestRoute(run.localAgent);
+    };
+    run = subagents.startActivation
+      ? await subagents.startActivation({ provider, label, request, signal, delivery: "caller" })
+      : await subagents.start!(provider, { ...request, label, signal });
+    const cancelled = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    const result = await Promise.race([run.result, cancelled]);
+    const childSession = managedChildLabels.get(label)?.childSession;
+    const actualRoute = subagents.startActivation
+      ? latestRequestRoute(childSession?.header.id === run.childId ? { session: childSession } : undefined)
+      : latestRequestRoute(run.localAgent);
     const mismatch = routeMismatch(roleRoute, actualRoute);
     const routeReceiptStatus = !actualRoute ? "unverified" : mismatch ? "mismatch" : "applied";
     const routeEvidence = Object.freeze({
@@ -361,7 +382,7 @@ export async function runRoutedRole({
 
   if (run) {
     try {
-      await run.dispose();
+      await dispose();
     } catch (error) {
       const disposeError = error instanceof Error ? error.message : String(error);
       const cleanupTaskError = outcome?.taskError
@@ -393,6 +414,7 @@ export async function runRoutedRole({
   }
   return outcome;
   } finally {
+    signal.removeEventListener("abort", abort);
     managedChildLabels.delete(label);
   }
 }

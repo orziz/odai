@@ -1,3 +1,4 @@
+import { managedRoleRoute } from "./runtime-support.mjs";
 import { leadState } from "./lead-mode.mjs";
 import { latestRequestRoute } from "./runtime-support.mjs";
 import {
@@ -175,6 +176,8 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
   const configuredRole = (agent: DshAgent, role: string, turn = currentAgentTurn(agent)) => {
     const state = routingSnapshotFor(agent, turn);
     if (state.error || !state.snapshot) return state;
+    const managedRoute = managedRoleRoute(agent, role);
+    if (managedRoute) return { route: managedRoute, dispatch: "child" as const };
     const lead = leadState(evidence.events(agent));
     if (!state.snapshot.roles[role] && config.routing.mode !== "off" && !agent.session.header?.parentSession && agent.session.header?.origin !== "subagent"
       && (role === "planner" || role === "reviewer") && lead?.enabled === true && Array.isArray(lead.roles) && lead.roles.includes(role)) {

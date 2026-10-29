@@ -22,6 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { emitCanaryIsolation } from "./canary-isolation.mjs";
 
@@ -168,9 +169,10 @@ function writeNewFile(root, filePath, content) {
   if (!existsSync(parent) || !lstatSync(parent).isDirectory()) {
     throw new Error("write_file parent directory must already exist");
   }
+  const canonicalParent = resolveInside(root, parent);
   const value = String(content ?? "");
   if (value.length > 300_000) throw new Error("write_file content exceeds 300000 characters");
-  writeFileSync(file, value, "utf8");
+  writeFileSync(path.join(canonicalParent, path.basename(file)), value, { encoding: "utf8", flag: "wx" });
   return `created ${relativeName(root, file)}`;
 }
 
@@ -246,7 +248,7 @@ function functionTool(name, description, properties, required) {
   };
 }
 
-function executeTool(root, name, input) {
+export function executeTool(root, name, input) {
   if (name === "read_file") {
     const file = resolveInside(root, input.path);
     if (!lstatSync(file).isFile()) throw new Error("read_file path must be a file");
@@ -292,58 +294,62 @@ function emitToolUse(call, input) {
   })}\n`);
 }
 
-const args = parseArgs(process.argv.slice(2));
-emitCanaryIsolation("openai-compatible");
-const root = realpathSync(args.cwd);
-const prompt = readFileSync(args.promptFile, "utf8");
-const { apiRoot, apiKey } = loadConnection(args);
-const messages = [
-  {
-    role: "system",
-    content: "You are a coding agent operating only inside a disposable fixture repository. Follow the user prompt exactly. Use the provided bounded tools for observable reads, edits, tests, and git inspection. Never claim an action without a successful tool result. Finish with a direct user-facing answer.",
-  },
-  { role: "user", content: prompt },
-];
-const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-let finalText = "";
-let actualModel = "";
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  emitCanaryIsolation("openai-compatible");
+  const root = realpathSync(args.cwd);
+  const prompt = readFileSync(args.promptFile, "utf8");
+  const { apiRoot, apiKey } = loadConnection(args);
+  const messages = [
+    {
+      role: "system",
+      content: "You are a coding agent operating only inside a disposable fixture repository. Follow the user prompt exactly. Use the provided bounded tools for observable reads, edits, tests, and git inspection. Never claim an action without a successful tool result. Finish with a direct user-facing answer.",
+    },
+    { role: "user", content: prompt },
+  ];
+  const usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let finalText = "";
+  let actualModel = "";
 
-for (let turn = 0; turn < args.maxTurns; turn += 1) {
-  const response = await fetch(`${apiRoot}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: args.model, messages, tools, tool_choice: "auto" }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`OpenAI-compatible request failed (${response.status}): ${body?.error?.message || body?.message || response.statusText}`);
-  addUsage(usage, body.usage);
-  actualModel = body.model || actualModel;
-  const message = body.choices?.[0]?.message;
-  if (!message) throw new Error("OpenAI-compatible response has no assistant message");
-  const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-  messages.push(message);
-  if (calls.length === 0) {
-    finalText = assistantText(message.content).trim();
-    break;
-  }
-  for (const call of calls) {
-    let input;
-    let result;
-    try {
-      input = JSON.parse(call.function?.arguments || "{}");
-      emitToolUse(call, input);
-      result = executeTool(root, call.function?.name, input);
-    } catch (error) {
-      result = `ERROR: ${error.message}`;
+  for (let turn = 0; turn < args.maxTurns; turn += 1) {
+    const response = await fetch(`${apiRoot}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: args.model, messages, tools, tool_choice: "auto" }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`OpenAI-compatible request failed (${response.status}): ${body?.error?.message || body?.message || response.statusText}`);
+    addUsage(usage, body.usage);
+    actualModel = body.model || actualModel;
+    const message = body.choices?.[0]?.message;
+    if (!message) throw new Error("OpenAI-compatible response has no assistant message");
+    const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    messages.push(message);
+    if (calls.length === 0) {
+      finalText = assistantText(message.content).trim();
+      break;
     }
-    process.stdout.write(`${JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: call.id, content: result }] } })}\n`);
-    messages.push({ role: "tool", tool_call_id: call.id, content: result });
+    for (const call of calls) {
+      let input;
+      let result;
+      try {
+        input = JSON.parse(call.function?.arguments || "{}");
+        emitToolUse(call, input);
+        result = executeTool(root, call.function?.name, input);
+      } catch (error) {
+        result = `ERROR: ${error.message}`;
+      }
+      process.stdout.write(`${JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: call.id, content: result }] } })}\n`);
+      messages.push({ role: "tool", tool_call_id: call.id, content: result });
+    }
   }
+
+  if (!finalText) throw new Error(`No final assistant text after ${args.maxTurns} turns`);
+  writeFileSync(args.lastMessage, finalText.endsWith("\n") ? finalText : `${finalText}\n`, "utf8");
+  process.stdout.write(`${finalText}\n`);
+  process.stdout.write(`\n[openai-runner requested_model ${args.model}]\n`);
+  if (actualModel) process.stdout.write(`[openai-runner actual_model ${actualModel}]\n`);
+  process.stdout.write(`\ntokens used\n${usage.total_tokens.toLocaleString("en-US")}\n`);
 }
 
-if (!finalText) throw new Error(`No final assistant text after ${args.maxTurns} turns`);
-writeFileSync(args.lastMessage, finalText.endsWith("\n") ? finalText : `${finalText}\n`, "utf8");
-process.stdout.write(`${finalText}\n`);
-process.stdout.write(`\n[openai-runner requested_model ${args.model}]\n`);
-if (actualModel) process.stdout.write(`[openai-runner actual_model ${actualModel}]\n`);
-process.stdout.write(`\ntokens used\n${usage.total_tokens.toLocaleString("en-US")}\n`);
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) await main();

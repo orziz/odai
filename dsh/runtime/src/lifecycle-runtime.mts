@@ -108,7 +108,7 @@ function isInPlaceResponsibility(value: unknown): value is InPlaceResponsibility
 }
 
 function isSubagentsService(value: unknown): value is SubagentsService {
-  return value !== null && typeof value === "object" && "start" in value && typeof value.start === "function";
+  return value !== null && typeof value === "object" && (("startActivation" in value && typeof value.startActivation === "function") || ("start" in value && typeof value.start === "function"));
 }
 
 function hasReviewerDeferral(events: readonly DshEvent[], stateDigest: string): boolean {

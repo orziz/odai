@@ -199,7 +199,54 @@ const wrapper = [
   "    } finally { stopEvents(); stopStream(); await handle.dispose(); }",
   "   }",
   "  })();",
-  "  Promise.all([guardsReady, configProbe, sourceProbe, outputProbe, compactionProbe, memoryProbe, safetyProbe, continuityProbe, reviewProbe, steerProbe]).then(() => {",
+  `  const localActivationProbe = (async () => {
+    const support = await import(${JSON.stringify(pathToFileURL(resolve(dirname(pluginPath), "runtime-support.mjs")).href)});
+    if (typeof ctx.subagents?.startActivation !== 'function') throw new Error('actual activation service unavailable');
+    const provider = 'odai-activation-no-network';
+    const model = 'fake';
+    const unregisterAdapter = ctx.llm.registerAdapter([provider], {
+      providerInfo: id => ({ id, name: id }),
+      providerRetryPolicy: () => undefined,
+      imageRequestPricing: () => undefined,
+      listModels: async () => [],
+      resolveModel: async (provider, model) => ({ provider, id: model, name: model }),
+      async prepareCall(provider, model) { return { model: await this.resolveModel(provider, model), stream: options => this.stream(options) }; },
+      async *stream() { throw new Error('probe stream interception missing'); },
+    });
+    const parentHandle = await ctx.agents.create({ sessionId: 'odai-local-activation-parent', agentOptions: { provider, model } });
+    const parent = parentHandle.agent;
+    let child; let calls = 0; let checkedGuards = false;
+    const writePath = ${JSON.stringify(`${deniedWritePath}.actual-child`)};
+    const stopCreated = ctx.on('agent/created', ({ agent }) => {
+      if (agent.session.header.parentSession === parent.id) child = agent;
+    });
+    const stopStream = ctx.on('llm/stream', (request, next) => {
+      if (request.provider !== provider) return next();
+      calls++;
+      return (async function* () {
+        if (!child || ctx.agents.get(child.id) !== child || child.session.header.delegationDepth !== 1 || support.routedRoleOf(child) !== 'planner') throw new Error('actual managed child identity missing');
+        const shells = ['bash', 'pwsh'].filter(name => ctx.tools.get(name));
+        if (!shells.length) throw new Error('actual child probe requires shell');
+        for (const attempt of [{ name: 'write', arguments: { file_path: writePath, content: 'must not run' } }, ...shells.map(name => ({ name, arguments: { command: 'exit 0', description: 'Verify child boundary' } }))]) {
+          const result = await ctx.tools.execute({ ...attempt, callId: 'actual-child-denied-' + attempt.name, agent: child, signal: new AbortController().signal });
+          if (!result.isError || !JSON.stringify(result).includes('ODAI_SUBAGENT_BOUNDARY')) throw new Error('actual child boundary failed: ' + JSON.stringify(result));
+        }
+        if (existsSync(writePath)) throw new Error('actual child write reached body');
+        checkedGuards = true;
+        yield { type: 'block-start', index: 0, blockType: 'text' };
+        yield { type: 'text-delta', index: 0, text: 'actual local activation verified' };
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: 'actual local activation verified' } };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+      })();
+    });
+    try {
+      const outcome = await support.runRoutedRole({ subagents: ctx.subagents, provider: 'spawn', decision: { role: 'planner' }, taskText: 'Return one bounded read-only observation.', roleContract: 'Read-only. No shell, writes or delegation.', agent: parent, signal: new AbortController().signal, roleRoute: { provider, model } });
+      if (calls !== 1 || !checkedGuards || outcome.status !== 'completed' || outcome.routeReceiptStatus !== 'applied' || outcome.actualRoute?.provider !== provider || outcome.actualRoute?.model !== model || !outcome.output.some(block => block.text === 'actual local activation verified')) throw new Error('actual activation failed: ' + JSON.stringify({ outcome, calls, checkedGuards, events: child?.session.snapshotEvents() }));
+      if (ctx.agents.get(child.id) || support.isManagedRoleChild(child)) throw new Error('actual child retained after completion');
+      process.stdout.write('actual local spawn activation and route receipt passed\\n');
+    } finally { stopStream(); stopCreated(); await parentHandle.dispose(); unregisterAdapter(); }
+  })();`,
+  "  Promise.all([localActivationProbe, guardsReady, configProbe, sourceProbe, outputProbe, compactionProbe, memoryProbe, safetyProbe, continuityProbe, reviewProbe, steerProbe]).then(() => {",
   `    writeFileSync(${JSON.stringify(markerPath)}, 'loaded-guarded-and-configured\\n', 'utf8');`,
   "  }).catch((error) => process.stderr.write(`odai load probe: ${error.stack ?? error}\\n`));",
   "}",

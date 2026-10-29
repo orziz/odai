@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test:version-policy": "node --test scripts/version-policy.test.mjs",
-    "test:evaluation-tools": "node --input-type=module -e \"import { verifyCanaryHarness } from './scripts/odai-canary-harness.mjs'; verifyCanaryHarness();\" && node --test scripts/odai-canary-harness.test.mjs scripts/dsh-canary-runner.test.mjs scripts/odai-blind-harness.test.mjs",
+    "test:evaluation-tools": "node --input-type=module -e \"import { verifyCanaryHarness } from './scripts/odai-canary-harness.mjs'; verifyCanaryHarness();\" && node --test scripts/odai-canary-harness.test.mjs scripts/dsh-canary-runner.test.mjs scripts/openai-compatible-canary-runner.test.mjs scripts/odai-blind-harness.test.mjs",
     "clean:dsh": "node scripts/clean-dsh-runtime-build.mjs",
     "emit:dsh-runtime": "tsc -p dsh/runtime/tsconfig.json",
     "emit:dsh-client": "tsc -p dsh/client/tsconfig.json && node scripts/render-dsh-client.mjs",
