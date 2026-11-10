@@ -1,4 +1,4 @@
-# Odai agent preset for DSH 0.1.7: one `@deepseek-ai/dsh-agent-preset`
+# Odai agent preset for DSH 0.2.2-rc.1: one `@deepseek-ai/dsh-agent-preset`
 # declaration inserted by this bundle. The preset id stays `odai`, so sessions
 # saved with it keep resolving after upgrade. Standard is a reference, not a
 # composition this preset must mirror.
@@ -182,11 +182,9 @@
             isolate:
               workflowEngine: true
             config:
+              # DSH 0.2.2-rc.1 registers list_agents in this plugin.
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'

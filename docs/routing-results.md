@@ -1,6 +1,12 @@
 # Odai DSH 路由验证
 
-最新已发布双包为 `0.3.2`；源码候选为未发布 `0.3.3`，治理 `0.7.1`、runtime contract `9`、编排 `0.2.3` 保持不变。当前以 DSH `0.2.1-rc.2` 为最低支持基线，npm peer 保持开放 `*`，Agent 允许后续版本及预发布；未来版本未自动获得实测认证。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果为历史证据，不代表当前候选继续支持旧版 DSH。
+最新已发布双包为 `0.3.3`。源码候选 `0.3.5` 只面向 DSH `0.2.2-rc.1`，治理 `0.7.1`、runtime contract `9`、编排 `0.2.3` 保持不变。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果属于对应发布线。
+
+## DSH 0.2.2-rc.1 会话验证（双包 0.3.5 候选）
+
+使用隔离 Web profile 实测 Odai 新建会话、读取历史并在重启后打开同一会话。运行 `node dsh/agent/tests/verify-agent-load.mjs --session-only` 可复现。
+
+DSH 原生逐步准入覆盖普通会话隐藏、按需启用、职责映射变更和双包共存。只读范围收紧后，已捕获的工具集合也会拒绝执行写入，下一次组装会更新声明。源码和双包实际安装发布矩阵均已通过，固定 320 个同版本 DSH 依赖及 Standard 摘要。503 项 DSH 单元与回归测试通过，双包制品通过内容与目标校验。验证使用隔离宿主和本地探针，真实用户历史和外部模型调用未参与。
 
 ## 本机 CLI 调查与审查（双包 0.2.56 候选）
 

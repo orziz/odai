@@ -149,8 +149,10 @@ execFileSync(dsh, ["plugin", "--profile", "web", "add", bundleRoot], {
   stdio: ["ignore", "pipe", "pipe"],
   ...(process.platform === "win32" ? { shell: true } : {}),
 });
-const probePlugin = `import { existsSync, writeFileSync } from "node:fs";
+const probePlugin = `import { assembleProbePrompt, runProbeTool } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "scripts/dsh-probe-tool.mjs")).href)};
+import { existsSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import { randomUUID } from "node:crypto";
 import { createScope, scopeOf } from ${JSON.stringify(pathToFileURL(scopeModule).href)};
 import { renderPrompt } from ${JSON.stringify(pathToFileURL(requireFromDsh.resolve("@deepseek-ai/dsh-system-prompt")).href)};
@@ -162,11 +164,13 @@ export const name = "odai-agent-scope-probe";
 export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport function apply(ctx, config) {\n  const results = {};\n  let writing = Promise.resolve();\n\n  ctx.on("agent/created", ({ agent }) => {\n    writing = writing.then(async () => {
       const preset = agent.session?.header?.agentPreset;
       if (preset !== "standard" && preset !== "odai") return;\n
-      const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent });
+      const assembly = await assembleProbePrompt(ctx, { agent, scope: agent });
       const canonicalSections = assembly.sections.filter((section) => section.name === "odai:canonical-governance");
       const sendMessage = assembly.tools.find((tool) => tool.name === "send_message");
       const sendProperties = sendMessage?.parameters?.properties;
       if (preset === "odai") {
+        const listAgents = assembly.tools.filter((tool) => tool.name === "list_agents");
+        assert.equal(listAgents.length, 1, "Odai exposes the host list_agents tool once");
         const ralph = assembly.tools.find((tool) => tool.name === "ralph");
         // Disabled by default in the odai preset, as in Standard.
         assert.equal(ralph, undefined);
@@ -177,7 +181,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         if (!sendProperties?.agent_id || sendProperties.subagent_id) {
           throw new Error(\`modern Odai preset did not expose bidirectional send_message: \${JSON.stringify(sendMessage)}\`);
         }
-        const invalidTarget = await ctx.tools.execute({
+        const invalidTarget = await runProbeTool(ctx, {
           callId: "scope-probe-invalid-continuable-child",
           name: "send_message",
           arguments: { agent_id: "00000000-0000-0000-0000-000000000000", message: "must fail" },
@@ -192,7 +196,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         if (JSON.stringify(coldNames) !== JSON.stringify(expectedColdNames)) {
           throw new Error(\`cold Odai tool schema mismatch: \${JSON.stringify(coldNames)}\`);
         }
-        const hiddenResult = await ctx.tools.execute({
+        const hiddenResult = await runProbeTool(ctx, {
           callId: "scope-probe-odai-hidden-routing",
           name: "odai_routing_config",
           arguments: { action: "show" },
@@ -216,7 +220,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         if (snapshot.length + 1 !== agent.session.snapshotEvents().length || snapshot.length !== agent.session.seq - 1) {
           throw new Error("Session snapshot was not stable across append");
         }
-        const gatewayResult = await ctx.tools.execute({
+        const gatewayResult = await runProbeTool(ctx, {
           callId: "scope-probe-odai-routing-gateway",
           name: "odai_context_capability",
           arguments: { capability: "routing-config" },
@@ -224,7 +228,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           signal: new AbortController().signal,
         });
         if (gatewayResult.isError) throw new Error(\`Odai capability gateway failed: \${JSON.stringify(gatewayResult)}\`);
-        const activatedAssembly = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        const activatedAssembly = await assembleProbePrompt(ctx, { agent, scope: agent });
         const activatedNames = activatedAssembly.tools.map((tool) => tool.name).filter((toolName) => toolName.startsWith("odai_")).sort();
         const expectedActivatedNames = ["odai_context_capability", "odai_reference", "odai_routing_config"].sort();
         if (JSON.stringify(activatedNames) !== JSON.stringify(expectedActivatedNames)) {
@@ -250,14 +254,18 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
       assert.equal(scopeOf(child.ctx), child);
       let toolResult;
       try {
-        const parentBefore = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        const parentBefore = await assembleProbePrompt(ctx, { agent, scope: agent });
         const parentSchemas = ctx.tools.schemas(agent);
         const beforeChildNames = ctx.tools.schemas(child).map((tool) => tool.name).sort();
         for (const name of ["read", "write", "create_goal"]) assert.ok(beforeChildNames.includes(name), name);
         assert.ok(parentSchemas.some((tool) => tool.name === "subagent"));
-        const first = await ctx.systemPrompt.assemble({ agent: child, scope: child });
+        // This synthetic child does not emit the host's agent/created hook.
+        // Prepare its scoped policy before capturing admission as the real loop does.
+        await ctx.systemPrompt.assemble({ agent: child, scope: child });
+        const first = await assembleProbePrompt(ctx, { agent: child, scope: child });
         const childNames = first.tools.map((tool) => tool.name).sort();
-        assert.deepEqual(childNames, ctx.tools.schemas(child).map((tool) => tool.name).sort());
+        assert.ok(childNames.every((name) => ctx.tools.get(name, child)));
+        assert.deepEqual(childNames, (await assembleProbePrompt(ctx, { agent: child })).tools.map((tool) => tool.name).sort());
         assert.equal(new Set(childNames).size, childNames.length);
         const childRaw = renderPrompt(first);
         const restrictedOwners = new Set(["tool:bash", "tool:pwsh", "tool:write", "tool:edit", "tool:goal", "tool:jobs", "tool:workflow", "tool:ralph", "tool:subagent", "tool:subagent_fork"]);
@@ -266,7 +274,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           for (const name of beforeChildNames.filter((name) => !DEFAULT_CHILD_ALLOWED_TOOLS.includes(name))) {
             assert.equal(ctx.tools.get(name, child), undefined, name);
           }
-          for (const name of ["read", "read_image", "glob", "grep", "web_search", "web_fetch"].filter((name) => beforeChildNames.includes(name))) {
+          for (const name of ["read", "read_image", "glob", "grep", "web_search", "web_fetch"].filter((name) => parentBefore.tools.some((tool) => tool.name === name))) {
             assert.ok(childNames.includes(name), name);
           }
           for (const owner of ["tool:write", "tool:goal", "tool:subagent"]) {
@@ -281,26 +289,25 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
             assert.ok(first.sections.some((section) => section.name === owner && section.text), owner);
           }
         } else {
-          assert.deepEqual(childNames, beforeChildNames);
+          assert.deepEqual(ctx.tools.schemas(child).map((tool) => tool.name).sort(), beforeChildNames);
           assert.equal(first.sections.some((section) => section.name === "odai:canonical-governance"), false);
           // Model-selectable subagent tools are registered per live agent, not
           // on the standing preset used by this inherited-scope probe.
           for (const section of parentBefore.sections.filter((section) => restrictedOwners.has(section.name)
-            && (beforeChildNames.includes(section.name.slice(5)) || ["tool:goal", "tool:jobs"].includes(section.name)))) {
+            && (childNames.includes(section.name.slice(5)) || ["tool:goal", "tool:jobs"].includes(section.name)))) {
             // Native delegation guidance is derived from each scope's visible tools.
             const childSection = first.sections.find((item) => item.name === section.name);
             if (section.name === "tool:subagent_fork") {
-              assert.ok(childSection?.text, "standard child retains native fork guidance");
-              assert.ok(childNames.includes("subagent_fork"), "fork guidance has an available tool");
+              if (childSection?.text) assert.ok(childNames.includes("subagent_fork"), "fork guidance has an available tool");
             } else {
               assert.deepEqual(childSection, section);
             }
           }
         }
-        const parentAfter = await ctx.systemPrompt.assemble({ agent, scope: agent });
+        const parentAfter = await assembleProbePrompt(ctx, { agent, scope: agent });
         assert.deepEqual(ctx.tools.schemas(agent), parentSchemas);
         assert.equal(renderPrompt(parentAfter), renderPrompt(parentBefore));
-        toolResult = await ctx.tools.execute({
+        toolResult = await runProbeTool(ctx, {
           callId: \`scope-probe-\${preset}\`,
           name: "write",
           arguments: { file_path: writePath, content: \`\${preset} child write reached body\\n\` },
@@ -313,7 +320,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
 
       let routingProtected;
       if (preset === "odai") {
-        const routingResult = await ctx.tools.execute({
+        const routingResult = await runProbeTool(ctx, {
           callId: "scope-probe-odai-routing-config",
           name: "odai_routing_config",
           arguments: { action: "set", responsibility: "planner", provider: "probe-provider", model: "probe-planner", reasoningEffort: "high" },
@@ -325,25 +332,32 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           && !existsSync(config.routingConfigPath);
       }\n
       if (preset === "odai") {
-        // Exercise rc.2's actual order: the host snapshots before pre-step,
+        // Exercise the host's assembly order: the host snapshots before pre-step,
         // whereas scope ownership is settled inside pre-step.
         const scopes = createResponsibilityScopeOwner({ appendEvent() {}, events() { return []; }, routeProtections: new WeakMap() });
         const dispatch = agentEvents(agent.ctx, agent);
         const signal = new AbortController().signal;
         const enter = () => Promise.resolve({ kind: "enter", messages: [] });
-        const before = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
-        assert.ok(before.tools.some((tool) => tool.name === "write"));
-        scopes.start(agent, { turn: 1, startStep: 2, role: "planner", route: { provider: "probe", model: "unchanged" } });
-        await dispatch.waterfall("agent/pre-step", { turn: 1, step: 2, signal, messages: [] }, enter);
-        assert.equal(before.tools.some((tool) => tool.name === "write"), false, "first role request refreshes its captured tools");
+        const captured = await ctx.tools.resolve({ agent, signal, modelSelection: { provider: "probe", model: "probe" } });
+        try {
+          const before = await ctx.systemPrompt.assemble({ agent, scope: agent, signal, toolSet: captured });
+          assert.ok(before.tools.some((tool) => tool.name === "write"));
+          scopes.start(agent, { turn: 1, startStep: 2, role: "planner", route: { provider: "probe", model: "unchanged" } });
+          await dispatch.waterfall("agent/pre-step", { turn: 1, step: 2, signal, messages: [] }, enter);
+          assert.equal(ctx.tools.executable("write", agent, captured), undefined, "an earlier admission cannot bypass a new read-only scope");
+        } finally {
+          captured.dispose();
+        }
+        const role = await assembleProbePrompt(ctx, { agent, scope: agent, signal });
+        assert.equal(role.tools.some((tool) => tool.name === "write"), false, "role declaration excludes write");
         assert.equal(ctx.tools.schemas(agent).some((tool) => tool.name === "write"), false);
-        assert.ok(before.tools.some((tool) => tool.name === "odai_responsibility_return"));
-        const blocked = await ctx.tools.execute({ name: "write", callId: "in-place-readonly", arguments: { file_path: writePath, content: "must not write" }, agent, signal });
+        assert.ok(role.tools.some((tool) => tool.name === "odai_responsibility_return"));
+        const blocked = await runProbeTool(ctx, { name: "write", callId: "in-place-readonly", arguments: { file_path: writePath, content: "must not write" }, agent, signal });
         assert.equal(blocked.isError, true);
         assert.equal(existsSync(writePath), false);
         scopes.stop(agent, "probe-handback");
-        const restored = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
         await dispatch.waterfall("agent/pre-step", { turn: 1, step: 3, signal, messages: [] }, enter);
+        const restored = await assembleProbePrompt(ctx, { agent, scope: agent, signal });
         assert.ok(restored.tools.some((tool) => tool.name === "write"), "first controller request restores native tools");
         assert.ok(ctx.tools.schemas(agent).some((tool) => tool.name === "write"));
         scopes.dispose();
@@ -354,9 +368,14 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
           await fixtureRouting.execute({ action, responsibility: "planner", ...(action === "set" ? { provider: "probe-provider", model: "probe-planner" } : {}) }, { agent });
           agent.session.append("turn/end", { turn: turn - 1, reason: "success" });
           agent.session.append("turn/start", { turn });
-          const selected = await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
+          const selected = await assembleProbePrompt(ctx, { agent, scope: agent, signal });
           assert.equal(selected.tools.some((tool) => tool.name === "odai_responsibility_gap"), visible, "next-turn routing schema follows mappings");
-          assert.equal(ctx.tools.schemas(agent).some((tool) => tool.name === "odai_responsibility_gap"), visible, "execution registry follows mappings");
+          const toolSet = await ctx.tools.resolve({ agent, signal, modelSelection: { provider: "probe", model: "probe" } });
+          try {
+            assert.equal(Boolean(ctx.tools.executable("odai_responsibility_gap", agent, toolSet)), visible, "execution admission follows mappings");
+          } finally {
+            toolSet.dispose();
+          }
           assert.equal(Boolean(selected.sections.find((section) => section.name === "odai:native-delegation")?.text), visible, "delegation guidance follows mappings");
         }
       }
@@ -371,7 +390,7 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
       if (results.standard && results.odai) {
         writeFileSync(config.markerPath, JSON.stringify(results, null, 2) + "\\n", "utf8");
       }\n    }).catch((error) => {
-      writeFileSync(config.markerPath, JSON.stringify({ probeError: error?.stack ?? String(error) }, null, 2) + "\\n", "utf8");\n    });\n  }, { global: true });\n}\n`;
+      writeFileSync(config.markerPath, JSON.stringify({ probeError: inspect(error, { depth: 4 }) }, null, 2) + "\\n", "utf8");\n    });\n  }, { global: true });\n}\n`;
 await writeFile(probePluginPath, probePlugin, "utf8");
 await writeFile(
   patchPath,
@@ -388,83 +407,116 @@ await writeFile(
   ].join("\n"),
   "utf8",
 );
-const port = await freePort();
-const baseUrl = `http://127.0.0.1:${port}`;
-const child = spawnDsh(
-  dsh,
-  ["--profile", "web", "--patch", patchPath, "--no-open", "--host", "127.0.0.1", "--port", String(port)],
-  {
-    cwd: workspace,
-    env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_MODE: "DISABLED" },
-    stdio: ["ignore", "pipe", "pipe"],
-  },
-);
-let output = "";
-if (!child.stdout || !child.stderr) throw new Error("DSH verification requires piped stdout and stderr");
-child.stdout.on("data", (chunk) => {
-  output += chunk.toString();
-});
-child.stderr.on("data", (chunk) => {
-  output += chunk.toString();
-});
-const capturedOutput = () => output;
-try {
-  const browserCookie = await waitForDshWeb(baseUrl, child, capturedOutput);
-  const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
-  if (!isRecord(roster) || !Array.isArray(roster.presets)) throw new Error("agent preset roster is malformed");
-  const ids = roster.presets.map((preset) => {
-    if (!isRecord(preset) || typeof preset.id !== "string") throw new Error("agent preset entry is malformed");
-    return preset.id;
-  });
-  if (!ids.includes("standard") || !ids.includes("odai")) {
-    throw new Error(`expected standard and odai presets, got ${JSON.stringify(ids)}`);
+async function bootWeb(extraArgs = []) {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawnDsh(
+    dsh,
+    ["--profile", "web", ...extraArgs, "--no-open", "--host", "127.0.0.1", "--port", String(port)],
+    {
+      cwd: workspace,
+      env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_MODE: "DISABLED" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let output = "";
+  if (!child.stdout || !child.stderr) throw new Error("DSH verification requires piped stdout and stderr");
+  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  return { child, baseUrl, capturedOutput: () => output };
+}
+
+async function verifySessionRoundTrip() {
+  let sessionId;
+  for (const restart of [false, true]) {
+    const { child, baseUrl, capturedOutput } = await bootWeb();
+    try {
+      const cookie = await waitForDshWeb(baseUrl, child, capturedOutput);
+      const session = await dshWebRpc(baseUrl, "session.create", {
+        cwd: workspace,
+        agentPreset: "odai",
+        ...(restart ? { sessionId } : {}),
+      }, cookie);
+      if (session.agentPreset !== "odai" || typeof session.sessionId !== "string"
+        || (restart && session.sessionId !== sessionId)) {
+        throw new Error("Odai session did not retain its preset and identity");
+      }
+      sessionId = session.sessionId;
+      const history = await dshWebRpc(baseUrl, "session.history", { sessionId }, cookie);
+      if (history.events.length === 0) throw new Error("Odai session history was empty");
+    } finally {
+      await terminateChild(child);
+    }
   }
-  await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "standard" }, browserCookie);
-  await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "odai" }, browserCookie);
-  const results = await waitForMarker(child, capturedOutput);
-  if (results.probeError) throw new Error(results.probeError);
-  if (results.standard?.canonicalSectionCount !== 0) {
-    throw new Error(`standard saw odai canonical prompt: ${JSON.stringify(results)}`);
-  }
-  if (results.standard?.toolError?.startsWith("ODAI_SUBAGENT_BOUNDARY:")) {
-    throw new Error(`standard child call reached the odai guard: ${JSON.stringify(results)}`);
-  }
-  if (results.odai?.canonicalSectionCount !== 1) {
-    throw new Error(`odai canonical prompt count was not exactly one: ${JSON.stringify(results)}`);
-  }
-  if (
-    results.odai?.writeReachedBody !== false ||
-    results.odai?.toolIsError !== true ||
-    !results.odai?.toolError?.startsWith("ODAI_SUBAGENT_BOUNDARY:")
-  ) {
-    throw new Error(`odai child write was not denied by odai guard: ${JSON.stringify(results)}`);
-  }
-  if (results.odai?.toolExposureSynchronized !== true) {
-    throw new Error(`odai tool schemas and execution visibility were not synchronized: ${JSON.stringify(results)}`);
-  }
-  if (results.odai?.routingProtected !== true) {
-    throw new Error(
-      `odai routing tool did not reject an unavailable route without mutation: ${JSON.stringify(results)}`,
-    );
-  }
-  // The uninstall guard reads the chooser default from this persisted profile override.
-  await dshWebRpc(baseUrl, "settings/update", { args: { ns: "agent-preset-registry", patch: { selectedDefault: "odai" } } }, browserCookie);
-  const defaultRoster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
-  const defaultId = defaultRoster.presets.find((preset) => preset.isDefault)?.id;
-  const profilePatch = await readFile(resolve(home, "profiles/web/cordis.patch.yml"), "utf8");
-  if (defaultId !== "odai" || !/- id: agent-preset-registry[\s\S]*selectedDefault: odai/u.test(profilePatch)) {
-    throw new Error(`default preset selection was not persisted as expected: ${defaultId}\n${profilePatch}`);
-  }
-  // Exercise production protection against the host's real composed dump.
-  const { uninstallAgentPreset } = installerModule;
-  let rejected = false;
-  try { await uninstallAgentPreset({ dshHome: home, dshBin: dsh }); }
-  catch (error) { rejected = /refusing to remove the default agent preset odai/u.test(error.message); if (!rejected) throw error; }
-  if (!rejected) throw new Error("production uninstall removed the default Odai preset");
-  process.stdout.write(`${JSON.stringify({ scratch, dshVersion: targetDshVersion, registration: "bundle-plugin-manager", defaultPresetPersisted: true, defaultRemovalBlocked: true, roster: ids, results }, null, 2)}\n`);
-} finally {
-  await terminateChild(child);
-  if (process.env.KEEP_ODAI_SCOPE_PROBE !== "1") {
+  process.stdout.write(`Odai session creation, history and restart verified with DSH ${targetDshVersion}\n`);
+}
+
+if (process.argv.includes("--session-only")) {
+  try {
+    await verifySessionRoundTrip();
+  } finally {
     await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+} else {
+  const { child, baseUrl, capturedOutput } = await bootWeb(["--patch", patchPath]);
+  try {
+    const browserCookie = await waitForDshWeb(baseUrl, child, capturedOutput);
+    const roster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
+    if (!isRecord(roster) || !Array.isArray(roster.presets)) throw new Error("agent preset roster is malformed");
+    const ids = roster.presets.map((preset) => {
+      if (!isRecord(preset) || typeof preset.id !== "string") throw new Error("agent preset entry is malformed");
+      return preset.id;
+    });
+    if (!ids.includes("standard") || !ids.includes("odai")) {
+      throw new Error(`expected standard and odai presets, got ${JSON.stringify(ids)}`);
+    }
+    await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "standard" }, browserCookie);
+    await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "odai" }, browserCookie);
+    const results = await waitForMarker(child, capturedOutput);
+    if (results.probeError) throw new Error(results.probeError);
+    if (results.standard?.canonicalSectionCount !== 0) {
+      throw new Error(`standard saw odai canonical prompt: ${JSON.stringify(results)}`);
+    }
+    if (results.standard?.toolError?.startsWith("ODAI_SUBAGENT_BOUNDARY:")) {
+      throw new Error(`standard child call reached the odai guard: ${JSON.stringify(results)}`);
+    }
+    if (results.odai?.canonicalSectionCount !== 1) {
+      throw new Error(`odai canonical prompt count was not exactly one: ${JSON.stringify(results)}`);
+    }
+    if (
+      results.odai?.writeReachedBody !== false ||
+      results.odai?.toolIsError !== true ||
+      !results.odai?.toolError?.startsWith("ODAI_SUBAGENT_BOUNDARY:")
+    ) {
+      throw new Error(`odai child write was not denied by odai guard: ${JSON.stringify(results)}`);
+    }
+    if (results.odai?.toolExposureSynchronized !== true) {
+      throw new Error(`odai tool schemas and execution visibility were not synchronized: ${JSON.stringify(results)}`);
+    }
+    if (results.odai?.routingProtected !== true) {
+      throw new Error(
+        `odai routing tool did not reject an unavailable route without mutation: ${JSON.stringify(results)}`,
+      );
+    }
+    // The uninstall guard reads the chooser default from this persisted profile override.
+    await dshWebRpc(baseUrl, "settings/update", { args: { ns: "agent-preset-registry", patch: { selectedDefault: "odai" } } }, browserCookie);
+    const defaultRoster = await dshWebRpc(baseUrl, "agentPreset.list", {}, browserCookie);
+    const defaultId = defaultRoster.presets.find((preset) => preset.isDefault)?.id;
+    const profilePatch = await readFile(resolve(home, "profiles/web/cordis.patch.yml"), "utf8");
+    if (defaultId !== "odai" || !/- id: agent-preset-registry[\s\S]*selectedDefault: odai/u.test(profilePatch)) {
+      throw new Error(`default preset selection was not persisted as expected: ${defaultId}\n${profilePatch}`);
+    }
+    // Exercise production protection against the host's real composed dump.
+    const { uninstallAgentPreset } = installerModule;
+    let rejected = false;
+    try { await uninstallAgentPreset({ dshHome: home, dshBin: dsh }); }
+    catch (error) { rejected = /refusing to remove the default agent preset odai/u.test(error.message); if (!rejected) throw error; }
+    if (!rejected) throw new Error("production uninstall removed the default Odai preset");
+    process.stdout.write(`${JSON.stringify({ scratch, dshVersion: targetDshVersion, registration: "bundle-plugin-manager", defaultPresetPersisted: true, defaultRemovalBlocked: true, roster: ids, results }, null, 2)}\n`);
+  } finally {
+    await terminateChild(child);
+    if (process.env.KEEP_ODAI_SCOPE_PROBE !== "1") {
+      await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   }
 }

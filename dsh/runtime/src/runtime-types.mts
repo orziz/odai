@@ -205,8 +205,13 @@ export interface RuntimeLogger {
   warn(message: string): void;
 }
 
+export interface DshToolActivationContext {
+  agent: DshAgent;
+  signal: AbortSignal;
+}
+
 export interface DshToolsService {
-  register(tool: unknown): void;
+  register(tool: unknown, options?: { when(context: DshToolActivationContext): boolean }): void;
   guard?(guard: (execution: ToolExecution) => unknown): void;
   restrict?(agent: DshAgent, restriction: ToolRestriction): (() => void) | void;
   schemas?(agent?: DshAgent): ToolSchema[];

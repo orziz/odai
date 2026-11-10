@@ -653,10 +653,20 @@ export function reconcileAdaptiveToolSchemas(
   executableSchemas: readonly ToolSchema[] = [],
   restriction: ToolRestriction = {},
 ): PromptAssembly {
-  if (!assembly || !Array.isArray(assembly.tools)) return assembly;
+  if (!assembly) return assembly;
   const allowed = restriction.allow ? new Set(restriction.allow) : undefined;
   const denied = new Set(restriction.deny ?? []);
   const permitted = (name: string): boolean => (!allowed || allowed.has(name)) && !denied.has(name);
+  let sectionsChanged = false;
+  const sections = (Array.isArray(assembly.sections) ? assembly.sections : []).map((section) => {
+    if (section.text && DSH_TOOL_SECTIONS.get(section.name)?.some((name) => !permitted(name))) {
+      sectionsChanged = true;
+      return { ...section, text: "" };
+    }
+    return section;
+  });
+  // DSH 0.2.2-rc.1 assembles declarations outside the presentation waterfall.
+  if (!Array.isArray(assembly.tools)) return sectionsChanged ? { ...assembly, sections } : assembly;
   const active = new Set(activeNames);
   const executableByName = new Map(
     (Array.isArray(executableSchemas) ? executableSchemas : [])
@@ -678,14 +688,6 @@ export function reconcileAdaptiveToolSchemas(
     );
     tools.splice(lastAdaptiveIndex < 0 ? tools.length : lastAdaptiveIndex + 1, 0, ...missing);
   }
-  let sectionsChanged = false;
-  const sections = (Array.isArray(assembly.sections) ? assembly.sections : []).map((section) => {
-    if (section.text && DSH_TOOL_SECTIONS.get(section.name)?.some((name) => !permitted(name))) {
-      sectionsChanged = true;
-      return { ...section, text: "" };
-    }
-    return section;
-  });
   return tools.length === assembly.tools.length && missing.length === 0 && !sectionsChanged
     ? assembly : { ...assembly, tools, ...(sectionsChanged ? { sections } : {}) };
 }

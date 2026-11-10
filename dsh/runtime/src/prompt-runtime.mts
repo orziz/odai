@@ -115,7 +115,7 @@ function isSkillRegistry(value: unknown): value is SkillRegistry {
 
 interface PromptInstallDependencies {
   executionRestrictionFor(agent: DshAgent): ToolRestriction;
-  pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
+  pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number, settle?: boolean): ResponsibilityGapProposal | undefined;
   syncToolExposure(
     agent: DshAgent,
     activation: ContextActivation,
@@ -293,7 +293,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
       surface.key = surface.keyFor();
       surface.needsReassembly = false;
     }
-    // rc.2 snapshots tools before agent/pre-step. Reassemble only across an
+    // The host snapshots presentation before agent/pre-step. Reassemble only across an
     // effective permission transition, after replacing all our restrictions.
     // Preserve array identities through the host's shallow assembly copies.
     const refreshed = typeof ctx.systemPrompt.assemble === "function"
@@ -301,20 +301,37 @@ export function createPromptRuntime(deps: PromptDependencies) {
       : reconcileAdaptiveToolSchemas(pending.assembly,
         syncNamesFor(agent, pending.context), ctx.tools.schemas?.(agent) ?? [], installedDependencies.executionRestrictionFor(agent));
     for (const surface of captured) {
-      surface.assembly.tools.splice(0, surface.assembly.tools.length, ...refreshed.tools);
+      if (Array.isArray(surface.assembly.tools) && Array.isArray(refreshed.tools)) {
+        surface.assembly.tools.splice(0, surface.assembly.tools.length, ...refreshed.tools);
+      }
       surface.assembly.sections.splice(0, surface.assembly.sections.length, ...refreshed.sections);
     }
   };
   const syncNamesFor = (agent: DshAgent, context: PromptContext): readonly string[] => {
+    const { activation, ...options } = toolExposureFor(agent, context.signal);
+    return installedDependencies?.syncToolExposure(agent, activation, options) ?? [];
+  };
+  const toolExposureFor = (agent: DshAgent, signal?: AbortSignal) => {
     const turn = currentAgentTurn(agent);
-    const input = currentDirectInput(agent, { turn, signal: context.signal, minimum: "claimed" });
-    return installedDependencies?.syncToolExposure(agent,
-      contextActivationFor(agent, input?.message ? extractLatestUserText([input.message]) : "", turn),
-      { turn, step: (currentAgentStep(agent) ?? 0) + 1, responsibilityReturn: false }) ?? [];
+    const step = (currentAgentStep(agent) ?? 0) + 1;
+    const input = currentDirectInput(agent, { turn, signal, minimum: "claimed" });
+    const text = input?.message ? extractLatestUserText([input.message]) : "";
+    const classified = contextActivationFor(agent, text, turn);
+    const activation = classifySessionOutputCeilingDirective(text) && classified.outputConfig
+      ? Object.freeze({ ...classified, outputConfig: false })
+      : classified;
+    const events = evidence.events(agent);
+    const pendingGap = installedDependencies?.pendingResponsibilityGap(agent, turn, step, false);
+    const route = decideRoute({ text, proposal: pendingGap });
+    const pendingRole = pendingGap?.responsibility ?? (route.action === "upgrade" ? route.targetRole : undefined);
+    const danglingRole = latestDanglingResponsibilityScope(events)?.role;
+    const responsibilityReturn = !isSubagentSession(agent)
+      && [pendingRole, danglingRole].some((role) => ["researcher", "planner", "reviewer"].includes(role ?? ""));
+    return { activation, turn, step, responsibilityReturn };
   };
   const install = (dependencies: PromptInstallDependencies): void => {
   installedDependencies = dependencies;
-  const { pendingResponsibilityGap, syncToolExposure, executionRestrictionFor } = dependencies;
+  const { syncToolExposure, executionRestrictionFor } = dependencies;
   ctx.on("system-prompt/assemble", async (
     assembly: PromptAssembly,
     context: PromptContext,
@@ -327,12 +344,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     const directInput = currentDirectInput(agent, { turn, signal: context.signal, minimum: "claimed" });
     const directMessage = directInput?.message;
     const directText = directMessage ? extractLatestUserText([directMessage]) : "";
-    const classifiedActivation = contextActivationFor(agent, directText, turn);
-    const sessionOutputDirective = classifySessionOutputCeilingDirective(directText);
-    const activation = sessionOutputDirective && classifiedActivation.outputConfig
-      ? Object.freeze({ ...classifiedActivation, outputConfig: false })
-      : classifiedActivation;
-    const proposedStep = (currentAgentStep(agent) ?? 0) + 1;
+    const { activation, step: proposedStep, responsibilityReturn } = toolExposureFor(agent, context.signal);
     if (directInput?.phase === "committed") prepareSessionOutputControl({
       events: evidence.events(agent),
       text: directText,
@@ -341,21 +353,10 @@ export function createPromptRuntime(deps: PromptDependencies) {
       userMessageId: typeof directMessage?.id === "string" ? directMessage.id : undefined,
       append(type, data) { appendEvent(agent, type, data); },
     });
-    const exposureEvents = evidence.events(agent);
-    const pendingGap = pendingResponsibilityGap(agent, turn, proposedStep);
-    const routeCandidate = decideRoute({ text: directText, proposal: pendingGap });
-    const danglingScope = latestDanglingResponsibilityScope(exposureEvents);
-    const pendingReadOnlyRole = pendingGap?.responsibility
-      ?? (routeCandidate.action === "upgrade" ? routeCandidate.targetRole : undefined);
-    const responsibilityReturnNeeded = !childSession && (
-      ["researcher", "planner", "reviewer"].includes(pendingReadOnlyRole ?? "")
-      || ["researcher", "planner", "reviewer"].includes(danglingScope?.role ?? "")
-    );
-    // DSH builds assembly.tools before this middleware runs. Filter that snapshot and the execution registry together.
     const activeToolNames = syncToolExposure(agent, activation, {
       turn,
       step: proposedStep,
-      responsibilityReturn: responsibilityReturnNeeded,
+      responsibilityReturn,
     });
     const executionRestriction = executionRestrictionFor(agent);
     const executableSchemas = typeof ctx.tools.schemas === "function" ? ctx.tools.schemas(agent) : [];
@@ -471,6 +472,7 @@ export function createPromptRuntime(deps: PromptDependencies) {
     baseSelection,
     bundled,
     contextActivationFor,
+    toolExposureFor,
     explicitSkillPath,
     install,
     refreshExecutionSurface,

@@ -8,7 +8,7 @@ import { createOutputConfigTool } from "./output-config.mjs";
 import type { OutputPolicy } from "./output-config.mjs";
 import { createCanonicalReferenceTool } from "./canonical-reference.mjs";
 import { createCompactionConfigTool } from "./compaction-config.mjs";
-import { ODAI_CORE_TOOL_NAMES, activeOdaiToolNames, inactiveOdaiToolNames } from "./context-activation.mjs";
+import { activeOdaiToolNames } from "./context-activation.mjs";
 import type { ContextActivation } from "./context-activation.mjs";
 import { createContextCapabilityTool } from "./context-capability.mjs";
 import { createHumanCareTool } from "./human-care.mjs";
@@ -27,13 +27,13 @@ import { currentAgentTurn, sharedSkillSelection } from "./skill-selection-state.
 import { currentAgentStep, isSubagentSession, isManagedRoleChild, routedRoleOf, latestRouteReceipt, pluginMessage, managedReviewEvidenceReader } from "./runtime-support.mjs";
 import { createReviewEvidenceTool } from "./review-evidence.mjs";
 import type { SkillSelection } from "./runtime-support.mjs";
-import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
+import type { DshAgent, DshEvent, DshMessage, DshRuntimeContext, DshToolActivationContext, ModelRoute, RuntimeConfig, RuntimeEventData, RuntimeLogger, ToolExecution, ToolResult, UnknownRecord } from "./runtime-types.mjs";
 import { isUnknownRecord, sessionEvents } from "./runtime-types.mjs";
 
 interface RouteProtection extends UnknownRecord { scopeId?: string }
 interface ExposureOptions { turn?: number; step?: number; responsibilityReturn?: boolean }
 type ExecutionRestriction = import("./runtime-types.mjs").ToolRestriction;
-interface PromptInstaller { install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; executionRestrictionFor: (agent: DshAgent) => ExecutionRestriction; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
+interface PromptInstaller { toolExposureFor(agent: DshAgent, signal?: AbortSignal): ExposureOptions & { activation: ContextActivation }; install(deps: { pendingResponsibilityGap: ToolRuntimeDependencies["pendingResponsibilityGap"]; executionRestrictionFor: (agent: DshAgent) => ExecutionRestriction; syncToolExposure: (agent: DshAgent, activation: ContextActivation, options: { turn?: number; step: number; responsibilityReturn: boolean }) => readonly string[] }): void }
 interface ToolRuntimeDependencies {
   appendEvent(agent: DshAgent, type: string, data: object): void;
   bundled: SkillBundle;
@@ -44,7 +44,7 @@ interface ToolRuntimeDependencies {
   hasSessionEvent(agent: DshAgent, type: string, predicate: (data: RuntimeEventData) => boolean): boolean;
   humanSafetyContinuityStorePath: string;
   logger: RuntimeLogger;
-  pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number): ResponsibilityGapProposal | undefined;
+  pendingResponsibilityGap(agent: DshAgent, turn: number | undefined, step: number, settle?: boolean): ResponsibilityGapProposal | undefined;
   promptRuntime: PromptInstaller;
   responsibilityRoutingFor(agent: DshAgent, turn?: number): boolean;
   responsibilityScopes: Pick<ResponsibilityScopeOwner, "get" | "has" | "stop">;
@@ -89,6 +89,33 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     isReadOnlyResponsibility,
     protectionFor,
   });
+  const activeToolsFor = (agent: DshAgent, activation: ContextActivation, options: ExposureOptions): readonly string[] => {
+    const child = isSubagentSession(agent);
+    const policy = executionRestrictionFor(agent);
+    return activeOdaiToolNames(activation, {
+      child,
+      responsibilityReturn: options.responsibilityReturn === true || isReadOnlyResponsibility(agent),
+      reviewEvidence: child && Boolean(managedReviewEvidenceReader(agent)),
+      responsibilityRouting: child || responsibilityRoutingFor(agent, options.turn),
+    }).filter((name) => (!policy.allow || policy.allow.includes(name)) && !policy.deny?.includes(name));
+  };
+  // DSH resolves conditions before building the request's declarations and
+  // reuses that admission for dispatch. All conditions share one step context.
+  const admittedByStep = new WeakMap<DshToolActivationContext, readonly string[]>();
+  const register = (tool: { name: string }): void => {
+    ctx.tools.register(tool, {
+      when(context) {
+        let admitted = admittedByStep.get(context);
+        if (!admitted) {
+          const { agent, signal } = context;
+          const { activation, ...options } = promptRuntime.toolExposureFor(agent, signal);
+          admitted = activeToolsFor(agent, activation, options);
+          admittedByStep.set(context, admitted);
+        }
+        return admitted.includes(tool.name);
+      },
+    });
+  };
   const requirementSourcesFor = (agent: DshAgent): readonly RequirementSourceCandidate[] => {
     const sources: RequirementSourceCandidate[] = [];
     for (const [order, event] of sessionEvents(agent.session).entries()) {
@@ -114,8 +141,8 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     return proposal;
   };
   const bundleFor = (agent: DshAgent): SkillBundle => sharedSkillSelection<SkillSelection>(agent)?.bundle ?? bundled;
-  ctx.tools.register(createReviewEvidenceTool(managedReviewEvidenceReader));
-  ctx.tools.register(createContextCapabilityTool({
+  register(createReviewEvidenceTool(managedReviewEvidenceReader));
+  register(createContextCapabilityTool({
     isChild: isSubagent,
     onRequested(agent: DshAgent, capability: string) {
       const turn = currentAgentTurn(agent);
@@ -127,13 +154,13 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       });
     },
   }));
-  ctx.tools.register(createCanonicalReferenceTool({
+  register(createCanonicalReferenceTool({
     bundleFor,
     isUnavailable(agent) {
       return isSubagent(agent) || responsibilityScopes.has(agent);
     },
   }));
-  ctx.tools.register(createRoutingConfigTool(config.routing.configPath, {
+  register(createRoutingConfigTool(config.routing.configPath, {
     configuredRoles: config.routing.roles,
     configuredDispatch: config.routing.dispatch,
     resolveCallConfig(route: ModelRoute, signal?: AbortSignal) {
@@ -149,21 +176,21 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       appendEvent(agent, "odai/routing-configured", data);
     },
   }));
-  ctx.tools.register(createHumanCareTool({
+  register(createHumanCareTool({
     isChild: isSubagent,
     contractFor(agent: DshAgent) {
       const bundle = bundleFor(agent);
       return readSkillBundleFile(bundle, bundle.manifest.referenceFiles.care).toString("utf8");
     },
   }));
-  ctx.tools.register(createHumanSafetyTool({
+  register(createHumanSafetyTool({
     isChild: isSubagent,
     contractFor(agent: DshAgent) {
       const bundle = bundleFor(agent);
       return readSkillBundleFile(bundle, bundle.manifest.referenceFiles["human-safety"]).toString("utf8");
     },
   }));
-  ctx.tools.register(createResponsibilityGapTool({
+  register(createResponsibilityGapTool({
     isChild: isSubagent,
     bindToTask: gapForCurrentTask,
     onProposed(agent: DshAgent, proposal: RuntimeEventData) {
@@ -176,7 +203,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       });
     },
   }));
-  ctx.tools.register(createResponsibilityReturnTool({
+  register(createResponsibilityReturnTool({
     activeScopeFor(agent) {
       return responsibilityScopes.get(agent);
     },
@@ -195,7 +222,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       });
     },
   }));
-  ctx.tools.register(createSkillSourceConfigTool(
+  register(createSkillSourceConfigTool(
     config.governance.skillConfigPath,
     config.governance.skillSource,
     {
@@ -205,7 +232,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       },
     },
   ));
-  ctx.tools.register(createOutputConfigTool(config.output.configPath, {
+  register(createOutputConfigTool(config.output.configPath, {
     isChild: isSubagent,
     responsibilityRoutesFor() {
       try {
@@ -218,7 +245,7 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       appendEvent(agent, "odai/output-configured", data);
     },
   }));
-  ctx.tools.register(createCompactionConfigTool(config.compaction.configPath, {
+  register(createCompactionConfigTool(config.compaction.configPath, {
     isChild: isSubagent,
     resolveCallConfig(route: ModelRoute, signal?: AbortSignal) {
       return ctx.llm.resolveCallConfig(route, signal);
@@ -227,13 +254,13 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       appendEvent(agent, "odai/compaction-configured", data);
     },
   }));
-  ctx.tools.register(createSemanticMemoryTool(config.memory.storePath, {
+  register(createSemanticMemoryTool(config.memory.storePath, {
     configuredMode: config.memory.mode,
     onChanged(agent, data) {
       appendEvent(agent, "odai/memory-changed", data);
     },
   }));
-  ctx.tools.register(createHumanSafetyContinuityTool({
+  register(createHumanSafetyContinuityTool({
     storePath: humanSafetyContinuityStorePath,
     directUserTextFor(agent: DshAgent) {
       const message = latestDirectUserMessage(agent);
@@ -287,22 +314,12 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
     activation: ContextActivation,
     options: ExposureOptions = {},
   ): readonly string[] => {
-    const child = isSubagentSession(agent);
     const policy = executionRestrictionFor(agent);
-    const activeNames = activeOdaiToolNames(activation, {
-      child,
-      responsibilityReturn: options.responsibilityReturn === true || isReadOnlyResponsibility(agent),
-      reviewEvidence: child && Boolean(managedReviewEvidenceReader(agent)),
-      responsibilityRouting: child || responsibilityRoutingFor(agent, options.turn),
-    }).filter((name) => (!policy.allow || policy.allow.includes(name)) && !policy.deny?.includes(name));
-    const deniedNames = [
-      ...inactiveOdaiToolNames(activeNames),
-      ...ODAI_CORE_TOOL_NAMES.filter((name) => !activeNames.includes(name)),
-      ...(policy.deny ?? []),
-    ];
+    const activeNames = activeToolsFor(agent, activation, options);
+    const deniedNames = policy.deny ?? [];
     // Include effective permissions: ending a scope must restore the controller
     // even when its contextual capabilities have not changed.
-    const key = JSON.stringify([policy.allow ?? null, deniedNames]);
+    const key = JSON.stringify([policy.allow ?? null, deniedNames, activeNames]);
     const previous = toolExposureStates.get(agent);
     if (previous?.key === key) return activeNames;
     previous?.dispose?.();

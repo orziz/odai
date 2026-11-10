@@ -42,6 +42,7 @@ const compactionConfigPath = resolve(scratch, "home", "odai", "compaction.json")
 const sessionEvidenceRoot = resolve(scratch, "home", "odai", "session-evidence");
 const yamlString = (value) => JSON.stringify(value);
 const wrapper = [
+  `import { runProbeTool } from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "scripts/dsh-probe-tool.mjs")).href)};`,
   "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
   `import { apply as applyOdai, inject as odaiInject, name } from ${JSON.stringify(pathToFileURL(pluginPath).href)};`,
   `import { createRoutingConfigTool } from ${JSON.stringify(pathToFileURL(routingConfigModulePath).href)};`,
@@ -63,11 +64,12 @@ const wrapper = [
   `    { callId: 'odai-child-boundary-probe', path: ${JSON.stringify(deniedWritePath)}, agent: child, prefix: 'ODAI_SUBAGENT_BOUNDARY:' },`,
   `    { callId: 'odai-responsibility-read-only-probe', path: ${JSON.stringify(protectedWritePath)}, agent: protectedController, prefix: 'ODAI_RESPONSIBILITY_READ_ONLY:' },`,
   "  ];",
-  "  const guardsReady = Promise.all(probes.map((probe) => ctx.tools.execute({",
+  "  const guardsReady = Promise.all(probes.map((probe) => runProbeTool(ctx, {",
   "    callId: probe.callId,",
   "    name: 'write',",
   "    arguments: { file_path: probe.path, content: 'governance failed' },",
   "    agent: probe.agent,",
+  "    resolveAdmission: false,",
   "    signal: new AbortController().signal,",
   "  }).then((result) => {",
   "    if (!result.isError || !result.error.message.startsWith(probe.prefix)) {",
@@ -144,18 +146,18 @@ const wrapper = [
   "        const session = ctx.sessions.create(undefined, { meta: { cwd: process.cwd(), origin: 'subagent', parentSession: parent.id, delegationDepth: 1 } });",
   "        session.append('subagent/descriptor', { version: 3, mode: 'one-shot', provider: 'probe', label: request.label });",
   "        reviewer = { id: session.id, session, options: {}, ctx };",
-  "        const page = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-page', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
+  "        const page = await runProbeTool(ctx, { name: 'odai_review_evidence', callId: 'review-page', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
   "        if (page.isError || !JSON.stringify(page).includes('UNTRUNCATED_TAIL')) throw new Error(`native evidence paging failed: ${JSON.stringify(page)}`);",
-  `        const source = await ctx.tools.execute({ name: 'read', callId: 'review-source-read', arguments: { file_path: ${JSON.stringify(skillPath)} }, agent: reviewer, signal: new AbortController().signal });`,
+  `        const source = await runProbeTool(ctx, { name: 'read', callId: 'review-source-read', arguments: { file_path: ${JSON.stringify(skillPath)} }, agent: reviewer, signal: new AbortController().signal });`,
   "        if (source.isError || !JSON.stringify(source).includes('name: odai')) throw new Error(`reviewer source read failed: ${JSON.stringify(source)}`);",
-  "        const unchanged = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-page-after-read', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
+  "        const unchanged = await runProbeTool(ctx, { name: 'odai_review_evidence', callId: 'review-page-after-read', arguments: { digest: snapshot.digest, action: 'read', id: 'tool-event-1', offset: 9000 }, agent: reviewer, signal: new AbortController().signal });",
   "        if (unchanged.isError || !JSON.stringify(unchanged).includes('UNTRUNCATED_TAIL')) throw new Error('source read changed captured evidence');",
   "        const shells = ['bash', 'pwsh'].filter((name) => ctx.tools.get(name));",
   "        if (!shells.length) throw new Error('load probe needs a registered native shell');",
   `        const reviewerWritePath = ${JSON.stringify(`${deniedWritePath}.reviewer`)};`,
   "        const blocked = [{ name: 'write', arguments: { file_path: reviewerWritePath, content: 'reviewer escaped read-only scope' } }, ...shells.map((name) => ({ name, arguments: { command: 'exit 0', description: 'Check read-only reviewer boundary' } }))];",
   "        for (const attempt of blocked) {",
-  "          const denied = await ctx.tools.execute({ ...attempt, callId: `review-denied-${attempt.name}`, agent: reviewer, signal: new AbortController().signal });",
+  "          const denied = await runProbeTool(ctx, { ...attempt, callId: `review-denied-${attempt.name}`, agent: reviewer, signal: new AbortController().signal });",
   "          if (!denied.isError || !JSON.stringify(denied).includes('ODAI_REVIEW_READ_ONLY')) throw new Error(`reviewer ${attempt.name} escaped its execution guard: ${JSON.stringify(denied)}`);",
   "        }",
   "        if (existsSync(reviewerWritePath)) throw new Error('reviewer write reached the native tool body');",
@@ -163,7 +165,7 @@ const wrapper = [
   "      } },",
   "    });",
   "    if (outcome.status !== 'completed') throw new Error(`managed evidence probe failed: ${JSON.stringify(outcome)}`);",
-  "    const late = await ctx.tools.execute({ name: 'odai_review_evidence', callId: 'review-late', arguments: { digest: snapshot.digest, action: 'list' }, agent: reviewer, signal: new AbortController().signal });",
+  "    const late = await runProbeTool(ctx, { name: 'odai_review_evidence', callId: 'review-late', arguments: { digest: snapshot.digest, action: 'list' }, agent: reviewer, signal: new AbortController().signal });",
   "    if (!late.isError) throw new Error('disposed review retained evidence access');",
   "  });",
   "  const steerProbe = (async () => {",
@@ -228,7 +230,7 @@ const wrapper = [
         const shells = ['bash', 'pwsh'].filter(name => ctx.tools.get(name));
         if (!shells.length) throw new Error('actual child probe requires shell');
         for (const attempt of [{ name: 'write', arguments: { file_path: writePath, content: 'must not run' } }, ...shells.map(name => ({ name, arguments: { command: 'exit 0', description: 'Verify child boundary' } }))]) {
-          const result = await ctx.tools.execute({ ...attempt, callId: 'actual-child-denied-' + attempt.name, agent: child, signal: new AbortController().signal });
+          const result = await runProbeTool(ctx, { ...attempt, callId: 'actual-child-denied-' + attempt.name, agent: child, signal: new AbortController().signal });
           if (!result.isError || !JSON.stringify(result).includes('ODAI_SUBAGENT_BOUNDARY')) throw new Error('actual child boundary failed: ' + JSON.stringify(result));
         }
         if (existsSync(writePath)) throw new Error('actual child write reached body');

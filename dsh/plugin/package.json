@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-plugin",
-  "version": "0.3.3",
+  "version": "0.3.5",
   "description": "Profile-wide odai governance and routing bundle for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -73,7 +73,7 @@
     "smoke:compaction-cache": "npm run build:dsh && node ./tests/live-compaction-cache-smoke.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "*"
+    "@deepseek-ai/dsh": "0.2.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {

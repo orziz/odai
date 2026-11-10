@@ -108,6 +108,7 @@ function fakeContext(extra = {}) {
     sections: new RequiredArray(),
     guards: [],
     tools: new RequiredArray(),
+    toolConditions: new Map(),
     logs: [],
   };
   const llm = {
@@ -130,9 +131,10 @@ function fakeContext(extra = {}) {
       },
     },
     tools: {
-      register(value) {
+      register(value, options) {
         if (!isTestTool(value)) throw new TypeError("registered test tool is invalid");
         captured.tools.push(value);
+        captured.toolConditions.set(value.name, options?.when);
       },
       guard(value) {
         captured.guards.push(value);
@@ -1805,17 +1807,8 @@ test("session-scoped output ceiling directives apply before generation without c
   const assemble = ctx.captured.handlers.get("system-prompt/assemble");
   const request = ctx.captured.handlers.get("agent/request");
   const events = [];
-  const restrictions = new RequiredArray();
   const agent = {
     phase: { turn: 1 },
-    ctx: {
-      tools: {
-        restrict(filter) {
-          restrictions.push(filter);
-          return () => {};
-        },
-      },
-    },
     session: {
       header: {},
       events,
@@ -1837,7 +1830,7 @@ test("session-scoped output ceiling directives apply before generation without c
   const uncappedPrompt = uncapped.sections.find((section) => section.name === "odai:controller-output-policy").text;
   assert.match(uncappedPrompt, /session-scoped controller output ceiling is disabled/iu);
   assert.doesNotMatch(uncappedPrompt, /ceiling request of 500 tokens/iu);
-  assert.ok(last(restrictions).deny.includes("odai_output_config"));
+  assert.equal(ctx.captured.toolConditions.get("odai_output_config")(context), false);
   assert.deepEqual(
     await request({ agent, turn: 1, step: 1 }, async () => ({
       provider: "base",
@@ -1887,7 +1880,7 @@ test("session-scoped output ceiling directives apply before generation without c
     restored.sections.find((section) => section.name === "odai:controller-output-policy").text,
     /ceiling request of 500 tokens/iu,
   );
-  assert.ok(last(restrictions).deny.includes("odai_output_config"));
+  assert.equal(ctx.captured.toolConditions.get("odai_output_config")(context), false);
   assert.deepEqual(
     await request({ agent, turn: 3, step: 1 }, async () => ({
       provider: "base",
@@ -1901,17 +1894,8 @@ test("session-scoped output ceiling directives apply before generation without c
     { type: "turn/start", seq: 1, data: { turn: 1 } },
     { type: "user/message", seq: 2, data: { ...userMessage("这个会话能不能放开上限？"), id: "question-1" } },
   ];
-  const questionRestrictions = new RequiredArray();
   const questionAgent = {
     phase: { turn: 1 },
-    ctx: {
-      tools: {
-        restrict(filter) {
-          questionRestrictions.push(filter);
-          return () => {};
-        },
-      },
-    },
     session: {
       header: {},
       events: questionEvents,
@@ -1922,7 +1906,7 @@ test("session-scoped output ceiling directives apply before generation without c
     },
   };
   await assemble({}, { agent: questionAgent, signal: context.signal }, downstream);
-  assert.equal(last(questionRestrictions).deny.includes("odai_output_config"), false);
+  assert.equal(ctx.captured.toolConditions.get("odai_output_config")({ agent: questionAgent, signal: context.signal }), true);
   assert.equal(
     questionEvents.some((event) => event.type === "odai/output-session-ceiling-configured"),
     false,
@@ -2122,26 +2106,15 @@ test("a verified controller max-token interruption grants one uncapped pure-cont
     { provider: "base", model: "controller", maxTokens: 8_000 },
   );
 });
-test("adaptive tool exposure reconciles prebuilt prompt schemas with the scoped execution registry", async () => {
+test("adaptive admission is resolved from the current turn", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "off" } });
-  const restrictions = new RequiredArray();
-  let disposed = 0;
   const events = [
     { type: "turn/start", seq: 1, data: { turn: 1 } },
     { type: "user/message", seq: 2, data: userMessage("把按钮文案改清楚") },
   ];
   const agent = {
-    ctx: {
-      tools: {
-        restrict(filter) {
-          restrictions.push(filter);
-          return () => {
-            disposed += 1;
-          };
-        },
-      },
-    },
+    ctx: { tools: { restrict() { throw new Error("adaptive admission must not change registry permissions"); } } },
     session: {
       header: {},
       events,
@@ -2153,31 +2126,19 @@ test("adaptive tool exposure reconciles prebuilt prompt schemas with the scoped 
   };
   const signal = new AbortController().signal;
   const assemble = ctx.captured.handlers.get("system-prompt/assemble");
-  let firstRestrictionAtSnapshot;
-  await assemble({}, { agent, signal }, async () => {
-    firstRestrictionAtSnapshot = last(restrictions);
-    return { sections: ctx.captured.sections };
-  });
-  assert.ok(firstRestrictionAtSnapshot);
-  assert.equal(firstRestrictionAtSnapshot, restrictions[0]);
-  assert.ok(restrictions[0].deny.includes("odai_human_care"));
-  assert.ok(restrictions[0].deny.includes("odai_routing_config"));
-  assert.ok(restrictions[0].deny.includes("odai_memory"));
-  assert.equal(restrictions[0].deny.includes("odai_responsibility_gap"), true);
+  const cold = { agent, signal };
+  for (const name of ["odai_human_care", "odai_routing_config", "odai_memory", "odai_responsibility_gap"]) {
+    assert.equal(ctx.captured.toolConditions.get(name)(cold), false, name);
+  }
   const careMessage = { ...userMessage("你能启动欧黛模式吗？"), id: "user-2" };
   events.push(
     { type: "turn/start", seq: events.length + 1, data: { turn: 2 } },
     { type: "user/message", seq: events.length + 2, data: careMessage },
   );
-  let careRestrictionAtSnapshot;
-  await assemble({}, { agent, signal }, async () => {
-    careRestrictionAtSnapshot = last(restrictions);
-    return { sections: ctx.captured.sections };
-  });
-  assert.equal(disposed, 1);
-  assert.equal(careRestrictionAtSnapshot, restrictions[1]);
-  assert.equal(restrictions[1].deny.includes("odai_human_care"), false);
-  assert.ok(restrictions[1].deny.includes("odai_human_safety"));
+  const care = { agent, signal };
+  assert.equal(ctx.captured.toolConditions.get("odai_human_care")(care), true);
+  assert.equal(ctx.captured.toolConditions.get("odai_human_safety")(care), false);
+  await assemble({}, care, async () => ({ sections: ctx.captured.sections }));
   const selected = events.filter((event) => event.type === "odai/tool-exposure-selected");
   assert.deepEqual(last(selected).data.activeTools, [
     "odai_context_capability",
@@ -2420,17 +2381,8 @@ test("child native tools and DSH tool instructions agree with the execution boun
 test("cold first steps expose only executable core tools before gateway activation", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "off" } });
-  const restrictions = new RequiredArray();
   const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }];
   const agent = {
-    ctx: {
-      tools: {
-        restrict(filter) {
-          restrictions.push(filter);
-          return () => {};
-        },
-      },
-    },
     session: {
       header: {},
       events,
@@ -2442,16 +2394,11 @@ test("cold first steps expose only executable core tools before gateway activati
   };
   const signal = new AbortController().signal;
   const assemble = ctx.captured.handlers.get("system-prompt/assemble");
-  let coldRestrictionAtSnapshot;
+  const cold = { agent, signal };
   const coldAssembly = { sections: ctx.captured.sections, tools: ctx.captured.tools.map(({ name }) => ({ name })) };
-  const coldResult = await assemble(coldAssembly, { agent, signal }, async () => {
-    coldRestrictionAtSnapshot = last(restrictions);
-    return { sections: ctx.captured.sections, tools: ctx.captured.tools.map(({ name }) => ({ name })) };
-  });
-  assert.ok(coldRestrictionAtSnapshot);
-  assert.equal(coldRestrictionAtSnapshot, restrictions[0]);
-  assert.ok(coldRestrictionAtSnapshot.deny.includes("odai_human_care"));
-  assert.equal(coldRestrictionAtSnapshot.deny.includes("odai_context_capability"), false);
+  const coldResult = await assemble(coldAssembly, cold, async () => coldAssembly);
+  assert.equal(ctx.captured.toolConditions.get("odai_human_care")(cold), false);
+  assert.equal(ctx.captured.toolConditions.get("odai_context_capability")(cold), true);
   assert.deepEqual(
     [
       ...coldResult.tools
@@ -2465,15 +2412,10 @@ test("cold first steps expose only executable core tools before gateway activati
   agent.session.append("step/start", { turn: 1, step: 1 });
   const gateway = ctx.captured.tools.find((tool) => tool.name === "odai_context_capability");
   await gateway.execute({ capability: "human-care" }, { agent });
-  let activatedRestrictionAtSnapshot;
+  const activated = { agent, signal };
   const activatedAssembly = { sections: ctx.captured.sections, tools: coldResult.tools.map(({ name }) => ({ name })) };
-  const activatedResult = await assemble(activatedAssembly, { agent, signal }, async () => {
-    activatedRestrictionAtSnapshot = last(restrictions);
-    return activatedAssembly;
-  });
-  assert.ok(activatedRestrictionAtSnapshot);
-  assert.equal(activatedRestrictionAtSnapshot, restrictions[1]);
-  assert.equal(activatedRestrictionAtSnapshot.deny.includes("odai_human_care"), false);
+  const activatedResult = await assemble(activatedAssembly, activated, async () => activatedAssembly);
+  assert.equal(ctx.captured.toolConditions.get("odai_human_care")(activated), true);
   assert.deepEqual(
     [
       ...activatedResult.tools
@@ -2498,17 +2440,8 @@ test("every gateway capability is executable when its next-step schema is snapsh
   for (const [capability, toolName] of cases) {
     const ctx = fakeContext();
     apply(ctx, { skillPath, routing: { mode: "off" } });
-    const restrictions = new RequiredArray();
-    const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }];
+      const events = [{ type: "turn/start", seq: 1, data: { turn: 1 } }];
     const agent = {
-      ctx: {
-        tools: {
-          restrict(filter) {
-            restrictions.push(filter);
-            return () => {};
-          },
-        },
-      },
       session: {
         header: {},
         events,
@@ -2525,7 +2458,7 @@ test("every gateway capability is executable when its next-step schema is snapsh
       sections: ctx.captured.sections,
       tools: ctx.captured.tools.map(({ name }) => ({ name })),
     }));
-    assert.ok(last(restrictions).deny.includes(toolName), `${toolName} must start hidden`);
+    assert.equal(ctx.captured.toolConditions.get(toolName)({ agent, signal }), false, `${toolName} must start hidden`);
     assert.equal(
       coldResult.tools.some((tool) => tool.name === toolName),
       false,
@@ -2535,15 +2468,12 @@ test("every gateway capability is executable when its next-step schema is snapsh
     agent.session.append("step/start", { turn: 1, step: 1 });
     const gateway = ctx.captured.tools.find((tool) => tool.name === "odai_context_capability");
     await gateway.execute({ capability }, { agent });
-    let restrictionAtSnapshot;
+    const activated = { agent, signal };
     const activatedAssembly = {
       sections: ctx.captured.sections,
       tools: coldResult.tools.map(({ name }) => ({ name })),
     };
-    const activatedResult = await assemble(activatedAssembly, { agent, signal }, async () => {
-      restrictionAtSnapshot = last(restrictions);
-      return activatedAssembly;
-    });
+    const activatedResult = await assemble(activatedAssembly, activated, async () => activatedAssembly);
     assert.equal(
       ctx.captured.tools.some((tool) => tool.name === toolName),
       true,
@@ -2554,15 +2484,11 @@ test("every gateway capability is executable when its next-step schema is snapsh
       true,
       `${toolName} must enter the next schema`,
     );
-    assert.ok(restrictionAtSnapshot);
-    assert.equal(restrictionAtSnapshot.deny.includes(toolName), false, `${toolName} must be executable at snapshot`);
-    assert.equal(
-      restrictionAtSnapshot.deny.includes("odai_context_capability"),
-      false,
-      "gateway must remain executable",
-    );
+    assert.equal(ctx.captured.toolConditions.get(toolName)(activated), true, `${toolName} must be executable at snapshot`);
+    assert.equal(ctx.captured.toolConditions.get("odai_context_capability")(activated), true, "gateway must remain executable");
   }
 });
+
 test("outer runtime refreshes executable schemas after downstream restriction changes", async () => {
   const visible = new Set(["odai_context_capability", "odai_reference", "odai_responsibility_gap"]);
   const ctx = fakeContext({
@@ -2613,21 +2539,12 @@ test("outer runtime refreshes executable schemas after downstream restriction ch
 test("capability gateway recovers a missed expression on the next step", async () => {
   const ctx = fakeContext();
   apply(ctx, { skillPath, routing: { mode: "off" } });
-  const restrictions = new RequiredArray();
   const events = [
     { type: "turn/start", seq: 1, data: { turn: 1 } },
     { type: "user/message", seq: 2, data: userMessage("把那个相关设置给我看看") },
     { type: "step/start", seq: 3, data: { turn: 1, step: 1 } },
   ];
   const agent = {
-    ctx: {
-      tools: {
-        restrict(filter) {
-          restrictions.push(filter);
-          return () => {};
-        },
-      },
-    },
     session: {
       header: {},
       events,
@@ -2648,7 +2565,7 @@ test("capability gateway recovers a missed expression on the next step", async (
     assembled.sections.find((section) => section.name === "odai:compaction-model-configuration").text,
     /compaction model configuration/u,
   );
-  assert.equal(last(restrictions).deny.includes("odai_compaction_config"), false);
+  assert.equal(ctx.captured.toolConditions.get("odai_compaction_config")({ agent, signal: new AbortController().signal }), true);
 });
 test("plugin registers canonical prompt, monotonic guard, audit observer, and router", async () => {
   const ctx = fakeContext();
@@ -3857,7 +3774,7 @@ test("effective scope permissions align schemas and guards independently of mode
         readOnly ? "" : "Native write instructions",
       );
       if (registry === "supported") {
-        assert.equal(liveRestrictions.size, 1, "replace the controller's prior restriction");
+        assert.equal(liveRestrictions.size, readOnly ? 1 : 0, "install only the read-only restriction");
         assert.equal([...liveRestrictions][0]?.allow?.includes("write"), readOnly ? false : undefined);
       }
       if (readOnly) {
@@ -3892,8 +3809,7 @@ test("effective scope permissions align schemas and guards independently of mode
         false,
       );
       if (registry === "supported") {
-        assert.equal(liveRestrictions.size, 1);
-        assert.equal([...liveRestrictions][0]?.allow, undefined, "handback restores the controller registry");
+        assert.equal(liveRestrictions.size, 0, "handback restores the controller registry");
       }
     }
   }

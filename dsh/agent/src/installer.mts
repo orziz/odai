@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { satisfies, valid, validRange } from "semver";
+import { valid } from "semver";
 
 import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
@@ -92,21 +92,18 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-export const MINIMUM_DSH_VERSION = "0.2.1-rc.2";
-const SOURCE_DSH_VERSION = "0.2.1-rc.2";
-const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
-if (peerRange !== "*" || validRange(peerRange) === null) {
-  throw new Error("odai-dsh-agent must keep an open DSH peer; tested releases are not an allow-list");
+const peerVersion = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+if (typeof peerVersion !== "string" || valid(peerVersion) !== peerVersion) {
+  throw new Error("odai-dsh-agent must declare one exact DSH peer version");
 }
-// Support starts at the tested baseline. Newer releases, including prereleases,
-// are admitted; actual bundle loading still validates host services.
-export const SUPPORTED_DSH_RANGE = `>=${MINIMUM_DSH_VERSION}`;
-// Historical export name: these are tested versions, never an admission list.
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([SOURCE_DSH_VERSION]);
+export const SUPPORTED_DSH_VERSION = peerVersion;
+export const SUPPORTED_DSH_RANGE = SUPPORTED_DSH_VERSION;
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([SUPPORTED_DSH_VERSION]);
+export const MINIMUM_DSH_VERSION = SUPPORTED_DSH_VERSION;
+
 export function supportsDshVersion(version: string): boolean {
-  return valid(version) !== null && satisfies(version, SUPPORTED_DSH_RANGE, { includePrerelease: true });
+  return version === SUPPORTED_DSH_VERSION;
 }
-export const SUPPORTED_DSH_VERSION = SOURCE_DSH_VERSION;
 
 export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = process.env): string {
   const value = configured ?? env.DSH_HOME ?? resolve(homedir(), ".dsh");

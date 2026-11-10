@@ -25,20 +25,18 @@ function jsonRecord(text) {
   if (!isRecord(value)) throw new TypeError("expected a JSON object");
   return value;
 }
-test("Agent admits newer stable and prerelease hosts without extending a version list", () => {
-  assert.equal(SUPPORTED_DSH_RANGE, ">=0.2.1-rc.2");
-  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.2.1-rc.2"]);
-  for (const admitted of ["0.2.1-rc.2", "0.2.1-rc.3", "0.2.1", "0.2.2-alpha.1", "1.0.0"]) {
-    assert.equal(supportsDshVersion(admitted), true, admitted);
-  }
-  for (const unsupported of ["0.1.7-rc.1", "0.2.0-rc.2", "0.2.1-alpha.5", "0.2.1-rc.1", "", "not-semver"]) {
+test("Agent admits only the exact DSH release declared by the bundle", () => {
+  assert.equal(SUPPORTED_DSH_RANGE, "0.2.2-rc.1");
+  assert.deepEqual(SUPPORTED_DSH_VERSIONS, ["0.2.2-rc.1"]);
+  assert.equal(supportsDshVersion("0.2.2-rc.1"), true);
+  for (const unsupported of ["0.2.1-rc.2", "0.2.2-rc.2", "0.2.2", "1.0.0", "", "not-semver"]) {
     assert.equal(supportsDshVersion(unsupported), false, unsupported);
   }
 });
 test("published bundle declares the odai preset and Control Center through DSH patches", async () => {
   const packageMetadata = jsonRecord(await readFile(resolve(import.meta.dirname, "../package.json"), "utf8"));
   assert.equal(packageMetadata.engines.node, ">=22.15.0");
-  assert.equal(packageMetadata.peerDependencies["@deepseek-ai/dsh"], "*");
+  assert.equal(packageMetadata.peerDependencies["@deepseek-ai/dsh"], "0.2.2-rc.1");
   assert.equal(packageMetadata.exports["./governance"], "./preset/odai/odai-governance.mjs");
   assert.equal(packageMetadata.exports["./client"], "./client/client.js");
   assert.equal(packageMetadata.exports["./control-center-host"], "./preset/odai/runtime/control-center-host.mjs");

@@ -196,6 +196,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
     agent: DshAgent,
     turn: number | undefined,
     step: number,
+    settle = true,
   ): ResponsibilityGapProposal | undefined => {
     if (hasUncommittedDirectInput(agent)) return undefined;
     const events = evidence.events(agent);
@@ -209,7 +210,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
       const message = latestDirectUserMessage(agent);
       if (!message) continue;
       if (message.id !== data.taskMessageId && classifyPendingReviewerText(extractLatestUserText([message])) !== "continue") {
-        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SUPERSEDED_BY_DIRECT_USER_TASK" });
+        if (settle) appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SUPERSEDED_BY_DIRECT_USER_TASK" });
         continue;
       }
       const satisfied = events.slice(events.indexOf(event) + 1).some(result => {
@@ -228,7 +229,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
         return !events.some(item => item.type === "odai/responsibility-gap" && item.data.userNamed === true && item.data.stateDigest === decision?.data.stateDigest && item.data.stateDigest !== data.stateDigest);
       });
       if (satisfied) {
-        appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SATISFIED_BY_VERIFIED_ROUTE" });
+        if (settle) appendEvent(agent, "odai/responsibility-gap-consumed", { turn, step, responsibility: data.responsibility, stateDigest: data.stateDigest, reason: "SATISFIED_BY_VERIFIED_ROUTE" });
         continue;
       }
       if (data.timing === "completion" && !events.some(item => item.type === "odai/named-request-prompted" && item.data.stateDigest === data.stateDigest)) continue;
@@ -252,7 +253,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
           && classifyPendingReviewerText(text) === "continue"
           && !(event.data.requirements && hasExplicitRequestRevision(text));
         if (continuation) return event.data;
-        appendEvent(agent, "odai/responsibility-gap-consumed", {
+        if (settle) appendEvent(agent, "odai/responsibility-gap-consumed", {
           turn,
           step,
           responsibility: event.data.responsibility,
