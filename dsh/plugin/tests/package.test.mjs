@@ -9,7 +9,8 @@ test("bundle patch resolves the packaged runtime through the package export", as
   const metadata = JSON.parse(await readFile(resolve(pluginRoot, "package.json"), "utf8"));
   const patch = await readFile(resolve(pluginRoot, "cordis.patch.yml"), "utf8");
   assert.equal(metadata.name, "odai-dsh-plugin");
-  assert.equal(metadata.main, "./runtime/index.mjs");
+  assert.equal(metadata.main, "./runtime/bootstrap.mjs");
+  assert.equal(metadata.exports["."], metadata.main);
   assert.equal(metadata.dsh.bundle.patch, "./cordis.patch.yml");
   assert.equal(metadata.exports["./client"], "./client/client.js");
   assert.equal(metadata.dsh.client.platform, "web");

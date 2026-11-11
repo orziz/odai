@@ -19,6 +19,7 @@ const CONTROL_CENTER_CHANNEL = "/odai-control-center";
 const CONTROL_CENTER_ENDPOINT = "routing";
 const CONTROL_CENTER_EVIDENCE_ENDPOINT = "evidence";
 const CONTROL_CENTER_SESSION_ENDPOINT = "session";
+const CONTROL_CENTER_PRESSURE_ENDPOINT = "compaction-pressure";
 const MAX_EVIDENCE_EVENTS = 2_000;
 
 interface RpcFailure {
@@ -26,7 +27,16 @@ interface RpcFailure {
   message: string;
 }
 
+export interface CompactionPressureControl {
+  configuredMode: "host" | "window-ratio";
+  effectiveMode: "host" | "window-ratio";
+  supported: boolean;
+  valid: boolean;
+  reason?: string;
+}
+
 export interface ControlCenterResponse {
+  pressure?: CompactionPressureControl;
   ok: boolean;
   session?: SessionControlsSnapshot;
   choices?: Array<{ id: string; name: string }>;
@@ -61,7 +71,7 @@ function registerControlCenter(connection: HostConnection,
   handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<ConnectionRpcResult>,
 ): () => Promise<void> {
   if (!connection.fetch) return connection.rpc.handle(CONTROL_CENTER_CHANNEL, handler, { authority: "loopback" });
-  const disposers = [CONTROL_CENTER_ENDPOINT, CONTROL_CENTER_EVIDENCE_ENDPOINT, CONTROL_CENTER_SESSION_ENDPOINT].map((endpoint) => {
+  const disposers = [CONTROL_CENTER_ENDPOINT, CONTROL_CENTER_EVIDENCE_ENDPOINT, CONTROL_CENTER_SESSION_ENDPOINT, CONTROL_CENTER_PRESSURE_ENDPOINT].map((endpoint) => {
     const method = `${CONTROL_CENTER_CHANNEL.slice(1)}/${endpoint}`;
     return connection.fetch!.register({
       path: `/api/${method}`, methods: ["POST"], requestBody: "buffered",
@@ -92,6 +102,7 @@ type ControlCenterGlobal = typeof globalThis & {
 };
 
 export interface ControlCenterRuntimeOptions {
+  pressure?: (payload: unknown, signal: AbortSignal) => Promise<CompactionPressureControl>;
   configPath: string;
   routingMode?: string;
   evidenceRoot?: string;
@@ -229,11 +240,17 @@ export function installControlCenterRuntime(
 
   const owners = new Map<symbol, ControlCenterRuntimeOptions>([[owner, options]]);
   const dispose = registerControlCenter(connection, async (endpoint, payload, signal) => {
-    if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT && endpoint !== CONTROL_CENTER_SESSION_ENDPOINT) {
+    if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT && endpoint !== CONTROL_CENTER_SESSION_ENDPOINT && endpoint !== CONTROL_CENTER_PRESSURE_ENDPOINT) {
       return { ok: true, value: { ok: false, error: { code: "unavailable", message: "unknown Odai Control Center endpoint" } } };
     }
     const active = effectiveOptions(owners);
     try {
+      if (endpoint === CONTROL_CENTER_PRESSURE_ENDPOINT) {
+        const handlers = [...new Set([...owners.values()].flatMap(owner => owner.pressure ? [owner.pressure] : []))];
+        if (handlers.length !== 1) return { ok: true, value: { ok: false, error: { code: "unavailable", message: handlers.length === 0 ? "自动压缩设置尚未连接到运行时" : "存在多个自动压缩配置所有者，无法确定设置作用域" } } };
+        signal.throwIfAborted();
+        return { ok: true, value: { ok: true, pressure: await handlers[0]!(payload, signal) } };
+      }
       if (endpoint === CONTROL_CENTER_ENDPOINT && isUnknownRecord(payload) && payload.action === "choices") {
         if (typeof payload.cli === "string") return { ok: true, value: { ok: true, choices: await discoverCliModels(payload.cli, signal) } };
         const llm = ctx.llm as unknown as {

@@ -835,9 +835,48 @@ window.__ModuleLoader__.load({
           ),
           h("main", { className: "odaiCC__body" }, tab === "live"
             ? h(LiveView, { trace, evidenceError })
-            : h(RoutingView, { connection, config, setConfig, loading, error, reload })),
+            : h(React.Fragment, null,
+              h(CompactionPressureSettings, { key: sessionId, connection, sessionId }),
+              h(RoutingView, { connection, config, setConfig, loading, error, reload }))),
         ),
       ), document.body);
+    }
+
+    function CompactionPressureSettings({ sessionId, connection }: { sessionId?: string; connection: any }) {
+      const [state, setState] = useState(null as any);
+      const [error, setError] = useState("");
+      const [busy, setBusy] = useState(false);
+      const lifetime = useRef(null as AbortController | null);
+      const inFlight = useRef(false);
+      const request = async (action: string, signal: AbortSignal, mode?: string) => {
+        const response = await connection.rpc.call("/api", "odai-control-center/compaction-pressure", {action, sessionId, ...(mode === undefined ? {} : {mode})}, signal);
+        if (!response?.ok || !response.value?.ok || !response.value.pressure) throw new Error(response?.value?.error?.message || response?.error?.message || "自动压缩设置不可用");
+        if (!signal.aborted) { setState(response.value.pressure); setError(""); }
+      };
+      useEffect(() => {
+        const controller = new AbortController(); lifetime.current = controller;
+        inFlight.current = false; setState(null); setError(""); setBusy(false);
+        void request("show", controller.signal).catch(e => { if (!controller.signal.aborted) setError(String(e)); });
+        return () => controller.abort();
+      }, [connection, sessionId]);
+      const change = async (mode: string) => {
+        const controller = lifetime.current;
+        if (!controller || inFlight.current) return;
+        inFlight.current = true; setBusy(true);
+        try { await request("set", controller.signal, mode); }
+        catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+        finally { if (lifetime.current === controller) { inFlight.current = false; if (!controller.signal.aborted) setBusy(false); } }
+      };
+      return h("section", {className: "odaiCC__routing", "aria-label": "自动压缩设置"},
+        h("h3", null, "自动压缩"),
+        h("label", null, "触发方式 ", h("select", {
+          "aria-label": "自动压缩触发方式", disabled: busy || !state, value: state?.configuredMode ?? "host",
+          onChange: (event: any) => void change(event.target.value),
+        }, h("option", {value: "host"}, "宿主默认"), h("option", {value: "window-ratio", disabled: !state?.supported}, "按窗口比例"))),
+        h("p", null, "按窗口比例在上下文达到模型窗口的 80% 时压缩，不扣除输出预留或额外余量。设置会保存。"),
+        state ? h("p", {role: "status"}, `当前会话实际生效：${state.effectiveMode === "window-ratio" ? "按窗口比例" : "宿主默认"}`) : null,
+        state?.reason ? h("p", {className: "odaiCC__alert", role: "status"}, state.reason) : null,
+        error ? h("p", {className: "odaiCC__alert is-error", role: "alert"}, error) : null);
     }
 
     function SessionControls({ sessionId, connection }: { sessionId?: string; connection: any }) {

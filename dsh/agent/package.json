@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-agent",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "独立维护的 odai 治理模式预设（DSH bundle），按任务需要提供治理与协作。",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,7 @@
   "exports": {
     ".": "./build/src/installer.mjs",
     "./governance": "./preset/odai/odai-governance.mjs",
+    "./compaction-engine": "./preset/odai/runtime/compaction-engine.mjs",
     "./control-center": "./build/src/control-center-installer.mjs",
     "./control-center-host": "./preset/odai/runtime/control-center-host.mjs",
     "./client": "./client/client.js",

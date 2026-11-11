@@ -47,7 +47,7 @@ test("Control Center registers exact authenticated transport routes and validate
     const path = "/api/odai-control-center/routing";
     const route = routes.get(path);
     assert.ok(route);
-    assert.equal(routes.size, 3);
+    assert.equal(routes.size, 4);
     const sessionRoute = routes.get('/api/odai-control-center/session');
     assert.ok(sessionRoute);
     const sessionResponse = await sessionRoute.fetch(new Request('http://localhost/api/odai-control-center/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId: 'session', method: 'odai-control-center/session', payload: { action: 'show', sessionId: 'session-one' } }) }));

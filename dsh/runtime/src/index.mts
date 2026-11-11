@@ -8,7 +8,7 @@ import {
   invalidatePersistedCompactionTarget,
 } from "./compaction-config.mjs";
 import { installCompactionRuntime } from "./compaction-runtime.mjs";
-import { installControlCenterRuntimeWhenAvailable } from "./control-center-runtime.mjs";
+import { installControlCenterRuntimeWhenAvailable, type ControlCenterRuntimeOptions } from "./control-center-runtime.mjs";
 import { installLifecycleRuntime } from "./lifecycle-runtime.mjs";
 import type { RouteProtection } from "./lifecycle-runtime.mjs";
 import { classifyModelRouteFailure, probeModelRoute } from "./model-route.mjs";
@@ -74,10 +74,11 @@ interface RouteInvalidation extends UnknownRecord {
   error?: string;
 }
 
-export function apply(ctx: DshRuntimeContext, rawConfig: unknown): void {
+export function apply(ctx: DshRuntimeContext, rawConfig: unknown, pressure?: ControlCenterRuntimeOptions["pressure"]): void {
   const config = resolveConfig(rawConfig);
   const logger = loggerFor(ctx);
   const disposeControlCenter = installControlCenterRuntimeWhenAvailable(ctx, {
+    ...(pressure === undefined ? {} : { pressure }),
     configPath: config.routing.configPath,
     routingMode: config.routing.mode,
     configuredRoles: config.routing.roles,

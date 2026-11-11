@@ -1,6 +1,6 @@
 {
   "name": "odai-dsh-plugin",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Profile-wide odai governance and routing bundle for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -18,12 +18,12 @@
     "#odai-local-cli": "./skills/odai-orchestration/scripts/local-cli.mjs",
     "#odai-recognize-routing": "./skills/odai-orchestration/scripts/recognize-routing.mjs"
   },
-  "main": "./runtime/index.mjs",
+  "main": "./runtime/bootstrap.mjs",
   "bin": {
     "odai-dsh-plugin": "./build/bin/odai-dsh-plugin.mjs"
   },
   "exports": {
-    ".": "./runtime/index.mjs",
+    ".": "./runtime/bootstrap.mjs",
     "./router": "./runtime/router.mjs",
     "./governance": "./runtime/governance.mjs",
     "./client": "./client/client.js",
@@ -68,7 +68,7 @@
     "postpack": "npm run clean:artifact",
     "pack:dry-run": "node ../../scripts/run-package-pack.mjs --clean runtime --clean skills --clean client -- --dry-run",
     "test": "npm run verify:version && npm run build:dsh && node --test ../runtime/tests/*.test.mjs ./tests/*.test.mjs ../../scripts/dsh-web-rpc.test.mjs",
-    "verify:dsh": "npm run build:dsh && node ./tests/verify-legacy-session-repair.mjs && node ./tests/verify-dsh-load.mjs",
+    "verify:dsh": "npm run build:dsh && node ./tests/verify-legacy-session-repair.mjs && node ./tests/verify-compaction-pressure.mjs && node ./tests/verify-dsh-load.mjs",
     "smoke:live": "npm run build:dsh && node ./tests/live-routing-smoke.mjs",
     "smoke:compaction-cache": "npm run build:dsh && node ./tests/live-compaction-cache-smoke.mjs"
   },

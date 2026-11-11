@@ -95,6 +95,10 @@ An economy `maxTokens` value applies to controller conversation-model requests a
 
 `这个会话放开上限` is handled as an authenticated session-scoped directive before generation: it removes only Odai's controller ceiling for the current and later turns in that session without changing `$DSH_HOME/odai/output.json` or exposing the persistent configuration tool; `这个会话恢复输出上限` returns to the shared policy. A verified ordinary-controller `max-tokens` stop also allows the immediately following pure `继续` to bypass the Odai ceiling for one recovery turn. Neither path removes a lower host request limit, changes a responsibility override, or treats a revised/new task as continuation.
 
+## Automatic compaction
+
+Control Center → Routing → 自动压缩 offers **宿主默认 / 按窗口比例**. Host mode is the default. Window-ratio mode triggers at 80% of the model context window, without subtracting output reservations or safety headroom. Plugin and Agent share `$DSH_HOME/odai/compaction.json.pressure`; the selection survives restart and summary-model reset. The UI shows the current session's effective mode and disables ratio mode for unsupported engines or listeners installed before the Plugin. Restart after installation to register the adapter early. Manual compaction and actual context-overflow recovery remain host-owned.
+
 ## Compaction model
 
 Compaction summaries inherit the conversation's current provider/model by default. A user may explicitly choose a separate target and optional reasoning effort in natural language, for example, `压缩模型用 provider-x/model-summary，推理档 high`; the controller calls `odai_compaction_config`, which persists those explicit values in `$DSH_HOME/odai/compaction.json`. The same tool shows the effective target or removes it to restore inheritance. Plugin and Agent share this store, and Odai never invents a provider, model, or reasoning effort.

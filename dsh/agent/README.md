@@ -92,6 +92,10 @@ An authenticated `这个会话放开上限` directive removes only Odai's contro
 
 A same-provider/model compaction inherits controller reasoning while keeping its independent summary budget. Odai leaves prompt-cache retention unset by default; `ODAI_COMPACTION_CACHE_RETENTION` can explicitly select `short`, `long`, or `none`. `provider-default` means Odai adds no retention, while any explicit incoming retention remains authoritative; configured retention still applies when host routing has already supplied reasoning. Custom preset compositions can set the same value through runtime `compaction.cacheRetention`. The first controller request after a landed summary still rebuilds the changed summary prefix.
 
+## Automatic compaction
+
+Control Center → Routing → 自动压缩 offers **宿主默认 / 按窗口比例**. Host mode is the default. Window-ratio mode triggers at 80% of the model context window, without subtracting output reservations or safety headroom. Agent and Plugin share `$DSH_HOME/odai/compaction.json.pressure`; the selection survives restart and summary-model reset. The UI shows the current session's effective mode and disables ratio mode when the native engine cannot be intercepted reliably. Manual compaction and actual context-overflow recovery remain host-owned.
+
 ## Compaction model
 
 The default compaction-summary model is `inherit`, which preserves the conversation's current provider/model behavior. A user can explicitly set a separate target and optional reasoning effort in natural language, such as `压缩模型用 provider-x/model-summary，推理档 high`; `odai_compaction_config` persists those explicit values in `$DSH_HOME/odai/compaction.json`. Removing the target restores inheritance. Agent and Plugin share the store when both are deliberately present.

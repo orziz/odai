@@ -123,6 +123,8 @@ async function terminateChild(child) {
 await mkdir(workspace, { recursive: true });
 // Stage the bundle exactly as published, then let DSH's plugin manager install it.
 await mkdir(bundleRoot, { recursive: true });
+// Local-directory installs do not install dependencies into the staged source.
+await cp(dirname(createRequire(import.meta.url).resolve("semver/package.json")), resolve(bundleRoot, "node_modules/semver"), { recursive: true });
 for (const path of ["package.json", "build", "preset", "preset.cordis.patch.yml", "control-center.cordis.patch.yml"]) {
   await cp(resolve(agentRoot, path), resolve(bundleRoot, path), { recursive: true });
 }
@@ -442,8 +444,20 @@ async function verifySessionRoundTrip() {
         throw new Error("Odai session did not retain its preset and identity");
       }
       sessionId = session.sessionId;
+      const pressure = await dshWebRpc(baseUrl, "odai-control-center/compaction-pressure", { action: "show", sessionId }, cookie);
+      if (!pressure?.ok || !pressure.pressure?.supported || pressure.pressure.effectiveMode !== (restart ? "window-ratio" : "host")) {
+        throw new Error(`Odai pressure interception or persistence failed: ${JSON.stringify(pressure)}`);
+      }
+      const saved = await dshWebRpc(baseUrl, "odai-control-center/compaction-pressure", { action: "set", sessionId, mode: restart ? "host" : "window-ratio" }, cookie);
+      if (!saved?.ok || saved.pressure?.effectiveMode !== (restart ? "host" : "window-ratio")) throw new Error(`Odai pressure selection failed: ${JSON.stringify(saved)}`);
+      const standard = await dshWebRpc(baseUrl, "session.create", { cwd: workspace, agentPreset: "standard" }, cookie);
+      const isolated = await dshWebRpc(baseUrl, "odai-control-center/compaction-pressure", { action: "show", sessionId: standard.sessionId }, cookie);
+      if (!isolated?.ok || isolated.pressure?.supported || isolated.pressure?.effectiveMode !== "host") throw new Error(`Agent pressure escaped its preset: ${JSON.stringify(isolated)}`);
       const history = await dshWebRpc(baseUrl, "session.history", { sessionId }, cookie);
       if (history.events.length === 0) throw new Error("Odai session history was empty");
+    } catch (error) {
+      process.stderr.write(capturedOutput());
+      throw error;
     } finally {
       await terminateChild(child);
     }

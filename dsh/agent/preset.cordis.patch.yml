@@ -153,7 +153,7 @@
               toolResultPruner: true
             config:
               - id: compaction-basic
-                name: '@deepseek-ai/dsh-compaction-basic'
+                name: odai-dsh-agent/compaction-engine
 
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
