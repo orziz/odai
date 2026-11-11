@@ -835,9 +835,9 @@ window.__ModuleLoader__.load({
           ),
           h("main", { className: "odaiCC__body" }, tab === "live"
             ? h(LiveView, { trace, evidenceError })
-            : h(React.Fragment, null,
-              h(CompactionPressureSettings, { key: sessionId, connection, sessionId }),
-              h(RoutingView, { connection, config, setConfig, loading, error, reload }))),
+            : h("div", { className: "odaiCC__routingPage" },
+              h(RoutingView, { connection, config, setConfig, loading, error, reload }),
+              h(CompactionPressureSettings, { key: sessionId, connection, sessionId }))),
         ),
       ), document.body);
     }
@@ -867,13 +867,14 @@ window.__ModuleLoader__.load({
         catch (e) { if (!controller.signal.aborted) setError(String(e)); }
         finally { if (lifetime.current === controller) { inFlight.current = false; if (!controller.signal.aborted) setBusy(false); } }
       };
-      return h("section", {className: "odaiCC__routing", "aria-label": "自动压缩设置"},
-        h("h3", null, "自动压缩"),
-        h("label", null, "触发方式 ", h("select", {
+      return h("section", {className: "odaiCC__pressure", "aria-label": "自动压缩设置"},
+        h("div", {className: "odaiCC__pressureRow"},
+          h("div", null, h("h3", null, "自动压缩"), h("p", null, "选择自动压缩的触发方式，设置自动保存。")),
+          h("select", {
           "aria-label": "自动压缩触发方式", disabled: busy || !state, value: state?.configuredMode ?? "host",
           onChange: (event: any) => void change(event.target.value),
         }, h("option", {value: "host"}, "宿主默认"), h("option", {value: "window-ratio", disabled: !state?.supported}, "按窗口比例"))),
-        h("p", null, "按窗口比例在上下文达到模型窗口的 80% 时压缩，不扣除输出预留或额外余量。设置会保存。"),
+        h("p", {className: "odaiCC__pressureHint"}, "按窗口比例：达到模型窗口的 80% 时压缩，不扣除输出预留或额外余量。"),
         state ? h("p", {role: "status"}, `当前会话实际生效：${state.effectiveMode === "window-ratio" ? "按窗口比例" : "宿主默认"}`) : null,
         state?.reason ? h("p", {className: "odaiCC__alert", role: "status"}, state.reason) : null,
         error ? h("p", {className: "odaiCC__alert is-error", role: "alert"}, error) : null);
@@ -978,6 +979,19 @@ window.__ModuleLoader__.load({
 @media(max-width:900px){.odaiCC__routeRow{display:block}.odaiCC__dispatch{margin-top:7px}}
 @media(max-width:760px){.odaiCC__launcher span:last-child{display:none}.odaiCC__drawer{inset:6px}.odaiCC__header{grid-template-columns:minmax(0,1fr) auto auto;gap:7px;padding:8px}.odaiCC__brand span{display:none}.odaiCC__tabs button{min-width:56px}.odaiCC__live{padding:8px}.odaiCC__flowGrid{grid-template-columns:1fr;gap:10px;min-height:0}.odaiCC__controllerNode{padding:10px}.odaiCC__flowRole{grid-template-columns:65px minmax(0,1fr)}.odaiCC__evidenceGrid{grid-template-columns:1fr}.odaiCC__inspector{max-height:none}.odaiCC__routing{padding:10px}.odaiCC__controllerLock,.odaiCC__routeSummary{grid-template-columns:92px minmax(0,1fr) auto}.odaiCC__dispatch{grid-template-columns:92px 1fr}.odaiCC__dispatch small{grid-column:2}.odaiCC__routeForm{grid-template-columns:1fr 1fr;margin-left:0}.odaiCC__raw{max-height:240px}}
 @media(max-width:760px){.odaiCC__body{overflow:hidden}.odaiCC__live{gap:8px}.odaiCC__flow{max-height:30vh}.odaiCC__evidenceGrid{grid-template-rows:minmax(180px,1fr) minmax(120px,35vh);overflow:hidden}.odaiCC__timeline,.odaiCC__inspector{min-height:0;max-height:none}}
+
+.odaiCC__routingPage{height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.odaiCC__routingPage>.odaiCC__routing{height:auto;overflow:visible}
+.odaiCC__pressure{max-width:964px;margin:0 auto 20px;padding:16px 0;border-top:1px solid var(--odai-cc-border);font-size:12px;line-height:18px;color:var(--odai-cc-text-2)}
+.odaiCC__pressureRow{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.odaiCC__pressure h3{margin:0;font-size:14px;line-height:22px;color:var(--odai-cc-text)}
+.odaiCC__pressure p{margin:6px 0 0;color:var(--odai-cc-text-3)}
+.odaiCC__pressure select{min-width:144px;height:34px;padding:0 10px;border:1px solid var(--odai-cc-border);border-radius:6px;background:var(--odai-cc-panel);color:var(--odai-cc-text);font:inherit;cursor:pointer}
+.odaiCC__pressure select:focus-visible{outline:2px solid var(--odai-cc-accent);outline-offset:2px}
+.odaiCC__pressure select:disabled{opacity:.5;cursor:not-allowed}
+.odaiCC__pressure .odaiCC__alert{margin-top:10px}
+@media(max-width:1000px){.odaiCC__pressure{margin-left:18px;margin-right:18px}}
+@media(max-width:480px){.odaiCC__pressureRow{align-items:flex-start;flex-direction:column}.odaiCC__pressure select{width:100%}}
 @media(min-width:761px){.odaiCC__routing .odaiCC__routeForm{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .odaiCC__routeForm>label{min-width:0}
 .odaiCC__routeChoice{display:flex;flex-direction:column;gap:4px;min-width:0}

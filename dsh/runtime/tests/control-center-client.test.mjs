@@ -58,6 +58,22 @@ async function loadClientModule(packageId, entries, overrides = {}) {
 async function loadClient(packageId, entries) {
   return (await loadClientModule(packageId, entries)).__testing;
 }
+test("routing and compaction share one scroll container with routing first", async () => {
+  const client = (await loadClientModule("odai-dsh-plugin", ["odai-dsh-plugin"], { react: {
+    createElement(type, props, ...children) { return { type, props, children }; },
+    useState(value) { return [value === "live" ? "routing" : value, () => {}]; },
+  } })).__testing;
+  const source = { subscribe() {}, getSnapshot() { return { events: [] }; } };
+  const tree = client.ControlCenter({ traceSource: () => source, connection: {}, onClose() {} });
+  const find = node => node?.props?.className === "odaiCC__routingPage" ? node : node?.children?.map(find).find(Boolean);
+  const page = find(tree);
+  assert.ok(page, "routing tab needs a shared scroll container");
+  assert.deepEqual(Array.from(page.children, child => child.type.name), ["RoutingView", "CompactionPressureSettings"]);
+  const bundle = await readFile(resolve(import.meta.dirname, "../../client/build/client.js"), "utf8");
+  assert.match(bundle, /\.odaiCC__routingPage\{height:100%;overflow-y:auto;/);
+  assert.match(bundle, /\.odaiCC__routingPage>\.odaiCC__routing\{height:auto;overflow:visible\}/);
+});
+
 test("drawer refresh preserves input focus when the host replaces its close callback", async () => {
   const effects = [], refs = [];
   let effectIndex = 0, refIndex = 0, active = 'input', focusCount = 0, keyHandler, closed = '';
