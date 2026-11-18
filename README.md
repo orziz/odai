@@ -96,7 +96,7 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The current `0.3.7` source candidate targets only DSH `0.2.2-rc.1`. Both packages pin that DSH peer. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
+The current `0.3.8` source candidate targets only DSH `0.2.2-rc.1`. Both packages pin that DSH peer. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
@@ -308,7 +308,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.3.7` / governance `0.7.2` (runtime contract `9`) / orchestration `0.2.5`; the latest published Odai DSH release is `0.3.6` (with persisted automatic compaction pressure controls on DSH `0.2.2-rc.1`; `0.2.39` fixed the DSH `0.1.7` v4 session message source, and `0.2.50` added DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
+The current source candidate is DSH `0.3.8` / governance `0.7.2` (runtime contract `9`) / orchestration `0.2.5`, with no functional changes yet; the latest published Odai DSH release is `0.3.7` with the same governance and orchestration versions (with persisted automatic compaction pressure controls on DSH `0.2.2-rc.1`; `0.2.39` fixed the DSH `0.1.7` v4 session message source, and `0.2.50` added DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 
