@@ -1,0 +1,6 @@
+interface:
+  display_name: "odai-companion"
+  short_description: "阿岱把事情稳稳做完，欧黛让做事的过程有人陪"
+  default_prompt: "使用 $odai-companion 配合完成当前交流或任务：按我选择的阿岱或欧黛风格互动，同时守住真实证据、授权边界与安全底线。"
+policy:
+  allow_implicit_invocation: true

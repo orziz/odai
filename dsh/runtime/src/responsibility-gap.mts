@@ -78,6 +78,7 @@ export interface ResponsibilityGapProposal {
   readonly stateDigest: string;
   readonly userNamed?: boolean;
   readonly timing?: "start" | "completion";
+  readonly source?: string;
 }
 
 export { recognizeNamedRequests } from "#odai-recognize-routing";

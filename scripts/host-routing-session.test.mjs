@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, chmodSync, existsSync, readdi
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-const scripts = path.resolve('skills/odai-orchestration/scripts');
+const scripts = path.resolve(import.meta.dirname, '../skills/odai-orchestration/scripts');
 const run = (file, args, env = {}) => new Promise(resolve => {
   const child = spawn(process.execPath, [file, ...args], { env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', CODEX_THREAD_ID: '', ...env } });
   let stdout = '', stderr = '';

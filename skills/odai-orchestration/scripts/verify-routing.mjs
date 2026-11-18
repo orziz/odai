@@ -1,15 +1,23 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+const MAX_ROLLOUT_BYTES = 64 * 1024 * 1024;
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
-const mappings = new Map([["odai_researcher", "researcher"], ["odai_planner", "planner"], ["odai_reviewer", "reviewer"], ["odai_frontend", "frontend"], ["odai_creative", "creative"], ["odai_writer", "writer"]]);
+const mappings = new Map([
+  ["odai_researcher", "researcher"],
+  ["odai_planner", "planner"],
+  ["odai_reviewer", "reviewer"],
+  ["odai_frontend", "frontend"],
+  ["odai_creative", "creative"],
+  ["odai_writer", "writer"],
+]);
 
 if (args.help) {
   console.log(`Usage:
@@ -21,12 +29,16 @@ if (args.help) {
   process.exit(0);
 }
 if (args.host !== "codex") fail(`不支持的 host：${args.host || "(missing)"}`);
-if (!mappings.has(args.role)) fail("--role 必须是 odai_researcher、odai_planner、odai_reviewer、odai_frontend 或 odai_creative");
+if (!mappings.has(args.role)) fail("--role 必须是 odai_researcher、odai_planner、odai_reviewer、odai_frontend、odai_creative 或 odai_writer");
 if (!args.project || !args.after) fail("缺少 --project 或 --after");
 const after = Date.parse(args.after);
 if (!Number.isFinite(after)) fail(`无效的 --after：${args.after}`);
 
-const project = path.resolve(args.project);
+const canonicalPath = (value) => {
+  const resolved = path.resolve(value || "");
+  try { return realpathSync(resolved); } catch { return resolved; }
+};
+const project = canonicalPath(args.project);
 const manifestFile = path.join(scriptDir, "odai-routing.json");
 if (!existsSync(manifestFile)) fail(`缺少路由清单：${manifestFile}`);
 const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
@@ -45,7 +57,7 @@ for (const file of recentJsonl(sessions, after - 5000)) {
   const metadata = readMetadata(file);
   const session = metadata.session;
   const source = session?.source?.subagent?.thread_spawn;
-  if (!source || session.agent_role !== args.role || path.resolve(session.cwd || "") !== project) continue;
+  if (!source || session.agent_role !== args.role || canonicalPath(session.cwd) !== project) continue;
   const started = Date.parse(session.timestamp || "");
   if (!Number.isFinite(started) || started < after) continue;
   if (args.agentPath && source.agent_path !== args.agentPath) continue;
@@ -61,7 +73,7 @@ if (expected.reasoning_effort && actualEffort !== expected.reasoning_effort) fai
 process.stdout.write(`${JSON.stringify({
   verified: true, role: match.session.agent_role, model: actualModel, reasoning_effort: actualEffort,
   agent_path: match.source.agent_path || null, child_thread_id: match.session.id,
-  parent_thread_id: match.session.parent_thread_id || null, project,
+  parent_thread_id: match.session.parent_thread_id || null, project: path.resolve(args.project),
 }, null, 2)}\n`);
 
 function recentJsonl(root, threshold) {
@@ -72,19 +84,21 @@ function recentJsonl(root, threshold) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) pending.push(full);
-      else if (entry.isFile() && entry.name.endsWith(".jsonl") && statSync(full).mtimeMs >= threshold) files.push(full);
+      else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        const info = statSync(full);
+        if (info.mtimeMs >= threshold && info.size <= MAX_ROLLOUT_BYTES) files.push(full);
+      }
     }
   }
   return files;
 }
 function readMetadata(file) {
   let session = null; let context = null;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
     if (!line) continue;
     let event; try { event = JSON.parse(line); } catch { continue; }
     if (event.type === "session_meta") session = event.payload;
     if (event.type === "turn_context") context = event.payload;
-    if (session && context) break;
   }
   return { session, context };
 }

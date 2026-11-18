@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, rmSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,16 +17,35 @@ if (!input.session_id || input.agent_id) process.exit(0);
 const stateRoot = manifest.host === 'codex' ? path.join(input.cwd || process.cwd(), '.odai', 'named-dispatch') : path.join(root, 'named-dispatch');
 mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
 const file = path.join(stateRoot, createHash('sha256').update(input.session_id).digest('hex') + '.json');
-// Serialize host callbacks; fail visibly instead of racing the pending queue.
+// Serialize host callbacks; recover locks left behind by killed/timed-out hook processes.
 const lock = file + '.lock';
+const ownerFile = path.join(lock, 'owner.json');
 const deadline = Date.now() + 5000;
 while (true) {
-  try { mkdirSync(lock); break; }
-  catch (error) {
-    if (error.code !== 'EEXIST' || Date.now() >= deadline) throw error;
+  try {
+    mkdirSync(lock, { mode: 0o700 });
+    writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, createdAt: Date.now() }), { mode: 0o600 });
+    break;
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    try {
+      const stat = statSync(lock);
+      let reclaim = Date.now() - stat.mtimeMs > 15000;
+      if (existsSync(ownerFile)) {
+        const owner = JSON.parse(readFileSync(ownerFile, 'utf8'));
+        if (Number.isInteger(owner?.pid) && owner.pid > 0) {
+          try { process.kill(owner.pid, 0); } catch (killErr) { if (killErr?.code === 'ESRCH') reclaim = true; }
+        }
+      }
+      if (reclaim) { rmSync(lock, { recursive: true, force: true }); continue; }
+    } catch { /* concurrent unlock */ }
+    if (Date.now() >= deadline) throw error;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
 }
+
+const contextNotes = [];
+let blockDecision = null;
 let state;
 try {
   state = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { requests: [], started: Date.now() };
@@ -73,13 +92,13 @@ try {
     const request = state.requests.find(r => !r.done && !r.issue && invocation(r));
     if (request) {
       const response = input.tool_response;
-      const failed = (leadEnabled() && ['failed', 'killed', 'cancelled', 'canceled'].includes(response?.status)) || response?.is_error || response?.error || (Number.isInteger(response?.exit_code) && response.exit_code !== 0);
+      const failed = ['failed', 'killed', 'cancelled', 'canceled'].includes(response?.status) || response?.is_error || response?.error || (Number.isInteger(response?.exit_code) && response.exit_code !== 0);
       if (failed) { request.done = true; request.result = 'failed'; context('点名调用失败，不重试、不替换模型；最终答复说明原因。'); }
       else if (manifest.mapping[request.responsibility].backend === 'local-cli') {
         // Accept only the evidence explicitly returned by this executor invocation.
-        const match = /odai evidence: ([^\r\n]+)/u.exec(typeof response === 'string' ? response : JSON.stringify(response).replaceAll('\\n', '\n'));
+        const evidencePath = extractEvidencePath(response);
         let evidence;
-        try { if (match) evidence = JSON.parse(readFileSync(match[1].trim(), 'utf8')); } catch { /* missing evidence is not success */ }
+        try { if (evidencePath) evidence = JSON.parse(readFileSync(evidencePath, 'utf8')); } catch { /* missing evidence is not success */ }
         const observed = evidence?.observed;
         if (evidence?.role === request.responsibility && Date.parse(observed?.started_at) >= state.started && observed?.model_verified && observed?.model_verification === 'verified' && observed?.exit_code === 0 && !observed?.error) {
           request.done = true; request.result = 'satisfied';
@@ -108,32 +127,52 @@ try {
   } else if (event === 'Stop' && !input.stop_hook_active) {
     updateReviews();
     const invalid = state.requests.find(r => r.leadReview && r.verdict === 'invalid' && !r.invalidNudged);
-    if (invalid) {
-      invalid.invalidNudged = true;
-      console.log(JSON.stringify({ decision: 'block', reason: '审查回交没有可识别的 VERDICT 行，请在最终答复里如实说明审查结论未按格式给出' }));
-    }
     const repair = state.requests.find(r => r.leadReview && r.verdict === 'changes-requested' && !r.repairNudged && r.round < 2);
-    if (repair) {
-      repair.repairNudged = true;
-      console.log(JSON.stringify({ decision: 'block', reason: `主导审查要求修正：${repair.handback}。按意见修正；有成功写入后再审查。` }));
-    }
-    if (leadEnabled() && state.writes && !repair) {
+    if (leadEnabled() && state.writes && !repair && !invalid) {
       const last = state.requests.findLast(r => r.leadReview);
       if (!last || (last.verdict === 'changes-requested' && last.repairNudged && last.round < 2 && state.writes > last.reviewWrites)) ensureLead('reviewer', last ? last.round + 1 : 0);
     }
     const waiting = state.requests.some(r => !r.done && !r.issue && (r.timing === 'start' || r.inProgress || r.agentId));
     const pending = waiting || repair ? [] : state.requests.filter(r => !r.done && !r.issue && !r.nudged && r.timing === 'completion');
-    if (pending.length) {
+    if (repair) {
+      repair.repairNudged = true;
+      blockDecision = { decision: 'block', reason: `主导审查要求修正：${repair.handback}。按意见修正；有成功写入后再审查。` };
+    } else if (invalid) {
+      invalid.invalidNudged = true;
+      const extra = pending.length ? `\n${pending.map(r => { r.nudged = true; return describe(r); }).join('\n')}` : '';
+      blockDecision = { decision: 'block', reason: `审查回交没有可识别的 VERDICT 行，请在最终答复里如实说明审查结论未按格式给出${extra}` };
+    } else if (pending.length) {
       for (const request of pending) request.nudged = true;
-      console.log(JSON.stringify({ decision: 'block', reason: pending.map(describe).join('\n') }));
+      blockDecision = { decision: 'block', reason: pending.map(describe).join('\n') };
     }
   }
   updateReviews();
   const temp = file + '.' + randomUUID() + '.tmp';
   writeFileSync(temp, JSON.stringify(state), { mode: 0o600 }); renameSync(temp, file);
+  if (blockDecision) {
+    console.log(JSON.stringify(blockDecision));
+  } else if (contextNotes.length > 0 && event !== 'Stop') {
+    console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: contextNotes.join('\n\n') } }));
+  }
 } finally {
-  const { rmdirSync } = await import('node:fs'); rmdirSync(lock);
+  rmSync(lock, { recursive: true, force: true });
 }
+
+function extractEvidencePath(response) {
+  const strings = [];
+  const collect = (value) => {
+    if (typeof value === 'string') strings.push(value);
+    else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  };
+  collect(response);
+  for (const text of strings) {
+    const match = /(?:^|\r?\n)odai evidence:\s*([^\r\n]+)/u.exec(text);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return null;
+}
+
 function responseText(response) {
   if (typeof response === 'string') return response;
   if (Array.isArray(response)) return response.map(responseText).join('\n');
@@ -195,8 +234,12 @@ function invocation(r) {
   }
   return /^(Agent|Task|spawn_agent)$/u.test(input.tool_name) && [args.subagent_type, args.agent_type].includes(`${manifest.host === 'codex' ? 'odai_' : 'odai-'}${r.responsibility}`);
 }
-function readOnly(name) { return /^(Read|Glob|Grep|read_file|list_dir|glob|grep|web_search|view_image)$/u.test(name || ''); }
-function context(text) { console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } })); }
+function readOnly(name) {
+  return /^(Read|Glob|Grep|ToolSearch|WebSearch|WebFetch|AskUserQuestion|Skill|TaskOutput|TodoRead|TodoWrite|read_file|view_file|list_dir|glob|grep|grep_search|find_by_name|web_search|view_image|request_user_input|update_plan)$/u.test(name || '');
+}
+function context(text) {
+  if (text) contextNotes.push(text);
+}
 
 function leadFlow() {
   const roles = state.lead.roles;

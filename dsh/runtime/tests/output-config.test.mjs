@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -292,6 +292,69 @@ test("owned store locks reject live writers, reclaim dead owners, and preserve s
     writeFileSync(lockPath, `${process.pid}:successor\n`, "utf8");
     assert.throws(() => release(), /ownership changed before release/u);
     assert.equal(existsSync(lockPath), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test("concurrent stale store-lock recovery preserves mutual exclusion and clean release", async () => {
+  const root = mkdtempSync(resolve(tmpdir(), "odai-output-lock-race-"));
+  try {
+    const configPath = resolve(root, "odai", "output.json");
+    const lockPath = `${configPath}.lock`;
+    const tracePath = resolve(root, "trace.log");
+    mkdirSync(`${lockPath}.claims`, { recursive: true });
+    writeFileSync(lockPath, "2147483647:dead-main\n", "utf8");
+    writeFileSync(`${lockPath}.claim`, "2147483647:dead-claim\n", "utf8");
+    writeFileSync(`${lockPath}.claims/2147483647.dead-ticket`, "2147483647:dead-ticket\n", "utf8");
+    const moduleUrl = new URL("../build/store-lock.mjs", import.meta.url).href;
+    const workerScript = `
+      import { appendFileSync } from "node:fs";
+      import { acquireOwnedStoreLock } from ${JSON.stringify(moduleUrl)};
+      const [configPath, tracePath] = process.argv.slice(1);
+      try {
+        const release = acquireOwnedStoreLock(configPath, "Odai output configuration");
+        appendFileSync(tracePath, \`enter:\${process.pid}\\n\`, "utf8");
+        await new Promise((r) => setTimeout(r, 35));
+        appendFileSync(tracePath, \`exit:\${process.pid}\\n\`, "utf8");
+        release();
+        process.exit(0);
+      } catch (error) {
+        if (/is being updated|lock acquisition is already in progress/u.test(String(error?.message ?? error))) {
+          process.exit(2);
+        }
+        console.error(error);
+        process.exit(1);
+      }
+    `;
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        new Promise((resolveChild, rejectChild) => {
+          const child = spawn(process.execPath, ["--input-type=module", "-e", workerScript, configPath, tracePath], {
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          let stderr = "";
+          child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+          child.on("error", rejectChild);
+          child.on("close", (code) => resolveChild({ code, stderr }));
+        }),
+      ),
+    );
+    for (const result of results) {
+      assert.ok(result.code === 0 || result.code === 2, `unexpected worker failure: ${result.code} ${result.stderr}`);
+    }
+    const winners = results.filter((result) => result.code === 0).length;
+    if (winners === 0) {
+      const releaseFollowUp = acquireOwnedStoreLock(configPath, "Odai output configuration");
+      releaseFollowUp();
+    }
+    const trace = existsSync(tracePath) ? readFileSync(tracePath, "utf8").trim().split("\n").filter(Boolean) : [];
+    let active = 0;
+    for (const line of trace) {
+      active += line.startsWith("enter:") ? 1 : -1;
+      assert.ok(active >= 0 && active <= 1, `overlapping lock holders detected in trace: ${trace.join(",")}`);
+    }
+    assert.equal(active, 0);
+    assert.deepEqual(readdirSync(resolve(root, "odai")), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

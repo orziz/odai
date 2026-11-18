@@ -21,9 +21,11 @@ test("DSH publication clean gate covers root build inputs", async () => {
   const gate = /function requireCleanPublishedCommit[\s\S]*?const status =/u.exec(publishSource)?.[0] ?? "";
   assert.match(gate, /"package\.json"/u);
   assert.match(gate, /"package-lock\.json"/u);
+  assert.match(gate, /"version-policy\.json"/u);
   assert.match(gate, /"dsh"/u);
   assert.match(gate, /"scripts"/u);
   assert.match(gate, /"skills\/odai"/u);
+  assert.match(gate, /"skills\/odai-orchestration"/u);
 });
 
 test("publication verifies and publishes the same packed tarballs", async () => {

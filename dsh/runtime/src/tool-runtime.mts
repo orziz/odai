@@ -285,16 +285,23 @@ export function installToolRuntime(deps: ToolRuntimeDependencies): void {
       const events = evidence.events(agent);
       const consumed = new Set(events.filter(event => event.type === "odai/responsibility-gap-consumed").map(event => event.data.stateDigest));
       const message = latestDirectUserMessage(agent);
-      const taskId = message && leadTaskId(events, message.id, classifyPendingReviewerText(extractLatestUserText([message])) === "continue");
+      const continuing = Boolean(message && classifyPendingReviewerText(extractLatestUserText([message])) === "continue");
+      const taskId = message && leadTaskId(events, message.id, continuing);
       const state = leadState(events);
       if (taskId && state?.enabled && Array.isArray(state.roles) && state.roles.includes("planner") && isLeadWriteTool(execution.name)) {
         const existing = events.some(event => event.type === "odai/responsibility-gap" && event.data.taskMessageId === taskId && event.data.responsibility === "planner" && event.data.timing === "start");
         if (!existing) {
           appendEvent(agent, "odai/responsibility-gap", leadGap("planner", taskId, currentAgentTurn(agent), currentAgentStep(agent) ?? 0));
-          return "ODAI_NAMED_START_PENDING: 主导模式已登记规划请求，正在等待职责调度，不是渠道故障。此工具尚未执行；请停止重试工具并结束当前回复，让运行时调度规划。规划回交后由控制器继续原任务。";
+          const reason = "ODAI_NAMED_START_PENDING: 主导模式已登记规划请求，正在等待职责调度，不是渠道故障。此工具尚未执行；请停止重试工具并结束当前回复，让运行时调度规划。规划回交后由控制器继续原任务。";
+          onDenied({ ...execution, agent }, reason);
+          return reason;
         }
       }
-      if (events.some(event => event.type === "odai/responsibility-gap" && event.data.userNamed === true && event.data.timing === "start" && !consumed.has(event.data.stateDigest))) {
+      if (isLeadWriteTool(execution.name) && events.some(event => event.type === "odai/responsibility-gap"
+        && event.data.userNamed === true
+        && event.data.timing === "start"
+        && !consumed.has(event.data.stateDigest)
+        && (!message || event.data.taskMessageId === message.id || event.data.taskMessageId === taskId))) {
         const reason = "ODAI_NAMED_START_PENDING: 职责请求已登记，正在等待调度，不是渠道故障。此工具尚未执行；请停止重试工具并结束当前回复，让运行时调度职责。职责回交后由控制器继续原任务。";
         onDenied({ ...execution, agent }, reason);
         return reason;

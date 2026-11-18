@@ -338,7 +338,22 @@ export function createPromptRuntime(deps: PromptDependencies) {
     next: () => Promise<PromptAssembly>,
   ) => {
     const agent = context.agent;
-    if (!agent) return next();
+    if (!agent) {
+      const downstream = await next();
+      const inactive = new Set([
+        "odai:orchestration",
+        "odai:routing-configuration",
+        "odai:human-safety-continuity",
+        "odai:skill-source-configuration",
+        "odai:controller-output-policy",
+        "odai:compaction-model-configuration",
+        "odai:semantic-memory",
+      ]);
+      return {
+        ...downstream,
+        sections: downstream.sections.map((section) => inactive.has(section.name) ? { ...section, text: "" } : section),
+      };
+    }
     const turn = currentAgentTurn(agent);
     const childSession = isSubagentSession(agent);
     const directInput = currentDirectInput(agent, { turn, signal: context.signal, minimum: "claimed" });

@@ -1,8 +1,6 @@
 <!-- Language toggle -->
 **English** · [中文](README.zh-CN.md)
 
-Optional writer (写作) handles drafting, rewriting, translation, and localization once direction is settled. Creative owns direction, ideation, and taste review; without a writer mapping, creative continues to handle writing as before. Writer is read-only and child-only on API and local CLI routes, returning drafts or replacement text for the controller to verify and apply.
-
 # odai
 
 <p align="center">
@@ -68,7 +66,7 @@ The source candidate separates optional orchestration into an installable siblin
 npx skills add https://github.com/orziz/odai --skill odai-orchestration
 ```
 
-`odai-orchestration` depends on `odai` and adds responsibility presets and host routing adapters. Installing the skill does not change host settings. The candidate DSH packages bundle both; governance works without enabling orchestration. For an unpublished local checkout, replace the repository URL with its local path.
+`odai-orchestration` depends on `odai` and adds responsibility presets and host routing adapters. Installing the skill does not change host settings. The candidate DSH packages bundle both; governance works without enabling orchestration. Optional sibling skills (`odai-companion` for Dai/Odai collaborative companionship, `ribao` for structured status reporting, and `renwei` for natural non-AI-sounding copy and visuals) can be installed separately when desired. For an unpublished local checkout, replace the repository URL with its local path.
 
 Then invoke it with `/odai`. That is the normal form in clients that expose skills as slash commands:
 
@@ -98,15 +96,17 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-The current `0.3.5` source candidate targets only DSH `0.2.2-rc.1`. Both packages pin that DSH peer. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
+The current `0.3.7` source candidate targets only DSH `0.2.2-rc.1`. Both packages pin that DSH peer. Odai owns its preset and preserves its capabilities without copying Standard or automatically adding its new tools. Control Center uses the Web transport while headless governance remains independent of it.
 
 Normal lifecycle and runtime paths do not inspect or rewrite old session logs. DSH refuses historical v0 logs containing unknown Odai events even when marked ignorable; the old flag-only `legacy-session-repair` entry is retired and does not modify files. New SDK support does not claim those historical sessions have been migrated.
 
-The Plugin command requires `pnpm` on `PATH`. Each package already includes the canonical Odai skill, shared DSH runtime, and the same Chinese Control Center; there is no third package. Plugin exposes Control Center automatically. Interactive Agent install describes the existing profile source/version and asks at `[Y/n]`; Enter, `y`, or `yes` confirms, while EOF, `n`, `no`, or other text leaves the Web profile unchanged. Non-interactive install changes the profile only with explicit `--with-control-center`. Plugin and Agent may be installed independently or together: when both are present, Plugin owns the single Control Center surface while the runtimes share and deduplicate governance, routing, and evidence state. The existing provider-neutral `odai-cli` remains a separate product.
+The Plugin command requires `pnpm` on `PATH`. Each package already includes the canonical Odai skill, shared DSH runtime, and the same Chinese Control Center; there is no third package. `npx odai-dsh-agent install` installs the Odai bundle into the target DSH profile (default `web`), registering both the `odai` preset and Control Center; the Control Center row can be switched off in DSH's Plugins page. Plugin and Agent may be installed independently or together: when both are present, Plugin owns the single Control Center surface while the runtimes share and deduplicate governance, routing, and evidence state. The existing provider-neutral `odai-cli` remains a separate product.
 
 Both DSH packages default output to **soft concise**. Users can explicitly select normal output or the optional **economy mode**, which combines concise presentation with a user-adjustable provider output ceiling: it defaults to `500` when economy is requested without another value. The ceiling never changes child-agent, compaction, checkpoint, or internal context budgets and may be exceeded or ignored by the provider. See [`dsh/README.md`](dsh/README.md#install-and-use) for the complete three-mode contract.
 
 A complete independently installed Odai skill can update faster than either DSH package without changing the default. The user must explicitly ask Odai to switch the skill source to `auto` or `user`; `auto` can select compatible project `.dsh`/`.agents` bundles and newer user installs, while `user` ignores project roots. An explicit deployment path remains highest priority. Plugin and Agent deliberately installed together share one per-agent/per-turn snapshot, so prompt governance and routing role contracts cannot select different bundles.
+
+Optional writer (写作) handles drafting, rewriting, translation, and localization once direction is settled. Creative owns direction, ideation, and taste review; without a writer mapping, creative continues to handle writing as before. Writer is read-only and child-only on API and local CLI routes, returning drafts or replacement text for the controller to verify and apply.
 
 Neither DSH package chooses responsibility models or dispatch overrides. Tell Odai naturally, for example, `use provider/model for planning with high reasoning and dispatch planning as child`; the runtime persists only those explicit choices for both surfaces. Researcher, planner, reviewer, and frontend can each use `same-turn` or `child`; optional creative and writer support only read-only `child` dispatch on API and local CLI routes, returning writing candidates, tradeoffs, or review findings. The controller owns integration, validation, and final delivery. DSH children remain read-only and can return unapplied patches when explicitly assigned patch preparation; research, planning, and review retain their narrower contracts. Later requests stay ordinary: tasks work without role words, while explicit requests to delegate to a configured responsibility or its mapped model are honored at the requested time; task state otherwise selects direct, inline, same-turn, or child dispatch; read-only same-turn responsibilities return only to the controller, an identical planner/controller model is not called twice, and the controller continues an already-authorized implementation after planning. If a needed responsibility is still unconfigured, Odai names it and asks for the model instead of claiming that route ran. Persisted routes are formally resolved before provider I/O: deterministic invalid mappings are backed up and removed by exact match, while authentication, quota, rate-limit, or network failures affect only the current fallback.
 
@@ -189,7 +189,7 @@ The internal structure is organized by responsibility, not by mandatory stages:
 | Layer | Purpose |
 | --- | --- |
 | Kernel | Core principle, rules organized by outcome, facts, approach, completion, and boundaries, delivery, and gap-based loading |
-| `care.md` | Non-crisis everyday support, reduced action burden, and user-controlled response styles |
+| `care.md` | Non-crisis everyday support, cognitive load reduction, and user-controlled companionship or practical-support styles |
 | `human-safety.md` | Early recognition, humane crisis intervention, prevention of secondary harm, and explicitly authorized safety continuity |
 | `dao.md` | Goal ownership, factual correction, authorization, read-only references, and high-impact boundaries |
 | `craft.md` | Implementation and troubleshooting, design, UI and real-time interaction, writing, and review for an agreed result |
@@ -256,7 +256,7 @@ This repository includes two optional, complementary Codex v2 desktop pets rathe
 | [Dai (`dai`)](pets/dai/) | Black-and-teal operations officer | Calm, reliable, restrained | Moves the task forward, executes, verifies, and closes the work |
 | [Odai (`odai`)](pets/odai/) | Silver-white and blue-violet mascot | Lively, friendly, curious | Keeps you company, reacts to progress, cheers you on, and celebrates completion |
 
-Dai gets the work done; Odai makes the process feel accompanied. Each includes nine standard animations and 16 look directions. Installing the `odai` skill does not install either pet automatically.
+Dai gets the work done; Odai makes the process feel accompanied. Each includes nine standard animations and 16 look directions. Installing the `odai` skill does not install either pet or enforce character roleplay; if you want the Dai/Odai conversational companionship persona in chat, install the optional `odai-companion` skill (`npx skills add https://github.com/orziz/odai --skill odai-companion`).
 
 See the separate character bibles for [Dai](docs/阿岱%20设定档案.md) and [Odai](docs/欧黛%20设定档案.md).
 
@@ -285,7 +285,7 @@ Then open **Codex Settings → Pets**, refresh the list, and select `dai` or `od
 
 The skill supplies judgment; hooks only turn already-explicit project boundaries into mechanical guardrails. They are not installed or enabled by default and do not change odai's main flow. Once a project defines `.odai/hooks.json`, they can protect explicit read-only paths for supported structured write tools, including Claude Code's `NotebookEdit`, and run explicitly declared acceptance commands that match the current change. With no policy file, they are silent no-ops.
 
-Project guardrails are independent of the optional `--named-dispatch` routing hooks. Each manages its own configuration; neither substitutes for the other.
+Project guardrails are independent of the optional `--named-dispatch` and `--lead-mode` routing hooks. Each manages its own configuration; neither substitutes for the other.
 
 The repository keeps one dependency-free runtime and generates native host adapters on demand instead of maintaining six platform mirrors:
 
@@ -308,7 +308,7 @@ Grok Build currently exposes `PreToolUse` as the blocking boundary, so its adapt
 
 ## Evaluation
 
-The current source candidate is DSH `0.3.5` / governance `0.7.1` (runtime contract `9`) / orchestration `0.2.3`; the latest published Odai DSH release is `0.3.3` (with the session-format fix; `0.2.50` adds DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
+The current source candidate is DSH `0.3.7` / governance `0.7.2` (runtime contract `9`) / orchestration `0.2.5`; the latest published Odai DSH release is `0.3.6` (with persisted automatic compaction pressure controls on DSH `0.2.2-rc.1`; `0.2.39` fixed the DSH `0.1.7` v4 session message source, and `0.2.50` added DSH `0.2.0-rc.1` goal/todo adaptation), and `0.2.37` (governance `0.7.0`) is the published release for DSH `0.1.5-rc.2`. Current evidence and limits are recorded in [evaluation results](docs/evaluation-results.md) and [runtime verification](docs/routing-results.md). Historical model scores do not establish the quality of a later source snapshot.
 
 See [`docs/evaluation-results.md`](docs/evaluation-results.md) for current scores, retry status, and limitations, [`docs/routing-results.md`](docs/routing-results.md) for actual collaboration evidence, and [`docs/evaluation.md`](docs/evaluation.md) for the protocol. These limited observations do not establish full-suite acceptance, stable quality gains, or cost savings.
 

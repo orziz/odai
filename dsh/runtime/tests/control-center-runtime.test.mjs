@@ -303,3 +303,69 @@ test("Control Center rejects an unavailable route without overwriting configurat
     await rm(scratch, { recursive: true, force: true });
   }
 });
+test("Control Center isolates preset-only session controls from non-Odai presets and classifies FS errors as internal", async () => {
+  const scratch = await mkdtemp(resolve(tmpdir(), "odai-control-center-preset-isolation-"));
+  const configPath = resolve(scratch, "routing.json");
+  const evidenceRoot = resolve(scratch, "evidence");
+  let handler;
+  const connection = {
+    rpc: {
+      handle(_channel, callback) {
+        handler = callback;
+        return async () => {};
+      },
+    },
+  };
+  const sessions = new Map([
+    ["session-odai", { header: { id: "session-odai", agentPreset: "odai" } }],
+    ["session-standard", { header: { id: "session-standard", agentPreset: "standard" } }],
+  ]);
+  const ctx = {
+    get(name) {
+      return name === "connection" ? connection : undefined;
+    },
+    sessions: {
+      get(id) {
+        return sessions.get(id);
+      },
+    },
+    llm: {
+      resolveCallConfig(route) {
+        return { config: route };
+      },
+    },
+  };
+  const blocker = resolve(scratch, "not-a-directory");
+  await (await import("node:fs/promises")).writeFile(blocker, "file", "utf8");
+  const blockedConfigPath = resolve(blocker, "routing.json");
+  const dispose = installControlCenterRuntime(ctx, {
+    configPath: blockedConfigPath,
+    evidenceRoot,
+    routingMode: "auto",
+    scope: "preset",
+  });
+  try {
+    assert.ok(handler);
+    const odaiSession = await handler("session", { action: "show", sessionId: "session-odai" }, new AbortController().signal);
+    assert.equal(odaiSession.value.ok, true);
+    assert.equal(odaiSession.value.session?.unmanaged, undefined);
+    assert.equal(odaiSession.value.session?.lead.available, true);
+    const standardSession = await handler("session", { action: "show", sessionId: "session-standard" }, new AbortController().signal);
+    assert.equal(standardSession.value.ok, true);
+    assert.equal(standardSession.value.session?.unmanaged, true);
+    assert.equal(standardSession.value.session?.lead.available, false);
+    const rejectedLead = await handler("session", { action: "set-lead", sessionId: "session-standard", enabled: true }, new AbortController().signal);
+    assert.equal(rejectedLead.value.ok, false);
+    assert.equal(rejectedLead.value.error?.code, "bad-request");
+    const fsError = await handler(
+      CONTROL_CENTER_ENDPOINT,
+      { action: "set", responsibility: "planner", provider: "openai", model: "gpt-test" },
+      new AbortController().signal,
+    );
+    assert.equal(fsError.value.ok, false);
+    assert.equal(fsError.value.error?.code, "internal");
+  } finally {
+    await dispose?.();
+    await rm(scratch, { recursive: true, force: true });
+  }
+});

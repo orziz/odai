@@ -849,6 +849,101 @@ test("configured compaction discards partial failure output and retries once on 
     model: "summary-model",
     reasoningEffort: "high",
   });
+  const sameRouteOptions = {
+    purpose: "compaction",
+    provider: "openai",
+    model: "summary-model",
+    reasoningEffort: "high",
+    messages: [{ role: "user", content: [{ type: "text", text: "history" }] }],
+  };
+  await assert.rejects(
+    async () => {
+      const thrownSameRoute = ctx.captured.handlers.get("llm/stream")(sameRouteOptions, () =>
+        (async function* () {
+          yield { type: "text", text: "partial summary before crash" };
+          throw new Error("upstream socket reset");
+        })(),
+      );
+      for await (const _chunk of thrownSameRoute) { /* consume */ }
+    },
+    /upstream socket reset/u,
+  );
+  const abortController = new AbortController();
+  await assert.rejects(
+    async () => {
+      const thrownCancelled = ctx.captured.handlers.get("llm/stream")(
+        { ...options, signal: abortController.signal },
+        () =>
+          (async function* () {
+            yield { type: "text", text: "partial summary before abort" };
+            abortController.abort();
+            const abortErr = new Error("Compaction aborted");
+            abortErr.name = "AbortError";
+            throw abortErr;
+          })(),
+      );
+      for await (const _chunk of thrownCancelled) { /* consume */ }
+    },
+    /Compaction aborted/u,
+  );
+  for (const falsyFailure of [undefined, null, 0, false, ""]) {
+    const callsBeforeFalsy = fallbackCalls.length;
+    const falsyFallbackStream = ctx.captured.handlers.get("llm/stream")({ ...options }, () =>
+      (async function* () {
+        yield { type: "text", text: "partial summary before falsy throw" };
+        throw falsyFailure;
+      })(),
+    );
+    const falsyFallbackChunks = [];
+    for await (const chunk of falsyFallbackStream) falsyFallbackChunks.push(chunk);
+    assert.equal(fallbackCalls.length, callsBeforeFalsy + 1);
+    assert.deepEqual(
+      falsyFallbackChunks.map((chunk) => chunk.text).filter(Boolean),
+      ["complete inherited summary"],
+    );
+
+    const sameRouteYielded = [];
+    let caughtSameRoute;
+    let didCatchSameRoute = false;
+    try {
+      const thrownFalsySameRoute = ctx.captured.handlers.get("llm/stream")({ ...sameRouteOptions }, () =>
+        (async function* () {
+          yield { type: "text", text: "partial summary before falsy throw" };
+          throw falsyFailure;
+        })(),
+      );
+      for await (const chunk of thrownFalsySameRoute) sameRouteYielded.push(chunk);
+    } catch (error) {
+      didCatchSameRoute = true;
+      caughtSameRoute = error;
+    }
+    assert.equal(didCatchSameRoute, true);
+    assert.equal(Object.is(caughtSameRoute, falsyFailure), true);
+    assert.deepEqual(sameRouteYielded, []);
+
+    const falsyAbortController = new AbortController();
+    const cancelledYielded = [];
+    let caughtCancelled;
+    let didCatchCancelled = false;
+    try {
+      const thrownFalsyCancelled = ctx.captured.handlers.get("llm/stream")(
+        { ...options, signal: falsyAbortController.signal },
+        () =>
+          (async function* () {
+            yield { type: "text", text: "partial summary before falsy abort" };
+            falsyAbortController.abort();
+            throw falsyFailure;
+          })(),
+      );
+      for await (const chunk of thrownFalsyCancelled) cancelledYielded.push(chunk);
+    } catch (error) {
+      didCatchCancelled = true;
+      caughtCancelled = error;
+    }
+    assert.equal(didCatchCancelled, true);
+    assert.equal(Object.is(caughtCancelled, falsyFailure), true);
+    assert.deepEqual(cancelledYielded, []);
+  }
 });
 test("deterministic compaction route failure backs up and removes only the matching target", async () => {
   const configPath = resolve(testDshHome, "compaction-runtime-invalid", "compaction.json");
@@ -2130,7 +2225,7 @@ test("adaptive admission is resolved from the current turn", async () => {
   for (const name of ["odai_human_care", "odai_routing_config", "odai_memory", "odai_responsibility_gap"]) {
     assert.equal(ctx.captured.toolConditions.get(name)(cold), false, name);
   }
-  const careMessage = { ...userMessage("你能启动欧黛模式吗？"), id: "user-2" };
+  const careMessage = { ...userMessage("我现在觉得心累提不起劲，能先听我说吗？"), id: "user-2" };
   events.push(
     { type: "turn/start", seq: events.length + 1, data: { turn: 2 } },
     { type: "user/message", seq: events.length + 2, data: careMessage },
@@ -2408,7 +2503,7 @@ test("cold first steps expose only executable core tools before gateway activati
     ],
     ["odai_context_capability", "odai_reference"],
   );
-  agent.session.append("user/message", userMessage("你能启动欧黛模式吗？"));
+  agent.session.append("user/message", userMessage("我现在觉得心累提不起劲，能先听我说吗？"));
   agent.session.append("step/start", { turn: 1, step: 1 });
   const gateway = ctx.captured.tools.find((tool) => tool.name === "odai_context_capability");
   await gateway.execute({ capability: "human-care" }, { agent });

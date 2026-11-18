@@ -91,7 +91,8 @@ export async function probeModelRoute(
     return Object.freeze({ status: "unavailable" });
   }
   try {
-    const resolved = await resolveCallConfig({ ...route }, signal);
+    const { backend: _backend, cli: _cli, timeoutSeconds: _timeout, session: _session, ...apiRoute } = route as ModelRoute & Record<string, unknown>;
+    const resolved = await resolveCallConfig(apiRoute as ModelRoute, signal);
     const config = isUnknownRecord(resolved) && isUnknownRecord(resolved.config)
       ? resolved.config
       : isUnknownRecord(resolved) ? resolved : route;

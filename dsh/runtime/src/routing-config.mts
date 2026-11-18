@@ -529,7 +529,7 @@ export function createRoutingConfigTool(
       "Never choose a provider, cli, model, reasoning effort, timeout, token limit, or price on the user's behalf. Never choose a dispatch mode on the user's behalf.",
       "Researcher routing is task-gated but not price-aware; its mapping does not guarantee lower cost.",
       "For every configuration change, handle one responsibility per call. Persisted model mappings and dispatch overrides are shared by the Odai DSH Plugin and Agent and apply from the next user turn.",
-      "Local-cli supports claude, codex, antigravity, and grok for researcher/planner/reviewer/frontend/creative/writer as child, defaulting to child when dispatch is omitted. Researcher quotations are verified against repository sources; reviewer receives bounded captured execution evidence. Creative also defaults to child on API routes and rejects same-turn. Results expose API in-place responsibility ceilings; never invent an override.",
+      "Local-cli supports claude, codex, antigravity, and grok for researcher/planner/reviewer/frontend/creative/writer as child, defaulting to child when dispatch is omitted. Researcher quotations are verified against repository sources; reviewer receives bounded captured execution evidence. Creative and writer also default to child on API routes and reject same-turn. Results expose API in-place responsibility ceilings; never invent an override.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -546,7 +546,7 @@ export function createRoutingConfigTool(
         model: { type: "string", description: "Model id explicitly supplied by the user; required for set." },
         reasoningEffort: { type: "string", description: "Optional reasoning effort explicitly supplied by the user." },
         maxTokens: { type: "integer", description: "Optional positive output limit explicitly supplied by the user. It limits routed child requests and explicitly overrides the global controller ceiling only inside the same planner or frontend responsibility scope when that responsibility runs in-place." },
-        dispatch: { type: "string", enum: ["same-turn", "child"], description: "Required for set-dispatch. Creative and local-cli routes only accept child; other API responsibilities accept same-turn or child." },
+        dispatch: { type: "string", enum: ["same-turn", "child"], description: "Required for set-dispatch. Creative, writer, and local-cli routes only accept child; other API responsibilities accept same-turn or child." },
       },
     },
     output: {
@@ -603,7 +603,7 @@ export function createRoutingConfigTool(
         const dispatch = Object.entries(value.dispatch)
           .map(([role, mode]) => `${role}: ${mode} [${value.dispatchSources[role as ConfigurableRole]}]`)
           .join("\n") || (value.roles.creative || value.roles.writer || Object.values(value.roles).some(route => route.backend === "local-cli")
-            ? "No per-responsibility dispatch overrides are configured; creative and local-cli routes use child and other API routes use legacy defaults."
+            ? "No per-responsibility dispatch overrides are configured; creative, writer, and local-cli routes use child and other API routes use legacy defaults."
             : "No per-responsibility dispatch overrides are configured; legacy defaults apply.");
         const responsibilityBudgets = Object.entries(value.responsibilityBudgets ?? {});
         const configuredResponsibilities = responsibilityBudgets.length > 0

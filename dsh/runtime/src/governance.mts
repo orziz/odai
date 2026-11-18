@@ -14,6 +14,8 @@ export const DEFAULT_PROTECTED_CONTROLLER_ALLOWED_TOOLS = Object.freeze([
   "job_output",
   "job_list",
   "skill",
+  "odai_human_care",
+  "odai_human_safety",
   "odai_responsibility_return",
 ] as const);
 

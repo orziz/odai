@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "odai-orchestration",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "governanceContract": 9,
   "delegationFile": "contracts/delegation.md",
   "roleFiles": {

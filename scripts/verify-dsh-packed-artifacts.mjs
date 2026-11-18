@@ -150,6 +150,7 @@ function packageTargets(metadata) {
   const raw = [metadata.main, ...objectValues(metadata.bin), ...nestedStringValues(metadata.exports)];
   const patch = metadata.dsh?.bundle?.patch;
   if (typeof patch === "string") raw.push(patch);
+  else if (Array.isArray(patch)) raw.push(...patch.filter((item) => typeof item === "string"));
   return [...new Set(raw.filter((value) => typeof value === "string").map(packageTarget))];
 }
 
@@ -214,6 +215,11 @@ async function tarEntries(tarballPath) {
       extendedPath = undefined;
       if (["1", "2"].includes(type)) links.push(path);
       else if (path && type !== "5") {
+        const modeText = tarText(header.subarray(100, 108)).trim();
+        const mode = modeText ? Number.parseInt(modeText, 8) : 0o644;
+        if (Number.isSafeInteger(mode) && (mode & 0o444) !== 0o444) {
+          throw new Error(`non-world-readable file mode 0o${mode.toString(8)} in ${tarballPath}: ${path}`);
+        }
         if (files.has(path)) throw new Error(`duplicate tar entry in ${tarballPath}: ${path}`);
         files.set(path, Buffer.from(payload));
       }

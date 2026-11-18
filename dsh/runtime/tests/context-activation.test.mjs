@@ -50,11 +50,22 @@ test("care and crisis signals activate separate contracts without model configur
   ].sort());
   assert.equal(crisis.routingConfig, false);
   assert.equal(crisis.memory, false);
-  const style = classifyContextActivation("这次请用欧黛的方式，先听我说");
+  const style = classifyContextActivation("这次请用陪伴风格，先听我说");
   assert.equal(style.care, true);
   assert.equal(style.safety, false);
   assert.equal(style.routingConfig, false);
   assert.equal(style.memory, false);
+  const decoupledCompanion = classifyContextActivation("请用欧黛的语气帮我重构这段代码");
+  assert.equal(decoupledCompanion.care, false);
+  assert.equal(decoupledCompanion.safety, false);
+  for (const contractedCrisis of ["I'm a burden to everyone.", "I’m a burden to everyone."]) {
+    const classified = classifyContextActivation(contractedCrisis);
+    assert.equal(classified.safety, true, contractedCrisis);
+    assert.equal(classified.care, false, contractedCrisis);
+  }
+  const technicalBurden = classifyContextActivation("Reduce the performance burden of this loop.");
+  assert.equal(technicalBurden.safety, false);
+  assert.equal(technicalBurden.care, false);
 });
 test("low-frequency control tools appear only for matching direct intent", () => {
   const cases = [

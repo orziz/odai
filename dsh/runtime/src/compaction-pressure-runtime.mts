@@ -33,23 +33,27 @@ export function installCompactionPressureRuntime(ctx: any, options: PressureRunt
     signal.throwIfAborted();
     for (let seq = agent.session.seq - 1; seq >= 0; seq--) {
       const event = agent.session.eventAt(modules.SessionSeq(seq));
-      if (event.type === "compaction/end") break;
+      if (!event) continue;
+      if (event.type === "compaction/end" || event.type === "turn/end") break;
       if (event.type === "compaction/start") throw new Error("Odai compaction: another compaction is active");
     }
     const contextWindow = info.context?.contextWindow;
     const threshold = windowRatioThreshold(contextWindow);
-    const policy = engine.config.modelPolicies.find((item: any) => item.provider === header.config.provider && item.model === header.config.model);
+    const policy = Array.isArray(engine.config?.modelPolicies)
+      ? engine.config.modelPolicies.find((item: any) => item.provider === header.config.provider && item.model === header.config.model)
+      : undefined;
     if (meter.measure(agent.session, header).totalTokens >= threshold) owner.get("toolResultPruner")?.pruneSession(agent.session);
     return compactAtWindowRatio<number>({
       contextWindow, signal, retries: policy?.compactionRetries ?? engine.config.compactionRetries, requireBelowThreshold,
       measure() {
         const measurement = meter.measure(agent.session, header), surface = agent.session.surface.nodes;
+        const configuredRetainTokens = policy?.retainTokens ?? (policy?.retainRatio !== undefined
+          ? Math.floor(contextWindow * policy.retainRatio)
+          : engine.config?.retainTokens ?? (engine.config?.retainRatio !== undefined ? Math.floor(contextWindow * engine.config.retainRatio) : undefined));
         return {totalTokens: measurement.totalTokens, range: measurement.totalTokens < threshold ? null : windowRatioRange<number>({
           surface, priced: measurement.nodes, contextWindow,
-          retainTokens: policy?.retainTokens ?? (policy?.retainRatio !== undefined
-            ? Math.floor(contextWindow * policy.retainRatio)
-            : engine.config.retainTokens ?? Math.floor(contextWindow * engine.config.retainRatio)),
-          systemHead: surface.length > 0 && agent.session.eventAt(surface[0]).type === "system/message",
+          ...(configuredRetainTokens !== undefined && Number.isFinite(configuredRetainTokens) ? { retainTokens: configuredRetainTokens } : {}),
+          systemHead: surface.length > 0 && agent.session.eventAt(surface[0])?.type === "system/message",
           balancedBefore: seq => modules.toolPairingBalancedBefore(agent.session, seq),
         })};
       },

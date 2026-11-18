@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
-  renameSync,
+  rmdirSync,
   rmSync,
+  statSync,
   writeSync,
 } from "node:fs";
 import { dirname } from "node:path";
@@ -35,6 +38,12 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
   }
 }
 
+function parseTicketPid(entry: string): number | undefined {
+  const separator = entry.indexOf(".");
+  const pid = Number(separator <= 0 ? "" : entry.slice(0, separator));
+  return Number.isSafeInteger(pid) && pid > 0 && separator < entry.length - 1 ? pid : undefined;
+}
+
 function processIsAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -44,105 +53,188 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-function createLock(lockPath: string, owner: string): number {
-  const handle = openSync(lockPath, "wx", 0o600);
+function isOrphanedEmptyLock(lockPath: string, graceMs = 2000): boolean {
   try {
-    const content = Buffer.from(`${owner}\n`, "utf8");
-    if (writeSync(handle, content, 0, content.length) !== content.length) {
-      throw new Error(`short write while acquiring Odai configuration lock: ${lockPath}`);
-    }
-    fsyncSync(handle);
-    return handle;
+    const info = statSync(lockPath);
+    return info.size === 0 && Date.now() - info.mtimeMs > graceMs;
+  } catch {
+    return false;
+  }
+}
+
+function pathExists(targetPath: string): boolean {
+  try {
+    statSync(targetPath);
+    return true;
   } catch (error) {
-    closeSync(handle);
-    rmSync(lockPath, { force: true });
+    if (errorCode(error) === "ENOENT") return false;
     throw error;
   }
 }
 
-function releaseLock(handle: number, lockPath: string, owner: string): void {
+function writeLockFile(targetPath: string, owner: string, lockPathForError: string): void {
+  const handle = openSync(targetPath, "wx", 0o600);
+  try {
+    const content = Buffer.from(`${owner}\n`, "utf8");
+    if (writeSync(handle, content, 0, content.length) !== content.length) {
+      throw new Error(`short write while acquiring Odai configuration lock: ${lockPathForError}`);
+    }
+    fsyncSync(handle);
+  } catch (error) {
+    closeSync(handle);
+    rmSync(targetPath, { force: true });
+    throw error;
+  }
   closeSync(handle);
+}
+
+function linkOrCreateLock(ticketPath: string, lockPath: string, owner: string): void {
+  try {
+    linkSync(ticketPath, lockPath);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "ENOSYS" || code === "ENOTSUP" || code === "EPERM") {
+      writeLockFile(lockPath, owner, lockPath);
+      return;
+    }
+    throw error;
+  }
+}
+
+function releaseLock(lockPath: string, owner: string): void {
   const current = readLockOwner(lockPath);
   if (current === undefined) throw new Error(`Odai configuration lock disappeared before release: ${lockPath}`);
   if (current.value !== owner) throw new Error(`Odai configuration lock ownership changed before release: ${lockPath}`);
   rmSync(lockPath);
 }
 
-function acquireClaim(claimPath: string, label: string): { handle: number; owner: string } {
-  const owner = `${process.pid}:${randomUUID()}`;
+function listDirEntries(dirPath: string): string[] {
   try {
-    return { handle: createLock(claimPath, owner), owner };
+    return readdirSync(dirPath);
   } catch (error) {
-    if (errorCode(error) !== "EEXIST") throw error;
+    if (errorCode(error) === "ENOENT") return [];
+    throw error;
   }
+}
 
-  const current = readLockOwner(claimPath);
-  if (current === undefined || processIsAlive(current.pid)) {
-    throw new Error(`${label} lock acquisition is already in progress; retry the tool call`);
-  }
-
-  const displacedPath = `${claimPath}.recovery-${process.pid}-${randomUUID()}`;
+function cleanupEmptyDir(dirPath: string): void {
   try {
-    renameSync(claimPath, displacedPath);
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") {
-      throw new Error(`${label} lock acquisition changed during recovery; retry the tool call`);
+    rmdirSync(dirPath);
+  } catch {
+    // Only remove empty directories; active tickets must remain untouched.
+  }
+}
+
+function releaseClaimTicket(claimDir: string, ticketPath: string): void {
+  rmSync(ticketPath, { force: true });
+  cleanupEmptyDir(claimDir);
+}
+
+function acquireClaimTicket(
+  claimDir: string,
+  owner: string,
+  lockPath: string,
+  label: string,
+): string {
+  const busyMessage = `${label} lock acquisition is already in progress; retry the tool call`;
+  for (const entry of listDirEntries(claimDir)) {
+    const entryPath = `${claimDir}/${entry}`;
+    const pid = parseTicketPid(entry);
+    if (pid === undefined && !pathExists(entryPath)) continue;
+    if (pid !== undefined ? processIsAlive(pid) : !isOrphanedEmptyLock(entryPath)) {
+      throw new Error(busyMessage);
     }
+    rmSync(entryPath, { force: true });
+  }
+
+  const ticketName = `${process.pid}.${randomUUID()}`;
+  const ticketPath = `${claimDir}/${ticketName}`;
+  let created = false;
+  for (let attempt = 0; attempt < 8 && !created; attempt += 1) {
+    try {
+      mkdirSync(claimDir, { mode: 0o700 });
+    } catch (mkdirError) {
+      const code = errorCode(mkdirError);
+      if (code !== "EEXIST" && code !== "ENOENT") throw mkdirError;
+    }
+    try {
+      writeLockFile(ticketPath, owner, lockPath);
+      created = true;
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") continue;
+      throw error;
+    }
+  }
+  if (!created) throw new Error(busyMessage);
+
+  try {
+    const entries = readdirSync(claimDir);
+    if (!entries.includes(ticketName)) {
+      throw new Error(busyMessage);
+    }
+    for (const entry of entries) {
+      if (entry === ticketName) continue;
+      const entryPath = `${claimDir}/${entry}`;
+      const pid = parseTicketPid(entry);
+      if (pid === undefined && !pathExists(entryPath)) continue;
+      if (pid !== undefined ? processIsAlive(pid) : !isOrphanedEmptyLock(entryPath)) {
+        throw new Error(busyMessage);
+      }
+      rmSync(entryPath, { force: true });
+    }
+  } catch (error) {
+    releaseClaimTicket(claimDir, ticketPath);
     throw error;
   }
 
-  let displacedWasStale = false;
-  try {
-    const displaced = readLockOwner(displacedPath);
-    if (displaced?.value !== current.value) {
-      throw new Error(`${label} lock acquisition ownership changed during recovery; displaced successor preserved at ${displacedPath}; retry the tool call`);
-    }
-    displacedWasStale = true;
-    return { handle: createLock(claimPath, owner), owner };
-  } finally {
-    if (displacedWasStale) rmSync(displacedPath, { force: true });
+  return ticketPath;
+}
+
+function reconcileLegacyClaimFile(claimPath: string, label: string): void {
+  if (!pathExists(claimPath)) return;
+  const current = readLockOwner(claimPath);
+  if (current === undefined && !pathExists(claimPath)) return;
+  if (current ? processIsAlive(current.pid) : !isOrphanedEmptyLock(claimPath)) {
+    throw new Error(`${label} lock acquisition is already in progress; retry the tool call`);
   }
+  rmSync(claimPath, { force: true });
 }
 
 export function acquireOwnedStoreLock(path: string, label: string): () => void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const lockPath = `${path}.lock`;
-  const claimPath = `${lockPath}.claim`;
+  const legacyClaimPath = `${lockPath}.claim`;
+  const claimDir = `${lockPath}.claims`;
   const owner = `${process.pid}:${randomUUID()}`;
-  const claim = acquireClaim(claimPath, label);
+  const ticketPath = acquireClaimTicket(claimDir, owner, lockPath, label);
 
-  let handle: number | undefined;
   try {
-    const activeClaim = readLockOwner(claimPath);
-    if (activeClaim?.value !== claim.owner) {
-      throw new Error(`${label} lock acquisition ownership changed before update; retry the tool call`);
-    }
-    try {
-      handle = createLock(lockPath, owner);
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-      const current = readLockOwner(lockPath);
-      if (current === undefined || processIsAlive(current.pid)) {
-        throw new Error(`${label} is being updated; retry the tool call`);
+    reconcileLegacyClaimFile(legacyClaimPath, label);
+    let acquired = false;
+    for (let attempt = 0; attempt < 3 && !acquired; attempt += 1) {
+      try {
+        linkOrCreateLock(ticketPath, lockPath, owner);
+        acquired = true;
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+        const current = readLockOwner(lockPath);
+        if (current === undefined && !pathExists(lockPath)) {
+          continue;
+        }
+        if (current ? processIsAlive(current.pid) : !isOrphanedEmptyLock(lockPath)) {
+          throw new Error(`${label} is being updated; retry the tool call`);
+        }
+        rmSync(lockPath, { force: true });
+        linkOrCreateLock(ticketPath, lockPath, owner);
+        acquired = true;
       }
-      rmSync(lockPath);
-      handle = createLock(lockPath, owner);
+    }
+    if (!acquired) {
+      throw new Error(`${label} is being updated; retry the tool call`);
     }
   } finally {
-    try {
-      releaseLock(claim.handle, claimPath, claim.owner);
-    } catch (error) {
-      if (handle !== undefined) {
-        try {
-          releaseLock(handle, lockPath, owner);
-        } catch {}
-        handle = undefined;
-      }
-      throw error;
-    }
+    releaseClaimTicket(claimDir, ticketPath);
   }
 
-  if (handle === undefined) throw new Error(`could not lock ${label}`);
-  const ownedHandle = handle;
-  return () => releaseLock(ownedHandle, lockPath, owner);
+  return () => releaseLock(lockPath, owner);
 }

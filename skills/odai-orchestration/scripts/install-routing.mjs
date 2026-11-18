@@ -157,6 +157,11 @@ function collectGeneratedFiles(root, layoutValue) {
     if (args.host === "claude" && args.scope === "user" && targetRelative === "agents/odai-controller.md") {
       content = Buffer.from(content.toString("utf8").replaceAll("node .claude/odai-run-role.mjs", claudeRunnerCommand()));
     }
+    if (args.host === "codex" && args.scope === "user" && (targetRelative === "config.toml" || targetRelative === "role-contracts/odai-controller.md")) {
+      const codexRunner = `node ${JSON.stringify(path.join(configRoot, "odai-run-role.mjs"))}`;
+      const replacement = targetRelative === "config.toml" ? codexRunner.replaceAll('"', '\\"') : codexRunner;
+      content = Buffer.from(content.toString("utf8").replaceAll("node .codex/odai-run-role.mjs", replacement));
+    }
     if (args.host === "codex" && targetRelative === "named-dispatch-plugin/hooks/hooks.json") {
       const value = JSON.parse(content);
       for (const entries of Object.values(value.hooks)) for (const entry of entries) for (const hook of entry.hooks) hook.command = `node '${path.join(configRoot, "odai-route-hook.mjs").replaceAll("'", "'\\''")}'`;
@@ -187,7 +192,7 @@ function originalFileRecord(file) {
 }
 
 function mergeCodexConfig(original, generated) {
-  if (/^\s*\[agents\.odai_(?:researcher|planner|executor|reviewer|frontend|creative|writer)\]\s*$/m.test(original)) {
+  if (/^\s*\[agents\.odai_(?:researcher|planner|executor|advisor|implementer|worker|reviewer|frontend|creative|writer)\]\s*(?:#.*)?$/m.test(original)) {
     fail("既有 Codex 配置已声明 odai 角色但不受当前安装清单管理");
   }
   const generatedFeatures = generated.search(/^\s*\[features\]\s*$/m);
@@ -205,11 +210,33 @@ function mergeCodexConfig(original, generated) {
   return [controller, preserved.trim(), agents].filter(Boolean).join("\n\n") + "\n";
 }
 
+function findFirstTomlTableIndex(source) {
+  const lines = String(source || "").split(/\r?\n/);
+  let offset = 0;
+  let multiline = "";
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (multiline) {
+      if (line.includes(multiline)) multiline = "";
+    } else {
+      if (/^\s*\[/.test(line)) return offset;
+      const eq = /^\s*[A-Za-z0-9_-]+\s*=\s*(.*)$/.exec(line);
+      if (eq) {
+        const delim = eq[1].startsWith('"""') ? '"""' : eq[1].startsWith("'''") ? "'''" : "";
+        if (delim && eq[1].slice(3).indexOf(delim) < 0) multiline = delim;
+      }
+    }
+    offset += line.length + 1;
+  }
+  return -1;
+}
+
 function topLevelTomlString(source, name) {
-  const firstTable = String(source || "").search(/^\s*\[/m);
-  const top = firstTable < 0 ? String(source || "") : String(source || "").slice(0, firstTable);
+  const text = String(source || "").replace(/\r\n/g, "\n");
+  const firstTable = findFirstTomlTableIndex(text);
+  const top = firstTable < 0 ? text : text.slice(0, firstTable);
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const multiline = new RegExp(`^\\s*${escaped}\\s*=\\s*(\"\"\"|''')([\\s\\S]*?)\\1\\s*$`, "m").exec(top);
+  const multiline = new RegExp(`^\\s*${escaped}\\s*=\\s*(\"\"\"|''')([\\s\\S]*?)\\1\\s*(?:#.*)?$`, "m").exec(top);
   if (multiline) return multiline[2].replace(/^\r?\n|\r?\n$/g, "");
   const line = new RegExp(`^\\s*${escaped}\\s*=\\s*(.+?)\\s*$`, "m").exec(top);
   if (!line) return "";
@@ -232,13 +259,25 @@ function removeTopLevelCodexKeys(source, names) {
   const lines = String(source || "").split(/\r?\n/);
   const kept = [];
   let tableSeen = false;
+  let activeMultiline = "";
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    if (activeMultiline) {
+      kept.push(line);
+      if (line.includes(activeMultiline)) activeMultiline = "";
+      continue;
+    }
     if (/^\s*\[/.test(line)) tableSeen = true;
     const match = !tableSeen && /^\s*([A-Za-z0-9_-]+)\s*=\s*(.*)$/.exec(line);
-    if (!match || !names.has(match[1])) { kept.push(line); continue; }
-    const delimiter = match[2].includes('"""') ? '"""' : match[2].includes("'''") ? "'''" : "";
-    if (!delimiter || match[2].split(delimiter).length >= 3) continue;
+    if (!match) { kept.push(line); continue; }
+    const delimiter = match[2].trimStart().startsWith('"""') ? '"""' : match[2].trimStart().startsWith("'''") ? "'''" : "";
+    const closesSameLine = delimiter ? match[2].trimStart().slice(3).includes(delimiter) : true;
+    if (!names.has(match[1])) {
+      kept.push(line);
+      if (delimiter && !closesSameLine) activeMultiline = delimiter;
+      continue;
+    }
+    if (!delimiter || closesSameLine) continue;
     while (++index < lines.length && !lines[index].includes(delimiter)) { /* remove multiline value */ }
   }
   return kept.join("\n");

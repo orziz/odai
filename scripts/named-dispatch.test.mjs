@@ -1,32 +1,39 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-const scripts = path.resolve('skills/odai-orchestration/scripts');
+const scripts = path.resolve(import.meta.dirname, '../skills/odai-orchestration/scripts');
 function run(script, args, input) { return spawnSync(process.execPath, [path.join(scripts, script), ...args], { encoding: 'utf8', input: input && JSON.stringify(input) }); }
-for (const host of ['claude', 'codex']) test(`${host}: named lifecycle and ownership`, () => {
+for (const host of ['claude', 'codex']) test(`${host}: named lifecycle and ownership`, (t) => {
  const dir = mkdtempSync(path.join(realpathSync(tmpdir()), 'odai-named-test-'));
- const options = ['--host', host, '--scope', 'project', '--target', dir, '--controller-model', 'gpt-test', '--planner-model', host === 'claude' ? 'claude-test' : 'gpt-test', '--reviewer-model', host === 'claude' ? 'claude-test' : 'gpt-test', '--yes'];
+ t.after(() => rmSync(dir, { recursive: true, force: true }));
+ const options = ['--host', host, '--scope', 'project', '--target', dir, '--controller-model', 'gpt-test', '--planner-model', host === 'claude' ? 'claude-haiku-5-5' : 'gpt-test', '--reviewer-model', host === 'claude' ? 'claude-haiku-5-5' : 'gpt-test', '--writer-model', host === 'claude' ? 'claude-haiku-5-5' : 'gpt-test', '--yes'];
  const config = path.join(dir, '.' + host);
  if (host === 'claude') { mkdirSync(config); writeFileSync(path.join(config, 'settings.local.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'guardrail' }] }] } })); }
  let result = run('install-routing.mjs', [...options, '--named-dispatch']); assert.equal(result.status, 0, result.stderr);
- const hook = (event, extra = {}) => spawnSync(process.execPath, [path.join(config, 'odai-route-hook.mjs')], { encoding: 'utf8', input: JSON.stringify({ session_id: 'one', agent_type: 'odai-controller', cwd: dir, hook_event_name: event, ...extra }) });
- const name = host === 'claude' ? 'Claude' : 'GPT';
- assert.match(hook('UserPromptSubmit', { prompt: `先让 ${name} 规划` }).stdout, /planner/);
+ const hook = (event, extra = {}) => {
+  const r = spawnSync(process.execPath, [path.join(config, 'odai-route-hook.mjs')], { encoding: 'utf8', input: JSON.stringify({ session_id: 'one', agent_type: 'odai-controller', cwd: dir, hook_event_name: event, ...extra }) });
+  if (r.stdout.trim()) assert.doesNotThrow(() => JSON.parse(r.stdout), `hook stdout must be single valid JSON: ${r.stdout}`);
+  return r;
+ };
+ const name = host === 'claude' ? 'haiku' : 'GPT';
+ assert.match(hook('UserPromptSubmit', { prompt: `先让 ${name} 规划，再让 writer 翻译 README` }).stdout, /writer/);
  assert.equal(hook('PreToolUse', { tool_name: 'Read' }).status, 0);
  assert.equal(hook('PreToolUse', { tool_name: 'apply_patch' }).status, 2);
  const invoke = { tool_name: host === 'claude' ? 'Agent' : 'spawn_agent', tool_input: { [host === 'claude' ? 'subagent_type' : 'agent_type']: host === 'claude' ? 'odai-planner' : 'odai_planner' } };
+ const invokeWriter = { tool_name: host === 'claude' ? 'Agent' : 'spawn_agent', tool_input: { [host === 'claude' ? 'subagent_type' : 'agent_type']: host === 'claude' ? 'odai-writer' : 'odai_writer' } };
  assert.equal(hook('PreToolUse', invoke).status, 0);
  assert.equal(hook('PostToolUse', { ...invoke, tool_response: host === 'codex' ? { agent_id: 'child' } : { status: 'completed', content: [{ type: 'text', text: 'plan' }] } }).status, 0);
+ assert.equal(hook('PostToolUse', { ...invokeWriter, tool_response: host === 'codex' ? { agent_id: 'child-w' } : { status: 'failed' } }).status, 0);
  if (host === 'codex') {
     const marketplace = JSON.parse(readFileSync(path.join(config, '.agents/plugins/marketplace.json')));
     assert.deepEqual(marketplace, { name: 'odai-local-routing', plugins: [{ name: 'odai-named-dispatch', source: './named-dispatch-plugin' }] });
     hook('UserPromptSubmit', { prompt: '<subagent_notification>{"agent_id":"child","status":"completed"}</subagent_notification>' });
     assert.equal(hook('Stop').stdout, '');
    assert.equal(hook('PreToolUse', { tool_name: 'apply_patch' }).status, 2);
-   hook('PostToolUse', { tool_name: 'wait', tool_input: { ids: ['child'] }, tool_response: { status: { child: { completed: 'plan' } } } });
+   hook('PostToolUse', { tool_name: 'wait', tool_input: { ids: ['child', 'child-w'] }, tool_response: { status: { child: { completed: 'plan' }, 'child-w': { completed: 'draft' } } } });
  }
  assert.equal(hook('PreToolUse', { tool_name: 'apply_patch' }).status, 0);
  hook('UserPromptSubmit', { prompt: `做完让 ${name} 验收` });
@@ -50,8 +57,9 @@ for (const host of ['claude', 'codex']) test(`${host}: named lifecycle and owner
  if (host === 'claude') assert.equal(JSON.parse(readFileSync(path.join(config, 'settings.local.json'))).hooks.Stop[0].hooks[0].command, 'guardrail');
 });
 
-test('Claude real async notifications preserve pending work and defer completion nudges', () => {
+test('Claude real async notifications preserve pending work and defer completion nudges', (t) => {
  const dir = mkdtempSync(path.join(realpathSync(tmpdir()), 'odai-async-hook-'));
+ t.after(() => rmSync(dir, { recursive: true, force: true }));
  const options = ['--host', 'claude', '--scope', 'project', '--target', dir, '--controller-model', 'haiku', '--planner-model', 'haiku', '--reviewer-model', 'haiku', '--named-dispatch', '--yes'];
  assert.equal(run('install-routing.mjs', options).status, 0);
  const hook = (event, extra = {}) => spawnSync(process.execPath, [path.join(dir, '.claude/odai-route-hook.mjs')], { encoding: 'utf8', input: JSON.stringify({ session_id: 'async', cwd: dir, hook_event_name: event, ...extra }) });
@@ -93,8 +101,9 @@ test('Claude real async notifications preserve pending work and defer completion
  assert.match(hook('Stop').stdout, /block/);
 });
 
-test('local executor invocation needs fresh verified evidence; default build has no Hook', () => {
+test('local executor invocation needs fresh verified evidence; default build has no Hook', (t) => {
  const dir = mkdtempSync(path.join(realpathSync(tmpdir()), 'odai-local-hook-'));
+ t.after(() => rmSync(dir, { recursive: true, force: true }));
  const base = ['--host', 'codex', '--out', dir, '--controller-model', 'gpt-test', '--planner-model', 'haiku', '--planner-cli', 'claude', '--reviewer-model', 'gpt-test'];
  assert.equal(run('build-routing.mjs', base).status, 0);
  const config = path.join(dir, 'codex/.codex');

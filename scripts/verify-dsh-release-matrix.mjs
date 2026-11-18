@@ -94,12 +94,17 @@ try {
         ...env,
         ODAI_PLUGIN_PACKAGE_ROOT: resolve(root, "node_modules/odai-dsh-plugin"),
         ODAI_AGENT_PACKAGE_ROOT: resolve(root, "node_modules/odai-dsh-agent"),
+        ODAI_PLUGIN_TGZ: options.pluginTgz,
+        ODAI_AGENT_TGZ: options.agentTgz,
       };
       run(process.execPath, ["dsh/plugin/tests/verify-legacy-session-repair.mjs"], { env: packageEnv });
+      run(process.execPath, ["dsh/plugin/tests/verify-compaction-pressure.mjs"], { env: packageEnv });
       run(process.execPath, ["dsh/plugin/tests/verify-dsh-load.mjs"], { env: packageEnv });
       run(process.execPath, ["dsh/agent/tests/verify-agent-load.mjs"], { env: packageEnv });
+      run(process.execPath, ["scripts/verify-dsh-coexistence.mjs"], { env: packageEnv });
     } else {
       run(process.execPath, ["dsh/plugin/tests/verify-legacy-session-repair.mjs"], { env });
+      run(process.execPath, ["dsh/plugin/tests/verify-compaction-pressure.mjs"], { env });
       run(process.execPath, ["dsh/plugin/tests/verify-dsh-load.mjs"], { env });
       run(process.execPath, ["dsh/agent/tests/verify-agent-load.mjs"], { env });
       run(process.execPath, ["scripts/verify-dsh-coexistence.mjs"], { env });

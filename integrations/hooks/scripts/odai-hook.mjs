@@ -41,8 +41,9 @@ export function evaluatePreTool(payload, policy, projectRoot) {
   const toolInput = parseToolInput(payload.tool_input ?? payload.toolInput ?? payload.toolArgs);
   if (!WRITE_TOOLS.has(toolName) && !looksLikePatch(toolInput)) return { blocked: false };
 
-  const cwd = resolveSessionCwd(payload.cwd, projectRoot);
-  const resolved = extractPaths(toolInput).map((raw) => ({ raw, ...resolveCandidate(raw, cwd, projectRoot) }));
+  const canonicalProjectRoot = resolveRealOrNearest(projectRoot);
+  const cwd = resolveSessionCwd(payload.cwd, canonicalProjectRoot);
+  const resolved = extractPaths(toolInput).map((raw) => ({ raw, ...resolveCandidate(raw, cwd, canonicalProjectRoot) }));
 
   if (policy.blockOutsideWrites === true) {
     const escaped = resolved.find((item) => item.outside);
@@ -339,7 +340,9 @@ function resolveCandidate(candidate, cwd, projectRoot) {
 
 function resolveSessionCwd(cwd, projectRoot) {
   if (!cwd) return projectRoot;
-  const resolved = path.resolve(cwd);
+  const lexical = path.resolve(cwd);
+  if (isInside(projectRoot, lexical)) return lexical;
+  const resolved = resolveRealOrNearest(lexical);
   return isInside(projectRoot, resolved) ? resolved : projectRoot;
 }
 
@@ -462,6 +465,14 @@ function rejectUnknownKeys(value, allowed, label) {
   if (unknown.length > 0) throw new Error(`${label} 含未知字段：${unknown.join(", ")}`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+})();
+if (isMain) {
   await main();
 }

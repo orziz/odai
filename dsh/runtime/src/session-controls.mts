@@ -17,7 +17,7 @@ export function effectiveSessionRoute(route: LocalCliRoute, agent: DshAgent, evi
   const value = override(agent, evidence);
   return value === 'inherit' || support(route) ? route : { ...route, session: value };
 }
-export function applySessionControl(payload: unknown, options: { configPath: string; evidenceRoot: string; configuredRoles?: Readonly<RoleRoutes>; configuredDispatch?: Readonly<RoleDispatches>; routingMode?: string }) {
+export function applySessionControl(payload: unknown, options: { configPath: string; evidenceRoot: string; configuredRoles?: Readonly<RoleRoutes>; configuredDispatch?: Readonly<RoleDispatches>; routingMode?: string; unmanagedReason?: string }) {
   if (!isUnknownRecord(payload) || typeof payload.sessionId !== 'string' || !payload.sessionId.trim() || payload.sessionId.length > 512) throw new TypeError('需要有效会话标识');
   const fields = payload.action === 'show' ? ['sessionId','action'] : payload.action === 'set-lead' ? ['sessionId','action','enabled'] : payload.action === 'set-continuation' ? ['sessionId','action','value'] : [];
   if (!fields.length || Object.keys(payload).some(key => !fields.includes(key))) throw new TypeError('无效会话控制请求');
@@ -25,12 +25,13 @@ export function applySessionControl(payload: unknown, options: { configPath: str
   const agent = { session: { header: { id: payload.sessionId } } } as unknown as DshAgent;
   const routes = effectiveRoutingSnapshot(options.configPath, options.configuredRoles, options.configuredDispatch).roles;
   const leadRoutes = { ...(routes.planner ? { planner: routes.planner } : {}), ...(routes.reviewer ? { reviewer: routes.reviewer } : {}) };
-  const hostReason = !options.routingMode ? '宿主未报告职责路由状态' : options.routingMode === 'off' ? '职责路由已关闭' : undefined;
+  const hostReason = options.unmanagedReason ?? (!options.routingMode ? '宿主未报告职责路由状态' : options.routingMode === 'off' ? '职责路由已关闭' : undefined);
   const leadReason = hostReason ?? recognizeLeadSwitch('开启主导模式', leadRoutes)?.issue;
   const roles = Object.entries(routes).flatMap(([responsibility, route]) => route ? [{ responsibility, route, reason: support(route) }] : []);
   const continuationReason = hostReason ?? (roles.some(r => !r.reason) ? undefined : '没有支持续接的职责映射');
   if (payload.action === 'set-lead') {
     if (typeof payload.enabled !== 'boolean') throw new TypeError('enabled 必须为布尔值');
+    if (options.unmanagedReason) throw new TypeError(options.unmanagedReason);
     if (payload.enabled && leadReason) throw new TypeError(leadReason);
     if (!payload.enabled) {
       const events = evidence.events(agent);
@@ -40,11 +41,17 @@ export function applySessionControl(payload: unknown, options: { configPath: str
     evidence.append(agent, 'odai/lead-mode', { ...recognizeLeadSwitch(payload.enabled ? '开启主导模式' : '关闭主导模式', leadRoutes), source: 'session-controls', invocationId: randomUUID() });
   } else if (payload.action === 'set-continuation') {
     if (!['inherit','fresh','continue'].includes(String(payload.value))) throw new TypeError('无效续接状态');
+    if (options.unmanagedReason) throw new TypeError(options.unmanagedReason);
     if (payload.value === 'continue' && continuationReason) throw new TypeError(continuationReason);
     evidence.append(agent, 'odai/session-continuation', { value: payload.value, source: 'session-controls', invocationId: randomUUID() });
   }
   const lead = evidence.events(agent).findLast(e => e.type === 'odai/lead-mode')?.data;
   const value = override(agent, evidence);
-  return { sessionId: payload.sessionId, lead: { enabled: lead?.enabled === true, roles: lead?.roles ?? [], available: !leadReason, reason: leadReason }, continuation: { override: value, available: !continuationReason, reason: continuationReason, roles: roles.map(({responsibility,route,reason}) => ({ responsibility, supported: !reason, reason, effective: !reason && value !== 'inherit' ? value : route.session ?? 'fresh' })) } };
+  return {
+    sessionId: payload.sessionId,
+    ...(options.unmanagedReason ? { unmanaged: true } : {}),
+    lead: { enabled: !options.unmanagedReason && lead?.enabled === true, roles: lead?.roles ?? [], available: !leadReason, reason: leadReason },
+    continuation: { override: value, available: !continuationReason, reason: continuationReason, roles: roles.map(({responsibility,route,reason}) => ({ responsibility, supported: !reason, reason, effective: !reason && value !== 'inherit' ? value : route.session ?? 'fresh' })) },
+  };
 }
 export type SessionControlsSnapshot = ReturnType<typeof applySessionControl>;

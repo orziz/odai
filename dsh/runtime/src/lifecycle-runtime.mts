@@ -153,6 +153,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
     const prompts: string[] = [];
     for (const { data } of namedGaps(agent).sort((left, right) => Number(left.data.timing === "completion") - Number(right.data.timing === "completion"))) {
       if (gapConsumed(agent, data.stateDigest)) continue;
+      if (typeof data.stateDigest === "string" && hasReviewerDeferral(events, data.stateDigest)) continue;
       const message = latestDirectUserMessage(agent);
       if (!message || (message.id !== data.taskMessageId && classifyPendingReviewerText(extractLatestUserText([message])) !== "continue")) {
         appendEvent(agent, "odai/responsibility-gap-consumed", { turn, stateDigest: data.stateDigest, responsibility: data.responsibility, reason: "SUPERSEDED_BY_DIRECT_USER_TASK" });
@@ -1050,7 +1051,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
           reasonCode: researchDecision.reasonCode,
           signals: researchDecision.signals,
         });
-        if (config.routing.mode === "observe" && !responsibilityGap?.userNamed) {
+        if (config.routing.mode === "observe" && (!responsibilityGap?.userNamed || responsibilityGap?.source === "lead-mode")) {
           appendEvent(agent, "odai/research-result", {
             turn,
             step,
@@ -1301,7 +1302,7 @@ export function installLifecycleRuntime(deps: LifecycleDependencies): void {
         };
       }
 
-      if (config.routing.mode === "observe" && !responsibilityGap?.userNamed) {
+      if (config.routing.mode === "observe" && (!responsibilityGap?.userNamed || responsibilityGap?.source === "lead-mode")) {
         return {
           kind: "enter",
           messages: [

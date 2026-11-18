@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 当前待发布版本为 DSH 双包 `0.3.5`，最新已发布双包为 `0.3.3`。治理 `0.7.1`、runtime contract `9`、编排 `0.2.3` 保持不变。双包 peer、Agent 安装准入和发布矩阵均固定到 DSH `0.2.2-rc.1`。历史发布与兼容事实见 CHANGELOG 与兼容表。已发布包版本不得复用。
+- 当前待发布版本为 DSH 双包 `0.3.7`，最新已发布双包为 `0.3.6`；当前治理为 `0.7.2`（runtime contract `9` 不变），编排为 `0.2.5`。双包 peer、Agent 安装准入和发布矩阵均固定到 DSH `0.2.2-rc.1`。历史发布与兼容事实见 CHANGELOG 与兼容表。已发布包版本不得复用。
 - 当前定向评估及限制统一在 [`docs/evaluation-results.md`](docs/evaluation-results.md)，实际职责调用和宿主保护边界统一在 [`docs/routing-results.md`](docs/routing-results.md)。不复制旧版本分数作为当前结论，也不把有限样本当作全量验收。
 - 结果文档保持当前状态，用户要求重试时以最新完整结果更新对应项，简要说明重试；淘汰的试跑、重复快照与已结束执行计划及时清理。已发布版本事实保留在 CHANGELOG 与兼容表，旧实现和旧文档由 Git 历史承担。
 - 仓库的 skill / 评测冻结标签与 `cli/package.json` 的 npm 版本彼此独立。
@@ -27,6 +27,13 @@ skills/odai-orchestration/        可选、单向依赖治理的编排技能
   references/install.md          通用宿主路由的安装、更新与卸载
   assets/                         职责预设和宿主模板
   scripts/                        可信组合器、路由生成、安装与调用核验
+skills/odai-companion/            可选的阿岱 / 欧黛双搭档陪伴交互风格技能
+  SKILL.md                        双搭档分工、语气边界与让位规则
+  agents/openai.yaml              宿主 UI 元数据
+skills/ribao/                     独立结构化汇报技能
+  SKILL.md                        汇报判断、结构与事实核对
+  references/                    各类汇报模板与口径
+  agents/openai.yaml              宿主 UI 元数据
 skills/renwei/                    独立的去 AI 味表现工艺技能
   SKILL.md                        诊断、原则、做法与边界
   references/                    文案（copy.md）与图像、视频（visual.md）工艺
@@ -67,12 +74,15 @@ odai 之道是：**事由人定，路由实证；法随势变，成由验定；�
 | 有来源的操作规则登记与核对 | `docs/rule-ledger.md` |
 | 非危机日常关怀 | `references/care.md` |
 | 自伤、轻生与即时危险保护 | `references/human-safety.md` |
+| 可选阿岱 / 欧黛双搭档陪伴交互风格 | `skills/odai-companion/SKILL.md` |
+| 结构化项目汇报与对外通报 | `skills/ribao/SKILL.md` |
+| 独立去 AI 味表现工艺 | `skills/renwei/SKILL.md` |
 | 跨会话可恢复状态 | `skills/odai/assets/task-state.md` |
 | 可选项目护栏 Hooks | `integrations/hooks/scripts/odai-hook.mjs` 是写入边界与显式验收的共享运行时；同目录 `build-hooks.mjs` 只生成薄适配，策略示例在 `integrations/hooks/assets/`，不承载第二套判断规则 |
-| 可选宿主能力角色 | `skills/odai-orchestration/assets/routing-roles/` 是 controller、planner、reviewer 及可选 researcher/frontend 合同的唯一 owner；controller 始终负责实施整合、验证与最终交付，有界制作可依宿主权限委派。编排技能内的 `assets/{codex,claude,copilot}-agents/` 只保留宿主外壳；`scripts/build-routing.mjs` 生成显式注册；`scripts/install-routing.mjs` 安全安装、更新、卸载并清理旧 Executor/stage 文件；`scripts/run-role.mjs` 执行并记录实际 thread、模型与 usage；`scripts/verify-routing.mjs` 只读核验 Codex 原生角色 |
-| DSH 机械治理与自动路由 | `dsh/runtime/src/` 是唯一实现 owner，职责合同通过可信组合器消费 `skills/odai-orchestration/`；DSH 只组合实际使用的 researcher/planner/reviewer/frontend 合同，总控直接加载治理入口。`dsh/plugin/` 提供 profile-wide bundle 外壳，`dsh/agent/` 提供 self-contained preset 与安全安装器，两者可独立安装，但作为同版发布单元同步发包 |
+| 可选宿主能力角色 | `skills/odai-orchestration/assets/routing-roles/` 是 controller、planner、reviewer 及可选 researcher/frontend/creative/writer 合同的唯一 owner；controller 始终负责实施整合、验证与最终交付，有界制作可依宿主权限委派。编排技能内的 `assets/{codex,claude,copilot}-agents/` 只保留宿主外壳；`scripts/build-routing.mjs` 生成显式注册；`scripts/install-routing.mjs` 安全安装、更新、卸载并清理旧 Executor/stage 文件；`scripts/run-role.mjs` 执行并记录实际 thread、模型与 usage；`scripts/verify-routing.mjs` 只读核验 Codex 原生角色 |
+| DSH 机械治理与自动路由 | `dsh/runtime/src/` 是唯一实现 owner，职责合同通过可信组合器消费 `skills/odai-orchestration/`；DSH 组合实际使用的 researcher/planner/reviewer/frontend/creative/writer 合同，总控直接加载治理入口。`dsh/plugin/` 提供 profile-wide bundle 外壳，`dsh/agent/` 提供 self-contained preset 与安全安装器，两者可独立安装，但作为同版发布单元同步发包 |
 
-`skills/odai/manifest.json` 的 `referenceFiles` 声明治理 owner；`skills/odai-orchestration/manifest.json` 的 `roleFiles`、`rolePresets` 与 `referenceFiles` 声明角色及编排依赖；各自的 `requiredFiles` 是完整性清单。文件路径由 manifest 提供，不维护平行路径表。reference 名称及合同约束还由 `skills/odai-orchestration/scripts/compose-contracts.mjs` 与 `dsh/runtime/src/governance-bundle.mts` 显式校验；新增 reference 须同步这些声明，并按读取契约变更升级 skill / runtime contract。DSH 总控默认只常驻 kernel；controller 通过只读 `odai_reference` 从当前 turn 已选 bundle 按需取得 reference，责任 scope 和 child 不暴露该入口。runtime 将同一快照的 planning、verification、craft 正文分别随 planner、reviewer、frontend 合同传入，不让职责依赖不可用的工具或碰巧可见的路径。DSH 子代理只读产出待应用补丁，总控核对、应用与验证；现有专门职责和高影响执行门保持。
+`skills/odai/manifest.json` 的 `referenceFiles` 声明治理 owner；`skills/odai-orchestration/manifest.json` 的 `roleFiles`、`rolePresets` 与 `referenceFiles` 声明角色及编排依赖；各自的 `requiredFiles` 是完整性清单。文件路径由 manifest 提供，不维护平行路径表。reference 名称及合同约束还由 `skills/odai-orchestration/scripts/compose-contracts.mjs` 与 `dsh/runtime/src/governance-bundle.mts` 显式校验；新增 reference 须同步这些声明，并按读取契约变更升级 skill / runtime contract。DSH 总控默认只常驻 kernel；controller 通过只读 `odai_reference` 从当前 turn 已选 bundle 按需取得 reference，责任 scope 和 child 不暴露该入口。runtime 将同一快照的 planning、verification、craft 正文分别随 planner、reviewer、frontend/creative/writer 合同传入，不让职责依赖不可用的工具或碰巧可见的路径。DSH 子代理只读产出待应用补丁，总控核对、应用与验证；现有专门职责和高影响执行门保持。
 
 reference 只写入口之外的增量，不复述 `SKILL.md`；改写、压缩或重组治理正文时，逐条核对 [`docs/rule-ledger.md`](docs/rule-ledger.md) 的规则仍在所列 owner 中成立。新能力先判断能否由现有 owner 承接；只有存在独立加载价值且合并会显著增加无关上下文时才新增 reference。领域名称、历史文件名和一次失败本身都不构成新增模块的理由。
 
@@ -118,7 +128,7 @@ node scripts/test-odai-hooks.mjs
 node scripts/test-odai-routing.mjs
 ```
 
-Codex 自定义角色必须由 `config.toml` 的 `[agents.<name>]` 与 `config_file` 显式注册；仅复制角色 TOML 不算可用。用户只在安装或更新时确认一次模型映射，正常任务不得要求用户指定角色、内部策略或运行命令。安装器默认 `auto`，注册 controller、planner、reviewer 以及显式提供的 researcher/frontend，不制造每轮前置流程。单一充分 controller 直接闭环，其他责任按真实缺口调用。内部角色必须设置 `ODAI_ROUTING_ACTIVE=1` 防止递归。
+Codex 自定义角色必须由 `config.toml` 的 `[agents.<name>]` 与 `config_file` 显式注册；仅复制角色 TOML 不算可用。用户只在安装或更新时确认一次模型映射，正常任务不得要求用户指定角色、内部策略或运行命令。安装器默认 `auto`，注册 controller、planner、reviewer 以及显式提供的 researcher/frontend/creative/writer，不制造每轮前置流程。单一充分 controller 直接闭环，其他责任按真实缺口调用。宿主执行器通过 `-c features.multi_agent=false`、只读工具白名单与受管子进程环境防止递归。
 
 controller 是唯一持续任务线程、实施 owner 与最终交付 owner，不是额外模型调用。planner 只在独立判断能改变路线时使用，回交后由 controller 恢复实施；reviewer 只在独立判断能改变放行结果时使用；researcher/frontend 同样须有具体缺口与收益依据。小任务直接闭环，高风险只提高证据、授权和验收强度，不自动制造角色。调用前判断预期贡献，调用后分别核对执行、独立性、指定能力与实际代价；缺少用量不宣称节省，也不抹掉已有交付证据。具体判据由 `skills/odai-orchestration/references/orchestration.md` 统一维护，DSH 的机械放行仍服从 runtime 自身合同。
 

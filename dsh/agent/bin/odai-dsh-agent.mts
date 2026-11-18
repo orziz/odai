@@ -97,7 +97,7 @@ function assertDshVersion(): string {
 
 function requiredOptionValue(argv: readonly string[], index: number, option: string, label: string): string {
   const value = argv[index];
-  if (typeof value !== "string" || value.trim() === "" || value.startsWith("--")) {
+  if (typeof value !== "string" || value.trim() === "" || value.startsWith("-")) {
     throw new Error(`${option} requires a non-empty ${label}`);
   }
   return value;

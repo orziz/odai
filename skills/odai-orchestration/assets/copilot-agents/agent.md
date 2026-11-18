@@ -8,6 +8,4 @@ user-invocable: __ODAI_USER_INVOCABLE__
 tools: __ODAI_TOOLS__
 ---
 
-Load and follow the installed odai skill.
-
 __ODAI_ROLE_BODY__

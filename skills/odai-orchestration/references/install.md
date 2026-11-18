@@ -39,7 +39,7 @@ Antigravity 1.4.7 下禁用斜杠展开使计划模式失效；只读依赖无�
 
 安装只启用按缺口选择的分工，不注入每轮必走流程。没有宿主适配或无法取得所需能力时，治理仍独立工作：继续安全可完成的部分，准确交付剩余缺口；不要把技能已安装、角色已配置或一次自报当成调用和收益证明。
 
-writer 用于方向已定的起草、改写、翻译与本地化，creative 负责方向、构思与品味把关；未配置 writer 时 creative 照旧承接写作。可选参数为 `--writer-model`、`--writer-effort`，Claude 宿主另有 `--writer-cli`；默认不生成映射。
+writer 用于方向已定的起草、改写、翻译与本地化，creative 负责方向、构思与品味把关；未配置 writer 时 creative 照旧承接写作。可选参数为 `--writer-model`、`--writer-effort`，Claude 与 Codex 宿主另有 `--writer-cli`；默认不生成映射。
 
 
 ## Codex 的本机 CLI 与权限

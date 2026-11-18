@@ -61,11 +61,10 @@ function runCodexRole() {
     const readOnly = ["researcher", "planner", "reviewer", "creative", "writer"].includes(args.role);
     const closeoutIds = parseCloseoutIds(args.closeoutIds);
     const schemaFile = closeoutIds.length > 0 ? writeCloseoutSchema(temporary, closeoutIds) : "";
-    const hostOwnsRouting = process.env.ODAI_ROUTING_ACTIVE === "1";
     const shared = [
       "--json", "--model", mapping.model,
       ...effortArgs(mapping.reasoning_effort),
-      ...(hostOwnsRouting ? ["-c", "features.multi_agent=false"] : []),
+      "-c", "features.multi_agent=false",
       ...(args.sessionId ? ["-c", `sandbox_mode=${JSON.stringify(readOnly ? "read-only" : args.sandbox)}`] : []),
       "-c", `developer_instructions=${JSON.stringify(contract)}`,
       ...(schemaFile ? ["--output-schema", schemaFile] : []),
@@ -90,9 +89,14 @@ function runCodexRole() {
     const events = parseJsonLines(raw);
     const threadId = String(events.find((event) => event.type === "thread.started")?.thread_id || args.sessionId || "");
     if (args.sessionId && threadId !== args.sessionId) fail(`Codex 恢复了错误线程：期望 ${args.sessionId}，实际 ${threadId || "unknown"}`);
-    const eventModels = collectStrings(events, "model");
-    const runtime = eventModels.length > 0 ? null : queryRuntime(threadId, Date.parse(startedAt));
-    const models = runtime?.model ? [runtime.model] : eventModels;
+    const eventModels = collectTopLevelModels(events);
+    const runtime = queryRuntime(threadId, Date.parse(startedAt));
+    const models = [...new Set([...(runtime?.model ? [runtime.model] : []), ...eventModels])];
+    const modelMatched = models.some((m) => m === mapping.model || m.startsWith(`${mapping.model}-`));
+    if (!modelMatched) fail(`Codex 模型未核实或与请求不符：请求 ${mapping.model}，观察到 ${models.join(", ") || "none"}`);
+    if (mapping.reasoning_effort && runtime?.reasoning_effort && runtime.reasoning_effort !== mapping.reasoning_effort) {
+      fail(`Codex 推理档不一致：请求 ${mapping.reasoning_effort}，实际 ${runtime.reasoning_effort}`);
+    }
     const evidence = {
       version: 1,
       role: args.role,
@@ -101,7 +105,8 @@ function runCodexRole() {
         provider: "codex",
         thread_id: threadId || null,
         models,
-        model_verified: models.length > 0,
+        model_verified: modelMatched,
+        model_verification: modelMatched ? "verified" : "mismatch",
         reasoning_efforts: runtime?.reasoning_effort ? [runtime.reasoning_effort] : [],
         tool_use_detected: containsToolUse(events),
         tool_evidence: collectToolEvidence(events),
@@ -156,11 +161,12 @@ async function runLocalRole() {
   let unlock;
   try {
     if (args.role === "controller") fail("controller 不支持 local-cli 映射");
-    if (mapping?.backend !== "local-cli" || !(manifest.host === "codex" ? ["claude", "antigravity", "grok"] : ["codex", "antigravity", "grok"]).includes(mapping.cli)) {
-      fail("Claude 宿主执行器仅接受 codex、antigravity 或 grok 的 local-cli 映射");
+    const allowedClis = manifest.host === "codex" ? ["claude", "antigravity", "grok"] : ["codex", "antigravity", "grok"];
+    if (mapping?.backend !== "local-cli" || !allowedClis.includes(mapping.cli)) {
+      fail(`${manifest.host === "codex" ? "Codex" : "Claude"} 宿主执行器仅接受 ${allowedClis.join("、")} 的 local-cli 映射`);
     }
     const unsupported = ["--codex-bin", "--sandbox", "--session-id", "--closeout-ids"].filter((option) => args.supplied.has(option));
-    if (unsupported.length) fail(`Claude 本机 CLI 分支不支持 Codex 专有选项：${unsupported.join("、")}`);
+    if (unsupported.length) fail(`本机 CLI 分支不支持 Codex 专有选项：${unsupported.join("、")}`);
     const allowedFields = new Set(["backend", "cli", "model", "reasoning_effort", "timeoutSeconds", "session"]);
     for (const key of Object.keys(mapping)) {
       if (!allowedFields.has(key)) fail(`未知本机 CLI 映射字段：${key}`);
@@ -285,22 +291,31 @@ async function runLocalRole() {
 
 function queryRuntime(threadId, startedAt) {
   if (!threadId) return null;
-  const root = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions");
-  if (!existsSync(root)) return null;
-  const threshold = Number.isFinite(startedAt) ? startedAt - 15000 : Date.now() - 60000;
-  const pending = [root];
-  while (pending.length > 0) {
-    const directory = pending.pop();
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const full = path.join(directory, entry.name);
-      if (entry.isDirectory()) { pending.push(full); continue; }
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl") || statSync(full).mtimeMs < threshold) continue;
-      const events = parseJsonLines(readFileSync(full, "utf8"));
-      const session = events.find((event) => event.type === "session_meta")?.payload;
-      if (session?.id !== threadId || path.resolve(session.cwd || "") !== workdir) continue;
-      const context = [...events].reverse().find((event) => event.type === "turn_context")?.payload || {};
-      return { model: String(context.model || ""), reasoning_effort: String(context.effort || context.collaboration_mode?.settings?.reasoning_effort || "") };
+  try {
+    const root = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions");
+    if (!existsSync(root)) return null;
+    const threshold = Number.isFinite(startedAt) ? startedAt - 15000 : Date.now() - 60000;
+    const pending = [root];
+    while (pending.length > 0) {
+      const directory = pending.pop();
+      let entries;
+      try { entries = readdirSync(directory, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) { pending.push(full); continue; }
+        let stat;
+        try { stat = statSync(full); } catch { continue; }
+        if (!entry.isFile() || !entry.name.endsWith(".jsonl") || stat.mtimeMs < threshold || stat.size > 64 * 1024 * 1024) continue;
+        let events;
+        try { events = parseJsonLines(readFileSync(full, "utf8")); } catch { continue; }
+        const session = events.find((event) => event.type === "session_meta")?.payload;
+        if (session?.id !== threadId || path.resolve(session.cwd || "") !== workdir) continue;
+        const context = [...events].reverse().find((event) => event.type === "turn_context")?.payload || {};
+        return { model: String(context.model || ""), reasoning_effort: String(context.effort || context.collaboration_mode?.settings?.reasoning_effort || "") };
+      }
     }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -314,17 +329,14 @@ function parseJsonLines(value) {
   return result;
 }
 
-function collectStrings(value, key) {
+function collectTopLevelModels(events) {
   const found = new Set();
-  const walk = (item) => {
-    if (!item || typeof item !== "object") return;
-    if (typeof item[key] === "string" && item[key]) found.add(item[key]);
-    for (const child of Object.values(item)) {
-      if (Array.isArray(child)) child.forEach(walk);
-      else if (child && typeof child === "object") walk(child);
+  for (const event of events) {
+    if (!event || typeof event !== "object") continue;
+    for (const candidate of [event.model, event.payload?.model, event.session?.model, event.context?.model]) {
+      if (typeof candidate === "string" && candidate.trim()) found.add(candidate.trim());
     }
-  };
-  value.forEach(walk);
+  }
   return [...found];
 }
 
@@ -360,7 +372,7 @@ function lastDefined(values) { return [...values].reverse().find((value) => valu
 function readJson(file, label) { if (!existsSync(file)) fail(`缺少${label}：${file}`); return JSON.parse(readFileSync(file, "utf8")); }
 
 function parseArgs(values) {
-  const result = { role: "", input: "", output: "", evidence: "", cwd: "", manifest: "", codexBin: "", sandbox: "workspace-write", sessionId: "", closeoutIds: "", timeout: 900, help: false, supplied: new Set() };
+  const result = { role: "", input: "", output: "", evidence: "", cwd: "", manifest: "", codexBin: "", sandbox: "workspace-write", sessionId: "", closeoutIds: "", timeout: 1200, help: false, supplied: new Set() };
   const fields = new Map([
     ["--role", "role"], ["--input", "input"], ["--output", "output"], ["--evidence", "evidence"], ["--cwd", "cwd"],
     ["--session-key", "sessionKey"], ["--manifest", "manifest"], ["--codex-bin", "codexBin"], ["--sandbox", "sandbox"], ["--session-id", "sessionId"], ["--closeout-ids", "closeoutIds"], ["--timeout", "timeout"],
@@ -375,7 +387,7 @@ function parseArgs(values) {
       result[fields.get(value)] = fields.get(value) === "timeout" ? Number(next) : next;
     } else fail(`未知参数：${value}`);
   }
-  if (!Number.isFinite(result.timeout) || result.timeout <= 0) fail("--timeout 必须是正数秒数");
+  if (!Number.isInteger(result.timeout) || result.timeout <= 0 || result.timeout > 7200) fail("--timeout 必须是 1–7200 的整数秒数");
   return result;
 }
 

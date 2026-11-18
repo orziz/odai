@@ -185,6 +185,14 @@ function buildCodex(root) {
   const configRoot = path.join(root, ".codex");
   const agentsRoot = path.join(configRoot, "agents");
   const contractsRoot = path.join(configRoot, "role-contracts");
+  for (const role of ["researcher", "planner", "reviewer", "frontend", "creative", "writer"]) {
+    if (localRoutes[role] && existsSync(path.join(agentsRoot, `odai-${role}.toml`))) {
+      throw new Error(`Conflicting previous routing output: agents/odai-${role}.toml; use a fresh --out directory`);
+    }
+  }
+  if (!hasLocalRoutes && existsSync(path.join(configRoot, "odai-local-cli.mjs"))) {
+    throw new Error("Conflicting previous local CLI output; use a fresh --out directory");
+  }
   mkdirSync(agentsRoot, { recursive: true });
   mkdirSync(contractsRoot, { recursive: true });
   writeRendered(path.join(sourceDir, "config.toml"), path.join(configRoot, "config.toml"), {
@@ -203,8 +211,8 @@ function buildCodex(root) {
   }
   if (hasLocalRoutes) {
     copyScript("local-cli.mjs", path.join(configRoot, "odai-local-cli.mjs"));
-    writeFileSync(path.join(configRoot, "odai-routing.json"), `${JSON.stringify({ id: "odai-routing-installation", host: "codex", mapping: Object.fromEntries(roles.map(role => [role, roleMapping(role)])) }, null, 2)}\n`);
   }
+  writeFileSync(path.join(configRoot, "odai-routing.json"), `${JSON.stringify({ id: "odai-routing-installation", host: "codex", mapping: Object.fromEntries(roles.map(role => [role, roleMapping(role)])) }, null, 2)}\n`, "utf8");
   copyScript("verify-routing.mjs", path.join(configRoot, "odai-verify-routing.mjs"));
   copyScript("run-role.mjs", path.join(configRoot, "odai-run-role.mjs"));
   for (const role of roles) writeFileSync(path.join(contractsRoot, `odai-${role}.md`), roleBody(role, "codex"), "utf8");
@@ -290,7 +298,6 @@ function roleBody(role, hostName) {
     }
   }
   const rendered = renderText(composeRoleContract(role, governance, manifest, contractContents), {
-    __ODAI_POLICY__: policy,
     __ODAI_RESEARCHER_ROLE__: models.researcher ? names.researcher : "researcher（当前适配器未配置映射，不能调用）",
     __ODAI_PLANNER_ROLE__: names.planner,
     __ODAI_REVIEWER_ROLE__: names.reviewer,
@@ -381,7 +388,8 @@ function renderText(input, replacements, source = "generated routing text") {
 
 function buildNamedDispatch() {
   const config = path.join(target, `.${host}`);
-  const hooks = Object.fromEntries(["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"].map(event => [event, [{ matcher: "*", hooks: [{ type: "command", command: `node "${host === "codex" ? "${PLUGIN_ROOT}/../.." : ".claude"}/odai-route-hook.mjs"`, timeout: 10 }] }]]));
+  const hookCommand = host === "codex" ? 'node "${PLUGIN_ROOT}/../odai-route-hook.mjs"' : 'node ".claude/odai-route-hook.mjs"';
+  const hooks = Object.fromEntries(["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"].map(event => [event, [{ matcher: "*", hooks: [{ type: "command", command: hookCommand, timeout: 10 }] }]]));
   copyScript("route-hook.mjs", path.join(config, "odai-route-hook.mjs"));
   copyScript("recognize-routing.mjs", path.join(config, "recognize-routing.mjs"));
   writeFileSync(path.join(config, "odai-named-dispatch.json"), JSON.stringify({ id: "odai-named-dispatch", host, ...(leadMode ? { leadMode: true, namedDispatch } : {}), mapping: metadata.mapping }, null, 2) + "\n");
@@ -394,9 +402,7 @@ function buildNamedDispatch() {
     mkdirSync(path.join(plugin, "hooks"), { recursive: true });
     mkdirSync(path.join(config, ".agents/plugins"), { recursive: true });
     writeFileSync(path.join(config, ".agents/plugins/marketplace.json"), JSON.stringify({ name: "odai-local-routing", plugins: [{ name: "odai-named-dispatch", source: "./named-dispatch-plugin" }] }, null, 2) + "\n");
-    // PLUGIN_ROOT is the plugin directory, whose parent contains the executor.
-    for (const groups of Object.values(hooks)) groups[0].hooks[0].command = 'node "${PLUGIN_ROOT}/../odai-route-hook.mjs"';
-    writeFileSync(path.join(plugin, ".codex-plugin/plugin.json"), JSON.stringify({ id: "odai-named-dispatch", name: "odai-named-dispatch", version: "0.2.3", description: "Optional named responsibility routing" }));
-    writeFileSync(path.join(plugin, "hooks/hooks.json"), JSON.stringify({ hooks }, null, 2));
+    writeFileSync(path.join(plugin, ".codex-plugin/plugin.json"), JSON.stringify({ id: "odai-named-dispatch", name: "odai-named-dispatch", version: manifest.version, description: "Optional named responsibility routing" }, null, 2) + "\n");
+    writeFileSync(path.join(plugin, "hooks/hooks.json"), JSON.stringify({ hooks }, null, 2) + "\n");
   }
 }

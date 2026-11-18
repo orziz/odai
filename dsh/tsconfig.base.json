@@ -13,6 +13,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "newLine": "lf",
     "skipLibCheck": true,
     "types": [
       "node"

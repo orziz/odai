@@ -124,7 +124,9 @@ await mkdir(workspace, { recursive: true });
 // Stage the bundle exactly as published, then let DSH's plugin manager install it.
 await mkdir(bundleRoot, { recursive: true });
 // Local-directory installs do not install dependencies into the staged source.
-await cp(dirname(createRequire(import.meta.url).resolve("semver/package.json")), resolve(bundleRoot, "node_modules/semver"), { recursive: true });
+const requireForBundle = createRequire(import.meta.url);
+await cp(dirname(requireForBundle.resolve("semver/package.json")), resolve(bundleRoot, "node_modules/semver"), { recursive: true });
+await cp(dirname(requireForBundle.resolve("yaml/package.json")), resolve(bundleRoot, "node_modules/yaml"), { recursive: true });
 for (const path of ["package.json", "build", "preset", "preset.cordis.patch.yml", "control-center.cordis.patch.yml"]) {
   await cp(resolve(agentRoot, path), resolve(bundleRoot, path), { recursive: true });
 }

@@ -8,11 +8,14 @@ import { parse } from "yaml";
 import { assertRepositoryVersionPolicy } from "./version-policy.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const OFFICIAL_SKILLS = ["odai", "odai-orchestration", "odai-companion", "ribao", "renwei"];
+const IGNORED_OS_FILES = new Set([".DS_Store", "Thumbs.db"]);
 try {
   const selected = process.argv[2];
   if (process.argv.length > 3) throw new Error("usage: validate-odai-skill.mjs [skill-directory]");
-  if (!selected) assertRepositoryVersionPolicy({ repoRoot });
-  const roots = selected ? [path.resolve(selected)] : ["odai", "odai-orchestration", "ribao", "renwei"].map(name => path.join(repoRoot, "skills", name));
+  if (!selected || inside(repoRoot, path.resolve(selected))) assertRepositoryVersionPolicy({ repoRoot });
+  const roots = selected ? [path.resolve(selected)] : OFFICIAL_SKILLS.map(name => path.join(repoRoot, "skills", name));
+  let odaiRuntimeContract;
   for (const root of roots) {
     const name = path.basename(root);
     const files = listFiles(root);
@@ -31,12 +34,31 @@ try {
       if (manifest.name !== name || !Array.isArray(manifest.requiredFiles)) throw new Error(`${name}: invalid manifest`);
       if (JSON.stringify(files.filter(file => file !== "manifest.json").sort()) !== JSON.stringify([...manifest.requiredFiles].sort())) throw new Error(`${name}: requiredFiles must match packaged files`);
       for (const file of manifest.requiredFiles) localTarget(root, file);
+      if (manifest.referenceFiles !== undefined) {
+        if (!manifest.referenceFiles || typeof manifest.referenceFiles !== "object" || Array.isArray(manifest.referenceFiles)) {
+          throw new Error(`${name}: referenceFiles must be an object`);
+        }
+        for (const [key, refFile] of Object.entries(manifest.referenceFiles)) {
+          if (typeof refFile !== "string" || !manifest.requiredFiles.includes(refFile)) {
+            throw new Error(`${name}: referenceFiles.${key} must be listed in requiredFiles`);
+          }
+        }
+      }
+      if (name === "odai") odaiRuntimeContract = manifest.runtimeContract;
+      if (name === "odai-orchestration") {
+        const expected = odaiRuntimeContract ?? JSON.parse(readFileSync(localTarget(path.join(repoRoot, "skills/odai"), "manifest.json"), "utf8")).runtimeContract;
+        if (manifest.governanceContract !== expected) {
+          throw new Error(`odai-orchestration: governanceContract (${manifest.governanceContract}) must match odai runtimeContract (${expected})`);
+        }
+      }
     }
     let referenceTokens = 0;
     for (const file of files.filter(file => file.endsWith(".md"))) {
       const text = readFileSync(localTarget(root, file), "utf8");
       if (!text.trim()) throw new Error(`${name}/${file}: empty Markdown resource`);
-      for (const match of text.matchAll(/`((?:references|assets|scripts)\/[A-Za-z0-9_./-]+)`/gu)) localTarget(root, match[1]);
+      for (const refMatch of text.matchAll(/`((?:references|assets|scripts|contracts)\/[A-Za-z0-9_./-]+)(?:\s+[^`\r\n]*)?`/gu)) {
+        localTarget(root, refMatch[1]);
+      }
       if (file.startsWith("references/")) referenceTokens += estimateTokens(text);
     }
     console.log(`${name}: entry body ~${estimateTokens(entry.slice(match[0].length).trim())} tokens; reference files total ~${referenceTokens} tokens (CJK=1, other UTF-16 units/4; observation only, not per-turn usage).`);
@@ -46,12 +68,12 @@ try {
   console.error(`Skill structure check failed: ${error.message}`);
   process.exitCode = 1;
 }
+function inside(parent, value) {
+  const relative = path.relative(parent, value);
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
 function localTarget(root, file) {
   const target = path.resolve(root, file);
-  const inside = (parent, value) => {
-    const relative = path.relative(parent, value);
-    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-  };
   if (!inside(root, target) || !inside(realpathSync(root), realpathSync(target))) throw new Error(`Local reference escapes skill root: ${file}`);
   return target;
 }
@@ -62,7 +84,9 @@ function estimateTokens(text) {
 }
 function listFiles(root, directory = root) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    if (IGNORED_OS_FILES.has(entry.name)) return [];
     const target = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`Skill bundle must not contain symlinks: ${path.relative(root, target)}`);
     return entry.isDirectory() ? listFiles(root, target) : [path.relative(root, target).split(path.sep).join("/")];
   });
 }

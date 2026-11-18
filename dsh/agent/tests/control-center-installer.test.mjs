@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,14 +27,24 @@ async function writeResolvedPackage(profileRoot, version, complete = true) {
     await mkdir(resolve(root, "preset/odai/skills/odai"), { recursive: true });
     await writeFile(resolve(root, "preset.cordis.patch.yml"), "- insert: []\n");
     await writeFile(resolve(root, "preset/odai/odai-governance.mjs"), "export * from \"./runtime/index.mjs\";\n");
+    await writeFile(resolve(root, "preset/odai/runtime/bootstrap.mjs"), "export function apply() {}\n");
+    await writeFile(resolve(root, "preset/odai/runtime/compaction-engine.mjs"), "export function apply() {}\n");
     await writeFile(resolve(root, "preset/odai/runtime/index.mjs"), "export function apply() {}\n");
     await writeFile(resolve(root, "preset/odai/skills/odai/SKILL.md"), "---\nname: odai\n---\n");
-    await writeFile(resolve(root, "preset/odai/package.json"), JSON.stringify({ type: "module", imports: { "#odai-contracts": "./skills/odai-orchestration/scripts/compose-contracts.mjs", "#odai-local-cli": "./skills/odai-orchestration/scripts/local-cli.mjs" } }));
+    await writeFile(resolve(root, "preset/odai/package.json"), JSON.stringify({
+      type: "module",
+      imports: {
+        "#odai-contracts": "./skills/odai-orchestration/scripts/compose-contracts.mjs",
+        "#odai-local-cli": "./skills/odai-orchestration/scripts/local-cli.mjs",
+        "#odai-recognize-routing": "./skills/odai-orchestration/scripts/recognize-routing.mjs",
+      },
+    }));
     await writeFile(resolve(root, "preset/odai/skills/odai/manifest.json"), "{}\n");
     await mkdir(resolve(root, "preset/odai/skills/odai-orchestration/scripts"), { recursive: true });
     await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/manifest.json"), "{}\n");
     await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs"), "export {};\n");
     await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/scripts/local-cli.mjs"), "export {};\n");
+    await writeFile(resolve(root, "preset/odai/skills/odai-orchestration/scripts/recognize-routing.mjs"), "export {};\n");
     await writeFile(resolve(root, "control-center.cordis.patch.yml"), "plugins:\n  - name: odai-dsh-agent\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-host.mjs"), "export function apply() {}\n");
     await writeFile(resolve(root, "preset/odai/runtime/control-center-runtime.mjs"), "export const ok = true;\n");
@@ -486,6 +497,73 @@ test("Control Center operation lock blocks concurrent commands", async () => {
     );
     await assert.rejects(uninstallAgentControlCenter({ dshHome, execute }), /already in progress/u);
     assert.equal(attempts, 0);
+    await writeFile(resolve(lockRoot, "control-center-web.lock"), "99999999:dead-owner\n", "utf8");
+    await writeFile(resolve(lockRoot, "control-center-web.lock.claim"), "99999999:dead-claim\n", "utf8");
+    const recovered = await installAgentControlCenter({ dshHome, execute });
+    assert.equal(recovered.operation, "unchanged");
+    await writeFile(resolve(lockRoot, "control-center-web.lock.claim"), `${process.pid}:live-claim\n`, "utf8");
+    await assert.rejects(
+      installAgentControlCenter({ dshHome, execute }),
+      /already in progress/u,
+    );
+    assert.equal(await readFile(resolve(lockRoot, "control-center-web.lock.claim"), "utf8"), `${process.pid}:live-claim\n`);
+    await rm(resolve(lockRoot, "control-center-web.lock.claim"), { force: true });
+    const raceLockPath = resolve(lockRoot, "control-center-web.lock");
+    const tracePath = resolve(scratch, "lock-trace.log");
+    await mkdir(`${raceLockPath}.claims`, { recursive: true });
+    await writeFile(raceLockPath, "99999999:dead-owner\n", "utf8");
+    await writeFile(`${raceLockPath}.claim`, "99999999:dead-claim\n", "utf8");
+    await writeFile(`${raceLockPath}.claims/99999999.dead-ticket`, "99999999:dead-ticket\n", "utf8");
+    const moduleUrl = new URL("../build/src/operation-lock.mjs", import.meta.url).href;
+    const workerScript = `
+      import { appendFileSync } from "node:fs";
+      import { acquireAgentOperationLock } from ${JSON.stringify(moduleUrl)};
+      const [lockPath, tracePath] = process.argv.slice(1);
+      try {
+        const release = acquireAgentOperationLock(lockPath, "Agent Control Center web operation");
+        appendFileSync(tracePath, \`enter:\${process.pid}\\n\`, "utf8");
+        await new Promise((r) => setTimeout(r, 35));
+        appendFileSync(tracePath, \`exit:\${process.pid}\\n\`, "utf8");
+        release();
+        process.exit(0);
+      } catch (error) {
+        if (/already in progress/u.test(String(error?.message ?? error))) {
+          process.exit(2);
+        }
+        console.error(error);
+        process.exit(1);
+      }
+    `;
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        new Promise((resolveChild, rejectChild) => {
+          const child = spawn(process.execPath, ["--input-type=module", "-e", workerScript, raceLockPath, tracePath], {
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          let stderr = "";
+          child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+          child.on("error", rejectChild);
+          child.on("close", (code) => resolveChild({ code, stderr }));
+        }),
+      ),
+    );
+    for (const result of results) {
+      assert.ok(result.code === 0 || result.code === 2, `unexpected worker failure: ${result.code} ${result.stderr}`);
+    }
+    const winners = results.filter((result) => result.code === 0).length;
+    if (winners === 0) {
+      const { acquireAgentOperationLock } = await import("../build/src/operation-lock.mjs");
+      const releaseFollowUp = acquireAgentOperationLock(raceLockPath, "Agent Control Center web operation");
+      releaseFollowUp();
+    }
+    const trace = (await readFile(tracePath, "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
+    let active = 0;
+    for (const line of trace) {
+      active += line.startsWith("enter:") ? 1 : -1;
+      assert.ok(active >= 0 && active <= 1, `overlapping lock holders detected in trace: ${trace.join(",")}`);
+    }
+    assert.equal(active, 0);
+    assert.deepEqual(await readdir(lockRoot), []);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }

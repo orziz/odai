@@ -74,11 +74,17 @@ interface RouteInvalidation extends UnknownRecord {
   error?: string;
 }
 
-export function apply(ctx: DshRuntimeContext, rawConfig: unknown, pressure?: ControlCenterRuntimeOptions["pressure"]): void {
+export function apply(
+  ctx: DshRuntimeContext,
+  rawConfig: unknown,
+  pressure?: ControlCenterRuntimeOptions["pressure"],
+  controlCenterScope?: ControlCenterRuntimeOptions["scope"],
+): void {
   const config = resolveConfig(rawConfig);
   const logger = loggerFor(ctx);
   const disposeControlCenter = installControlCenterRuntimeWhenAvailable(ctx, {
     ...(pressure === undefined ? {} : { pressure }),
+    ...(controlCenterScope === undefined ? {} : { scope: controlCenterScope }),
     configPath: config.routing.configPath,
     routingMode: config.routing.mode,
     configuredRoles: config.routing.roles,
@@ -182,7 +188,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown, pressure?: Con
     const lead = leadState(evidence.events(agent));
     if (!state.snapshot.roles[role] && config.routing.mode !== "off" && !agent.session.header?.parentSession && agent.session.header?.origin !== "subagent"
       && (role === "planner" || role === "reviewer") && lead?.enabled === true && Array.isArray(lead.roles) && lead.roles.includes(role)) {
-      const route = routeFromConfig(agent.options) ?? latestRequestRoute(agent);
+      const route = routeFromConfig(agent.options) ?? routeFromConfig(agent.session.requestHeader?.()?.config) ?? latestRequestRoute(agent);
       if (route) return { route, dispatch: state.snapshot.dispatch[role] ?? "child" as const,
         dispatchSource: state.snapshot.dispatchSources[role] };
     }
@@ -285,7 +291,7 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown, pressure?: Con
       const userText = extractLatestUserText([message]);
       const transition = classifyPendingReviewerText(userText);
       if (transition === "continue" && !(event.data.requirements && hasExplicitRequestRevision(userText))) return event.data;
-      appendEvent(agent, "odai/responsibility-gap-consumed", {
+      if (settle) appendEvent(agent, "odai/responsibility-gap-consumed", {
         turn,
         step,
         responsibility: "reviewer",
@@ -342,7 +348,8 @@ export function apply(ctx: DshRuntimeContext, rawConfig: unknown, pressure?: Con
   installToolRuntime({
     appendEvent, bundled, config, ctx, evidence, explicitSkillPath,
     hasSessionEvent, humanSafetyContinuityStorePath, logger, pendingResponsibilityGap, promptRuntime,
-    responsibilityRoutingFor: (agent, turn = currentAgentTurn(agent)) => responsibilityRoutingAvailable(config.routing.mode, routingSnapshotFor(agent, turn)),
+    responsibilityRoutingFor: (agent, turn = currentAgentTurn(agent)) => config.routing.mode !== "off"
+      && (responsibilityRoutingAvailable(config.routing.mode, routingSnapshotFor(agent, turn)) || leadState(evidence.events(agent))?.enabled === true),
     responsibilityScopes, routeProtections, selectOutputForAgent,
   });
 

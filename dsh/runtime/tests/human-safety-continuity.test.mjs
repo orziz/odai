@@ -58,6 +58,7 @@ test("continuity requires explicit current-user persistence and exact user-autho
     `Only after I ask tomorrow, save this care preference: ${value}.`,
     `Save this care preference only if I ask later: ${value}.`,
     `Please save this care preference upon my future request: ${value}.`,
+    `Don't save this care preference across sessions: ${value}.`,
     `只有等我以后明确要求时，才保存这条照护偏好：${value}。`,
   ]) {
     state.agent.currentText = refusal;
@@ -222,6 +223,16 @@ test("continuity is visible, correctable, exportable, and physically clearable a
   assert.ok(rendered);
   assert.match(rendered, /not evidence of the user's current state/u);
   assert.match(rendered, /effective-support/u);
+  state.agent.currentText = "请不要清空全部安全照护档案";
+  assert.throws(
+    () => nextSessionTool.execute({ action: "clear" }, execution(state.agent)),
+    /explicit affirmative request/u,
+  );
+  state.agent.currentText = "Please don't clear all safety continuity entries.";
+  assert.throws(
+    () => nextSessionTool.execute({ action: "clear" }, execution(state.agent)),
+    /explicit affirmative request/u,
+  );
   state.agent.currentText = "请彻底清空全部安全照护档案";
   const cleared = await nextSessionTool.execute({ action: "clear" }, execution(state.agent));
   assert.equal(cleared.record.entries.length, 0);

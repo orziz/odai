@@ -21,16 +21,16 @@ const REPLACE_CUE = /(?:更正|改成|替换|更新|correct|change|replace|updat
 const REMOVE_CUE = /(?:删除|移除|忘记|撤回|不要再记|刚才那条|这条|delete|remove|forget|retract|that entry)/iu;
 const CLEAR_CUE = /(?:清空|全部删除|彻底删除|删掉.{0,12}全部|clear|delete all|erase all)/iu;
 const SAFETY_SCOPE_CUE = /(?:安全|关怀|照护|支持|心理|心情|跨会话|档案|连续性|safety|care|support|continuity)/iu;
-const SAFETY_CONTENT_CUE = /(?:危机|心理健康|情绪|心情|压力|焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|反复纠结|消极|提不起劲|失去行动感|低落|难受|绝望|无望|心累|心烦|崩溃|撑不住|自伤|自残|轻生|自杀|伤害自己|倾听|陪伴|安抚|说教|给我空间|阿岱|欧黛|陪伴风格|行动支撑|可信任的人|紧急服务|crisis|mental health|emotion(?:al)?|overwhelm(?:ed|ing)?|distress(?:ed)?|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|internal conflict|persistent negativity|negative thoughts?|cannot get started|companionship style|practical support style|depress(?:ed|ion)?|hopeless|suicid(?:e|al)|self[- ]harm|hurt myself|listen(?:ing)?|check[- ]?ins?|calm me|support me|give me space|trusted person|emergency services?)/iu;
+const SAFETY_CONTENT_CUE = /(?:危机|心理健康|情绪|心情|压力|焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|反复纠结|羞耻|丢脸|害怕犯错|怕犯错|消极|提不起劲|失去行动感|低落|难受|绝望|无望|成为负担|心累|心烦|崩溃|撑不住|自伤|自残|轻生|自杀|伤害自己|倾听|陪伴|安抚|说教|给我空间|阿岱|欧黛|陪伴风格|行动支撑|可信任的人|紧急服务|crisis|mental health|emotion(?:al)?|overwhelm(?:ed|ing)?|distress(?:ed)?|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|shame|fear of mistakes?|internal conflict|persistent negativity|negative thoughts?|cannot get started|companionship style|practical support style|depress(?:ed|ion)?|hopeless|(?:(?:i\s*(?:'m|’m|am)|feel(?:ing)?\s+like(?:\s+i\s*(?:'m|’m|am))?|being|becom(?:e|ing))\s+(?:such\s+|just\s+|only\s+)?a\s+burden|\bburden\s+(?:to|on)\s+(?:everyone|my\s+family|my\s+friends|others|people|you)\b)|suicid(?:e|al)|self[- ]harm|hurt myself|listen(?:ing)?|check[- ]?ins?|calm me|support me|give me space|trusted person|emergency services?)/iu;
 const ORDINARY_PROJECT_CONTENT_CUE = /(?:项目|仓库|代码|工作|截止期|构建|依赖|包管理|配置|测试|发布|部署|接口|数据库|文件|\b(?:project|repository|repo|code|work|deadlines?|build|dependencies?|package managers?|configuration|config|tests?|deployment|release|api|database|files?|pnpm|npm|yarn)\b)/iu;
 const TECHNICAL_OPERATIONAL_INSTRUCTION_CUE = /(?:(?:必须|需要|应当|应该|要|改用|使用|运行|配置|构建|部署|发布)[^。！？\n]{0,32}(?:pnpm|npm|yarn|项目|仓库|代码|依赖|配置|测试|接口|数据库|文件)|(?:pnpm|npm|yarn)[^。！？\n]{0,12}(?:必须|必需|强制)|\b(?:must|should|need to|use|run|configure|build|deploy|release)\b[^.!?\n]{0,32}\b(?:pnpm|npm|yarn|project|repository|repo|code|dependencies?|configuration|config|tests?|api|database|files?)\b|\b(?:pnpm|npm|yarn)\b[^.!?\n]{0,12}\b(?:required|mandatory)\b)/iu;
 const PERSONAL_CARE_ACTION_CUE = /(?:倾听|陪伴|安抚|不要说教|少问|问我|听我|给我空间|支持我|可信任的人|紧急服务|listen(?:ing)?|check[- ]?ins?|give me space|support me|stay with me|ask me|calm me|do not lecture|trusted person|emergency services?)/iu;
 const PROJECT_PERSONAL_CARE_LINK_CUE = /(?:(?:让我|使我|令我)[^。！？\n]{0,16}(?:焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|消极|提不起劲|低落|难受|心累|心烦|崩溃|撑不住|压力|情绪)|(?:当|如果)?我[^。！？\n]{0,16}(?:焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|消极|提不起劲|低落|难受|心累|心烦|崩溃|撑不住|压力大|情绪不好)|(?:项目|代码|工作|截止期)[^。！？\n]{0,24}(?:让我|使我|令我)[^。！？\n]{0,12}(?:焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|消极|提不起劲|低落|难受|心累|心烦|崩溃|撑不住|压力)|\b(?:when i am|i feel|makes? me|leaves? me)[^.!?\n]{0,24}\b(?:overwhelm(?:ed)?|distress(?:ed)?|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing)|negative|cannot get started|depress(?:ed)?|hopeless)|\b(?:code reviews?|deployment incidents?|deadlines?|work|the project)[^.!?\n]{0,24}\b(?:overwhelm(?:s|ed)? me|makes? me anxious|makes? me doubt myself|keeps? me ruminating|distresses? me))/iu;
 const DEICTIC_CUE = /(?:刚才|那条|这条|全部|that|this|all)/iu;
 const FORBIDDEN_PRIVATE_VALUE = /(?:password|passwd|api[_ -]?key|access[_ -]?token|secret|密码|口令|密钥|令牌|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\b\+?\d[\d ()-]{8,}\d\b)/iu;
-const MUTATION_REFUSAL_CUE = /(?:(?:不要|别|请勿|不许|禁止|无需|不用|不想|拒绝)[^，,；;：:。！？\n]{0,20}(?:跨会话|记住|保存|存入|更正|改成|替换|更新)|(?:跨会话|记住|保存|存入|更正|改成|替换|更新)[^，,；;：:。！？\n]{0,24}(?:取消|算了|不要(?:了|再?(?:记住|保存|存入|更正|改|替换|更新))|别再?(?:记住|保存|存入|更正|改|替换|更新))|\b(?:do not|don't|never|no need to|refuse to|without)\b[^,;:.!?\n]{0,48}\b(?:remember|save|store|persist|correct|change|replace|update)\b|\b(?:remember|save|store|persist|correct|change|replace|update)\b[^,;:.!?\n]{0,32}\b(?:cancel|never mind|(?:do not|don't)\s+(?:remember|save|store|persist|correct|change|replace|update))\b)/iu;
-const MUTATION_DISCLAIMER_CUE = /(?:(?:这|那)?(?:不是|并非)[^，,；;：:。！？\n]{0,28}(?:跨会话|记住|保存|存入|更正|改成|替换|更新)|\b(?:not|isn't|is not)\b[^,;:.!?\n]{0,36}\b(?:ask(?:ing)?|tell(?:ing)?|request(?:ing)?|authoriz(?:e|ing))?\b[^,;:.!?\n]{0,24}\b(?:remember|save|store|persist|correct|change|replace|update)\b)/iu;
-const FUTURE_MUTATION_AUTHORIZATION_CUE = /(?:(?:如果|若|假如|等到|等我|除非)[^。！？\n]{0,36}(?:明确说|要求|请求|让你|同意)[^。！？\n]{0,28}(?:跨会话|记住|保存|存入|更正|改成|替换|更新)|\b(?:if|when|unless|once|until|upon|(?:only\s+)?after)\b[^.!?\n]{0,36}\b(?:ask|tell|request|consent|say explicitly)\b[^.!?\n]{0,36}\b(?:remember|save|store|persist|correct|change|replace|update)\b)/iu;
+const MUTATION_REFUSAL_CUE = /(?:(?:不要|别|请勿|不许|禁止|无需|不用|不想|拒绝)[^，,；;：:。！？\n]{0,20}(?:跨会话|记住|保存|存入|更正|改成|替换|更新|删除|移除|忘记|撤回|清空)|(?:跨会话|记住|保存|存入|更正|改成|替换|更新|删除|移除|忘记|撤回|清空)[^，,；;：:。！？\n]{0,24}(?:取消|算了|不要(?:了|再?(?:记住|保存|存入|更正|改|替换|更新|删除|清空))|别再?(?:记住|保存|存入|更正|改|替换|更新|删除|清空))|\b(?:do not|don't|never|no need to|refuse to|without)\b[^,;:.!?\n]{0,48}\b(?:remember|save|store|persist|correct|change|replace|update|delete|remove|forget|retract|clear|erase)\b|\b(?:remember|save|store|persist|correct|change|replace|update|delete|remove|forget|retract|clear|erase)\b[^,;:.!?\n]{0,32}\b(?:cancel|never mind|(?:do not|don't)\s+(?:remember|save|store|persist|correct|change|replace|update|delete|remove|forget|retract|clear|erase))\b)/iu;
+const MUTATION_DISCLAIMER_CUE = /(?:(?:这|那)?(?:不是|并非)[^，,；;：:。！？\n]{0,28}(?:跨会话|记住|保存|存入|更正|改成|替换|更新|删除|移除|清空)|\b(?:not|isn't|is not)\b[^,;:.!?\n]{0,36}\b(?:ask(?:ing)?|tell(?:ing)?|request(?:ing)?|authoriz(?:e|ing))?\b[^,;:.!?\n]{0,24}\b(?:remember|save|store|persist|correct|change|replace|update|delete|remove|clear|erase)\b)/iu;
+const FUTURE_MUTATION_AUTHORIZATION_CUE = /(?:(?:如果|若|假如|等到|等我|除非)[^。！？\n]{0,36}(?:明确说|要求|请求|让你|同意)[^。！？\n]{0,28}(?:跨会话|记住|保存|存入|更正|改成|替换|更新|删除|移除|清空)|\b(?:if|when|unless|once|until|upon|(?:only\s+)?after)\b[^.!?\n]{0,36}\b(?:ask|tell|request|consent|say explicitly)\b[^.!?\n]{0,36}\b(?:remember|save|store|persist|correct|change|replace|update|delete|remove|clear|erase)\b)/iu;
 const FUTURE_CONDITION_CUE = /(?:如果|若|假如|等到|等我|除非|之后|以后|\bif\b|\bwhen\b|\bunless\b|\bonce\b|\buntil\b|\bupon\b|\bafter\b|\blater\b|\bfuture\b)/iu;
 const FUTURE_AUTHORIZATION_REQUEST_CUE = /(?:明确说|要求|请求|让你|同意|\bask\b|\btell\b|\brequest\b|\bconsent\b|\bsay explicitly\b)/iu;
 
@@ -101,21 +101,10 @@ function unquotedRequest(text: string): string {
     .replace(/```[\s\S]*?```/gu, " ")
     .replace(/^\s*>.*$/gmu, " ")
     .replace(/`[^`\n]*`/gu, " ")
-    .replace(/“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|《[^》\n]*》|"[^"\n]*"|'[^'\n]*'/gu, " ");
+    .replace(/“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|《[^》\n]*》|"[^"\n]*"|(?<![A-Za-z0-9])'[^'\n]*'(?![A-Za-z0-9])/gu, " ");
 }
 
-function requireAffirmativeMutationCue(text: string, pattern: RegExp, action: string, value: string): void {
-  const valueIndex = text.indexOf(value);
-  if (valueIndex < 0) throw new Error("value must occur byte-for-byte in the current direct user message");
-  let marker = "__ODAI_USER_VALUE_BOUNDARY__";
-  while (text.includes(marker)) marker += "_";
-  const request = unquotedRequest(`${text.slice(0, valueIndex)}${marker}${text.slice(valueIndex + value.length)}`);
-  const markerIndex = request.indexOf(marker);
-  const authorizationText = markerIndex < 0 ? request : request.slice(0, markerIndex);
-  const surroundingRequest = markerIndex < 0
-    ? request
-    : `${request.slice(0, markerIndex)}\n${request.slice(markerIndex + marker.length)}`;
-  requireCue(authorizationText, pattern, action);
+function assertNotRefusedOrDeferred(surroundingRequest: string, pattern: RegExp, action: string): void {
   const deferredAuthorization = FUTURE_CONDITION_CUE.test(surroundingRequest)
     && FUTURE_AUTHORIZATION_REQUEST_CUE.test(surroundingRequest)
     && pattern.test(surroundingRequest);
@@ -125,6 +114,30 @@ function requireAffirmativeMutationCue(text: string, pattern: RegExp, action: st
     || deferredAuthorization) {
     throw new Error(`${action} requires an explicit affirmative request in the current direct user message`);
   }
+}
+
+function requireAffirmativeMutationCue(text: string, pattern: RegExp, action: string, value: string): void {
+  const valueIndex = text.lastIndexOf(value);
+  if (valueIndex < 0) throw new Error("value must occur byte-for-byte in the current direct user message");
+  let marker = "__ODAI_USER_VALUE_BOUNDARY__";
+  while (text.includes(marker)) marker += "_";
+  const request = unquotedRequest(`${text.slice(0, valueIndex)}${marker}${text.slice(valueIndex + value.length)}`);
+  const markerIndex = request.indexOf(marker);
+  const surroundingRequest = markerIndex < 0
+    ? request
+    : `${request.slice(0, markerIndex)}；${request.slice(markerIndex + marker.length)}`;
+  requireCue(surroundingRequest, pattern, action);
+  assertNotRefusedOrDeferred(surroundingRequest, pattern, action);
+  if (markerIndex >= 0 && !pattern.test(value)) {
+    assertNotRefusedOrDeferred(unquotedRequest(text), pattern, action);
+  }
+}
+
+function requireAffirmativeDirectAction(text: string, pattern: RegExp, action: string): string {
+  const unquoted = unquotedRequest(text);
+  requireCue(unquoted, pattern, action);
+  assertNotRefusedOrDeferred(unquoted, pattern, action);
+  return unquoted;
 }
 
 function requireSafetyContentScope(value: string, action: string): void {
@@ -197,12 +210,16 @@ export function createHumanSafetyContinuityTool(
       if (!isUnknownRecord(arguments_)) throw new TypeError("arguments must be an object");
       const text = directUserText(options, agent);
       if (arguments_.action === "show") {
-        requireCue(text, READ_CUE, "show");
+        const unquoted = unquotedRequest(text);
+        requireCue(unquoted, READ_CUE, "show");
+        requireCue(unquoted, SAFETY_SCOPE_CUE, "show");
         const record = publicRecord(readHumanSafetyContinuityStore(storePath));
         return Promise.resolve(Object.freeze({ action: "show", status: "shown", record }));
       }
       if (arguments_.action === "export") {
-        requireCue(text, EXPORT_CUE, "export");
+        const unquoted = unquotedRequest(text);
+        requireCue(unquoted, EXPORT_CUE, "export");
+        requireCue(unquoted, SAFETY_SCOPE_CUE, "export");
         const record = publicRecord(readHumanSafetyContinuityStore(storePath));
         return Promise.resolve(Object.freeze({ action: "export", status: "exported", record, exportJson: `${JSON.stringify(record, null, 2)}\n` }));
       }
@@ -247,10 +264,10 @@ export function createHumanSafetyContinuityTool(
         return Promise.resolve(Object.freeze({ action: "replace", status: outcome.status, ...(entry ? { entry } : {}), record: publicRecord(outcome.store) }));
       }
       if (arguments_.action === "remove") {
-        requireCue(text, REMOVE_CUE, "remove");
+        const unquoted = requireAffirmativeDirectAction(text, REMOVE_CUE, "remove");
         if (typeof arguments_.entryId !== "string" || arguments_.entryId === "") throw new TypeError("entryId is required for remove");
         const entryId = arguments_.entryId;
-        requireScopedReference(text, entryId);
+        requireScopedReference(unquoted, entryId);
         const outcome = mutateHumanSafetyContinuityStore(storePath, (store) => {
           const index = store.entries.findIndex((entry) => entry.id === entryId);
           if (index < 0) return { changed: false, status: "absent" as const };
@@ -263,8 +280,8 @@ export function createHumanSafetyContinuityTool(
         return Promise.resolve(Object.freeze({ action: "remove", status: outcome.status, ...(entry ? { entry } : {}), record: publicRecord(outcome.store) }));
       }
       if (arguments_.action === "clear") {
-        requireCue(text, CLEAR_CUE, "clear");
-        requireCue(text, SAFETY_SCOPE_CUE, "clear");
+        const unquoted = requireAffirmativeDirectAction(text, CLEAR_CUE, "clear");
+        requireCue(unquoted, SAFETY_SCOPE_CUE, "clear");
         const outcome = clearHumanSafetyContinuityStore(storePath);
         if (outcome.changed) onChanged(agent, { action: "clear" });
         return Promise.resolve(Object.freeze({ action: "clear", status: "cleared", record: publicRecord(outcome.store) }));

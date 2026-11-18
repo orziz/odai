@@ -115,8 +115,12 @@ function evidenceId(type: string, data: RuntimeEventData): string {
     && typeof data.childSessionId === "string" && data.childSessionId !== ""
     && typeof data.childReceiptId === "string" && data.childReceiptId !== "") {
     identity = stableJson(["child-route-receipt", type, data.childSessionId, data.childReceiptId]);
-  } else if (["odai/responsibility-gap", "odai/responsibility-gap-consumed", "odai/responsibility-gap-deferred", "odai/named-request-prompted"].includes(type) && typeof data.stateDigest === "string" && data.stateDigest.startsWith("user-named:")) {
+  } else if (["odai/responsibility-gap", "odai/responsibility-gap-consumed", "odai/responsibility-gap-deferred", "odai/named-request-prompted"].includes(type) && typeof data.stateDigest === "string" && data.stateDigest !== "") {
     identity = stableJson([type, data.turn, data.step, data.stateDigest]);
+  } else if (type === "odai/context-capability-requested" && typeof data.capability === "string" && data.capability !== "") {
+    identity = stableJson([type, data.turn, data.step, data.capability]);
+  } else if (type === "odai/route-health" && typeof data.responsibility === "string" && data.responsibility !== "") {
+    identity = stableJson([type, data.turn, data.step, data.responsibility]);
   } else if (type === "odai/named-request-unfulfilled") {
     identity = stableJson([type, data.taskMessageId, data.responsibility, data.timing, data.name]);
   } else if (type === "odai/route-protection") {
@@ -246,13 +250,24 @@ function syncDirectory(path: string): void {
   }
 }
 
-function persistRecord(root: string, sessionId: string, record: StoredEvidenceRecord, logger: EvidenceLogger): boolean {
+function persistRecord(
+  root: string,
+  sessionId: string,
+  record: StoredEvidenceRecord,
+  logger: EvidenceLogger,
+): { persisted: boolean; storedEvents: SessionEvidenceEvent[]; revision: string } {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = evidencePath(root, sessionId);
   const release = acquireOwnedStoreLock(path, "odai evidence");
   try {
     const stored = readStoredState(root, sessionId, logger, true);
-    if (stored.ids.has(record.id)) return false;
+    if (stored.ids.has(record.id)) {
+      return {
+        persisted: false,
+        storedEvents: stored.events,
+        revision: storedSessionEvidenceRevision(root, sessionId),
+      };
+    }
     const encoded = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
     const originalSize = existsSync(path) ? statSync(path).size : 0;
     const handle = openSync(path, "a", 0o600);
@@ -272,7 +287,11 @@ function persistRecord(root: string, sessionId: string, record: StoredEvidenceRe
       closeSync(handle);
     }
     syncDirectory(root);
-    return true;
+    return {
+      persisted: true,
+      storedEvents: stored.events,
+      revision: storedSessionEvidenceRevision(root, sessionId),
+    };
   } finally {
     release();
   }
@@ -346,10 +365,16 @@ export function createSessionEvidence(options: CreateSessionEvidenceOptions): Re
       time: event.time,
       data: event.data,
     };
-    persistRecord(root, state.sessionId, record, logger);
-    state.ids.add(id);
-    state.events.push(event);
-    return event;
+    const persisted = persistRecord(root, state.sessionId, record, logger);
+    state.events = [];
+    state.ids.clear();
+    mergeUnique(state, persisted.storedEvents);
+    if (persisted.persisted) {
+      state.ids.add(id);
+      state.events.push(event);
+    }
+    state.revision = persisted.revision;
+    return state.events.find((candidate) => candidate.id === id) ?? event;
   };
 
   return Object.freeze({ append, events, has, root });

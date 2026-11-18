@@ -125,7 +125,15 @@ export async function resolveManagedDshHome(configured: string | undefined, crea
   } else if (state !== "directory" && state !== "symlink") {
     throw new Error(`DSH home is not a directory: ${requested}`);
   }
-  const canonical = await realpath(requested);
+  let canonical: string;
+  try {
+    canonical = await realpath(requested);
+  } catch (error) {
+    if (state === "symlink" && errorCode(error) === "ENOENT") {
+      throw new Error(`DSH home is a broken symbolic link: ${requested}`, { cause: error });
+    }
+    throw error;
+  }
   if (await pathState(canonical) !== "directory") throw new Error(`DSH home is not a regular directory: ${canonical}`);
   return canonical;
 }
@@ -167,7 +175,7 @@ export async function installAgentPreset(options: AgentInstallerOptions = {}) {
   return Object.freeze({
     ...result,
     presetId: DEFAULT_PRESET_ID,
-    notice: "DSH 0.1.7 does not carry an earlier agent-presets default forward; choose odai as the default preset in DSH if you want new sessions to start with it.",
+    notice: `DSH ${SUPPORTED_DSH_RANGE} registers presets from profile bundles rather than .agent-presets; choose odai as the default preset in DSH if you want new sessions to start with it.`,
     security: "DSH bundles run with the same privileges as the host process; install only reviewed packages.",
   });
 }

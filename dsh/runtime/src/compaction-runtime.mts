@@ -118,14 +118,12 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
     if (options.purpose !== "compaction" || compactionFallbackRequests.has(options)) return next();
     const selection = selectCompactionTarget();
     const target = selection.target;
-    const downstream = next();
-    if (!target || !isAsyncIterable(downstream)) {
-      applyCompactionTarget(options, target, ctx.sessions);
-      applyCompactionStateProtocol(options, target);
+    if (!target) {
+      applyCompactionTarget(options, undefined, ctx.sessions);
+      applyCompactionStateProtocol(options, undefined);
       inheritCompactionReasoning(options, ctx.sessions, config.compaction.cacheRetention);
-      return downstream;
+      return next();
     }
-
     const original: Readonly<CompactionRequest> = Object.freeze({ ...options, messages: options.messages });
     const session = options.sessionId === undefined ? undefined : ctx.sessions?.get(options.sessionId);
     const record = (data: UnknownRecord) => {
@@ -137,6 +135,13 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
       }
       Object.assign(options, original);
     };
+    const downstream = next();
+    if (!isAsyncIterable(downstream)) {
+      applyCompactionTarget(options, target, ctx.sessions);
+      applyCompactionStateProtocol(options, target);
+      inheritCompactionReasoning(options, ctx.sessions, config.compaction.cacheRetention);
+      return downstream;
+    }
     return (async function* configuredCompactionRoute() {
       const validation = await probeModelRoute(
         (candidate, signal) => ctx.llm.resolveCallConfig(candidate, signal),
@@ -177,16 +182,32 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
       inheritCompactionReasoning(options, ctx.sessions, config.compaction.cacheRetention);
       const buffered: StreamChunk[] = [];
       let terminalFailure: unknown;
-      for await (const chunk of downstream) {
-        buffered.push(chunk);
-        if (chunk.type === "finish" && ["error", "aborted"].includes(chunk.reason?.kind ?? "")) {
-          terminalFailure = chunk.reason?.kind === "aborted"
-            ? { code: "ABORTED", message: "Compaction stream aborted", failure: chunk.reason.failure }
-            : chunk.reason?.failure ?? new Error("Compaction stream finished with error");
+      let hasTerminalFailure = false;
+      let thrownStreamError: unknown;
+      let hasThrownStreamError = false;
+      let hasFailureFinish = false;
+      try {
+        for await (const chunk of downstream) {
+          buffered.push(chunk);
+          if (chunk.type === "finish" && ["error", "aborted"].includes(chunk.reason?.kind ?? "")) {
+            hasFailureFinish = true;
+            hasTerminalFailure = true;
+            terminalFailure = chunk.reason?.kind === "aborted"
+              ? { code: "ABORTED", message: "Compaction stream aborted", failure: chunk.reason.failure }
+              : chunk.reason?.failure ?? new Error("Compaction stream finished with error");
+          }
         }
+      } catch (streamError) {
+        hasThrownStreamError = true;
+        thrownStreamError = streamError;
+        hasTerminalFailure = true;
+        terminalFailure = streamError;
       }
-      if (options.signal?.aborted) terminalFailure = { code: "ABORTED", message: "Compaction cancelled" };
-      if (!terminalFailure) {
+      if (options.signal?.aborted && !hasTerminalFailure) {
+        hasTerminalFailure = true;
+        terminalFailure = { code: "ABORTED", message: "Compaction cancelled" };
+      }
+      if (!hasTerminalFailure) {
         record({
           status: "applied",
           requestedRoute: target,
@@ -207,7 +228,15 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
           errorCode: failure.code,
           error: failure.message,
         });
-        for (const chunk of buffered) yield chunk;
+        if (hasThrownStreamError) throw thrownStreamError;
+        if (hasFailureFinish) {
+          for (const chunk of buffered) yield chunk;
+        } else {
+          for (const chunk of buffered) {
+            if (chunk.type !== "finish") yield chunk;
+          }
+          yield { type: "finish", reason: { kind: "aborted", failure: terminalFailure } };
+        }
         return;
       }
 
@@ -222,7 +251,15 @@ export function installCompactionRuntime(deps: CompactionDependencies): void {
           error: failure.message,
           stopReason: "configured-and-inherited-routes-match",
         });
-        for (const chunk of buffered) yield chunk;
+        if (hasThrownStreamError) throw thrownStreamError;
+        if (hasFailureFinish) {
+          for (const chunk of buffered) yield chunk;
+        } else {
+          for (const chunk of buffered) {
+            if (chunk.type !== "finish") yield chunk;
+          }
+          yield { type: "finish", reason: { kind: "error", failure: terminalFailure } };
+        }
         return;
       }
 

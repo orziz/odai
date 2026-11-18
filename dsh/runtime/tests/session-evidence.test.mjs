@@ -247,3 +247,22 @@ test("transient probes without a session id retain the in-memory append fallback
     rmSync(scratch, { recursive: true, force: true });
   }
 });
+test("evidence cache merges concurrent external disk appends during a locked write", () => {
+  const scratch = mkdtempSync(resolve(tmpdir(), "odai-evidence-concurrent-merge-"));
+  const sessionId = "concurrent-merge-session";
+  const agentOne = testAgent(sessionId);
+  const agentTwo = testAgent(sessionId);
+  try {
+    const storeOne = createSessionEvidence({ root: scratch });
+    const storeTwo = createSessionEvidence({ root: scratch });
+    storeOne.append(agentOne, "odai/route-decided", { turn: 1, step: 1, action: "direct" });
+    assert.equal(storeOne.events(agentOne).length, 1);
+    storeTwo.append(agentTwo, "odai/lead-mode", { enabled: true, roles: ["planner", "reviewer"], invocationId: "external-lead" });
+    storeOne.append(agentOne, "odai/session-continuation", { value: "continue", invocationId: "local-cont" });
+    const types = storeOne.events(agentOne).map((event) => event.type);
+    assert.deepEqual(types, ["odai/route-decided", "odai/lead-mode", "odai/session-continuation"]);
+    assert.equal(storeOne.has(agentOne, "odai/lead-mode"), true);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});

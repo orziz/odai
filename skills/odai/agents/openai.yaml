@@ -2,3 +2,5 @@ interface:
   display_name: "odai"
   short_description: "事由人定，路由实证；法随势变，成由验定；止于边界，成事而不妄为"
   default_prompt: "使用 $odai 完成这个任务：对齐真实目标、事实与边界，推进、验证并交付真实可用结果；不能安全完成的部分明确标明未决和下一步，成事而不妄为。"
+policy:
+  allow_implicit_invocation: true

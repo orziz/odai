@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
-import {mkdtempSync, realpathSync, rmSync} from "node:fs";
+import {existsSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join, resolve} from "node:path";
 import {createRequire} from "node:module";
-import {pathToFileURL} from "node:url";
-import {installCompactionPressureRuntime} from "../../runtime/build/compaction-pressure-runtime.mjs";
+import {fileURLToPath, pathToFileURL} from "node:url";
 
-const binary = realpathSync(execFileSync("which", [process.env.DSH_BIN ?? "dsh"], {encoding: "utf8"}).trim());
-const requireHost = createRequire(binary);
+const here = dirname(fileURLToPath(import.meta.url));
+const runtimeModulePath = process.env.ODAI_PLUGIN_PACKAGE_ROOT
+  ? resolve(process.env.ODAI_PLUGIN_PACKAGE_ROOT, "runtime/compaction-pressure-runtime.mjs")
+  : resolve(here, "../../runtime/build/compaction-pressure-runtime.mjs");
+const {installCompactionPressureRuntime} = await import(pathToFileURL(runtimeModulePath).href);
+
+const configuredDsh = process.env.DSH_BIN ?? "dsh";
+const hostAnchor = process.env.DSH_PACKAGE_ROOT
+  ? resolve(process.env.DSH_PACKAGE_ROOT, "package.json")
+  : existsSync(configuredDsh)
+    ? realpathSync(configuredDsh)
+    : realpathSync(execFileSync(process.platform === "win32" ? "where" : "which", [configuredDsh], {encoding: "utf8"}).trim().split(/\r?\n/u)[0]);
+const requireHost = createRequire(hostAnchor);
 const load = name => import(pathToFileURL(requireHost.resolve(name)).href);
 const {Context} = await load("@deepseek-ai/cordis");
 const {BasicCompactionEngine} = await load("@deepseek-ai/dsh-compaction-basic");

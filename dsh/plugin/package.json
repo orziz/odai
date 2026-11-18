@@ -82,5 +82,12 @@
   },
   "engines": {
     "node": ">=22.15.0"
-  }
+  },
+  "keywords": [
+    "agent",
+    "deepseek-harness",
+    "dsh",
+    "odai",
+    "plugin"
+  ]
 }

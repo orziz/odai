@@ -174,8 +174,8 @@ window.__ModuleLoader__.load({
 
     function stateOf(type: string, data?: UnknownRecord): TraceState {
       if (type === "odai/responsibility-gap") return "proposal";
-      if (type === "odai/responsibility-gap-consumed") return "accepted";
-      if (type === "odai/responsibility-gap-deferred" || type === "odai/route-protection") return "blocked";
+      if (type === "odai/responsibility-gap-consumed" || type === "odai/named-request-prompted") return "accepted";
+      if (type === "odai/responsibility-gap-deferred" || type === "odai/route-protection" || type === "odai/named-request-unfulfilled") return "blocked";
       if (type === "odai/responsibility-returned") return "handback";
       if (type.includes("interruption") || type === "odai/controller-output-interrupted") return "interrupted";
       if (type === "odai/route-applied") {
@@ -183,13 +183,16 @@ window.__ModuleLoader__.load({
         return data?.routeMode === "child" ? "child" : data?.routeMode === "inline" ? "direct" : "same-turn";
       }
       if (type === "odai/responsibility-scope-started" || type === "odai/responsibility-scope-claimed" || type === "odai/route-upgrade") return "same-turn";
-      if (type === "odai/route-result") {
+      if (type === "odai/route-result" || type === "odai/research-result") {
         if (data?.status === "fallback" || data?.status === "failed") return "blocked";
-        return data?.action === "delegate" ? "child" : "direct";
+        return data?.action === "delegate" || type === "odai/research-result" ? "child" : "direct";
+      }
+      if (type === "odai/compaction-route") {
+        return data?.status === "fallback" || data?.status === "failed" ? "blocked" : "direct";
       }
       if (type === "odai/route-fallback" || type === "odai/route-config-missing" || type === "odai/governance-denied") return "blocked";
-      if (type === "odai/route-decided") return data?.action === "direct" ? "direct" : "decision";
-      if (type.includes("configured")) return "configured";
+      if (type === "odai/route-decided" || type === "odai/research-decided") return data?.action === "direct" ? "direct" : "decision";
+      if (type.includes("configured") || type === "odai/lead-mode" || type === "odai/session-continuation") return "configured";
       return "evidence";
     }
 
@@ -199,21 +202,60 @@ window.__ModuleLoader__.load({
         case "odai/responsibility-gap": return `${role}职责缺口已提议`;
         case "odai/responsibility-gap-consumed": return `${role}提议已受理`;
         case "odai/responsibility-gap-deferred": return `${role}提议已暂缓`;
+        case "odai/named-input-checked": return "点名委托已识别";
+        case "odai/named-request-prompted": return `${role}点名请求已注入`;
+        case "odai/named-request-unfulfilled": return `${role}点名请求未完成`;
         case "odai/responsibility-returned": return `${role}已回交总控`;
         case "odai/responsibility-return-missing": return `${role}缺少回交`;
+        case "odai/responsibility-recovery": return `${role}职责恢复已触发`;
         case "odai/responsibility-scope-started": return `${role}职责已启动`;
         case "odai/responsibility-scope-claimed": return `${role}职责已接管`;
         case "odai/responsibility-scope-stopped": return `${role}职责已停止`;
+        case "odai/responsibility-scope-restoration-requested": return `${role}请求恢复总控路由`;
+        case "odai/responsibility-scope-restored": return "总控路由已恢复";
         case "odai/route-decided": return `${role}路由已决策 · ${text(data?.action, "完成")}`;
+        case "odai/research-decided": return `调查路由已决策 · ${text(data?.action, "完成")}`;
         case "odai/route-upgrade": return `${role}已切换同轮职责`;
         case "odai/route-applied": return `${role}${data?.routeMode === "child" ? "子代理" : ""}路由${data?.status === "applied" ? "已核实" : data?.status === "mismatch" ? "不匹配" : "未核实"}`;
         case "odai/route-result": return `${role}执行结果 · ${text(data?.status, "完成")}`;
+        case "odai/research-result": return `调查执行结果 · ${text(data?.status, "完成")}`;
         case "odai/route-fallback": return `${role}路由已回退`;
         case "odai/route-config-missing": return `${role}路由不可用`;
+        case "odai/route-protection": return `${role}路由保护拦截`;
+        case "odai/route-protection-released": return "路由写保护已解除";
+        case "odai/route-context": return `${role}上下文包已生成`;
+        case "odai/route-session": return `${role}会话续接 · ${text(data?.action, "已记录")}`;
+        case "odai/governance-denied": return `${role}治理边界拦截`;
         case "odai/routing-configured": return `${role}映射已配置`;
         case "odai/route-health": return `${role}路由健康检查`;
+        case "odai/lead-mode": return `主导模式已${data?.enabled ? "开启" : "关闭"}`;
+        case "odai/lead-switch-checked": return "主导模式指令已识别";
+        case "odai/lead-task": return "主导模式任务已绑定";
+        case "odai/lead-write": return "主导模式已记录写入";
+        case "odai/lead-review": return `主导模式审查结论 · ${text(data?.verdict, "已记录")}`;
+        case "odai/session-continuation": return `会话续接设为 · ${data?.value === "continue" ? "开启" : data?.value === "fresh" ? "关闭" : "按映射"}`;
+        case "odai/compaction-configured": return "压缩模型已配置";
+        case "odai/compaction-route": return data?.status === "fallback" ? "压缩模型已回退" : data?.status === "failed" ? "上下文压缩失败" : "上下文压缩已应用";
+        case "odai/output-configured": return "输出策略已配置";
+        case "odai/output-policy-selected": return "输出策略已加载";
+        case "odai/output-budget-applied": return "输出预算已应用";
+        case "odai/output-budget-overridden": return `${role}输出预算已覆盖`;
+        case "odai/output-session-ceiling-configured": return "本会话输出上限已调整";
+        case "odai/controller-output-recovery": return "总控截断恢复已启用";
+        case "odai/skill-source-configured": return "治理技能来源已配置";
+        case "odai/skill-selected": return data?.fallbackReason ? "治理技能已回退内置版本" : "治理技能已加载";
+        case "odai/context-capability-requested": return `按需能力已请求 · ${text(data?.capability, "未知")}`;
+        case "odai/tool-exposure-selected": return "按需工具集已收敛";
+        case "odai/memory-changed": return `长期记忆已${data?.action === "forget" || data?.action === "clear" ? "清理" : data?.action === "set-mode" ? "切换模式" : "更新"}`;
+        case "odai/memory-processed": return "长期记忆已处理";
+        case "odai/human-safety-continuity-changed": return `关怀连续性记录已${data?.action === "clear" || data?.action === "remove" ? "清理" : "更新"}`;
+        case "odai/tool-observed": return `工具回执 · ${text(data?.tool, "未知工具")}`;
         case "odai/controller-output-interrupted": return "总控输出已中断";
         case "odai/responsibility-interrupted": return `${role}职责已中断`;
+        case "odai/responsibility-interruption-preserved": return `${role}中断状态已保留`;
+        case "odai/responsibility-interruption-consumed": return `${role}中断状态已消费`;
+        case "odai/responsibility-interruption-cleared": return `${role}中断状态已清除`;
+        case "odai/responsibility-interruption-resume-requested": return `${role}中断恢复已请求`;
         default: return type.replace(/^odai\//u, "").replaceAll("-", " ");
       }
     }
@@ -259,7 +301,7 @@ window.__ModuleLoader__.load({
     function traceFingerprint(events: readonly unknown[] = []): string {
       const first = record(events.at(0));
       const last = record(events.at(-1));
-      return [events.length, first?.seq ?? "", first?.type ?? "", last?.seq ?? "", last?.type ?? "", last?.time ?? ""].join(":");
+      return [events.length, first?.id ?? first?.seq ?? "", first?.type ?? "", last?.id ?? last?.seq ?? "", last?.type ?? "", last?.time ?? ""].join(":");
     }
 
     function windowTurnItems<T extends { key: string }>(items: readonly T[], limit: number, selectedKey?: string): readonly T[] {
@@ -281,7 +323,7 @@ window.__ModuleLoader__.load({
         const data = record(event?.data) ?? {};
         const turn = positiveInteger(data.turn);
         const item: TraceItem = Object.freeze({
-          key: `${event?.seq ?? index}:${type}`,
+          key: `${event?.seq ?? (text(event?.id) || index)}:${type}`,
           seq: Number.isSafeInteger(event?.seq) ? Number(event?.seq) : index,
           time: typeof event?.time === "number" ? event.time : undefined,
           turn,
@@ -581,9 +623,9 @@ window.__ModuleLoader__.load({
         const timer = setTimeout(async () => {
           try {
             const response = await connection.rpc.call("/api", "odai-control-center/routing", { action: "choices", ...(cli ? { cli } : {}), ...(provider !== undefined ? { provider } : {}), ...(model !== undefined ? { model } : {}) }, controller.signal);
-            if (!response?.ok || !response.value?.ok) throw new Error(response?.value?.error?.message || "目录不可用");
+            if (!response?.ok || !response.value?.ok) throw new Error(response?.value?.error?.message || response?.error?.message || "目录不可用");
             if (!controller.signal.aborted) setChoices(response.value.choices ?? []);
-          } catch (cause) { if (!controller.signal.aborted) setError(String(cause)); }
+          } catch (cause) { if (!controller.signal.aborted) setError(controlCenterError(cause)); }
         }, 200);
         return () => { clearTimeout(timer); controller.abort(); };
       }, [connection, provider, model, localChoices, cli]);
@@ -608,7 +650,7 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = useState(false);
       const [provider, setProvider] = useState(route?.provider ?? "");
       const [model, setModel] = useState(route?.model ?? "");
-      const [session, setSession] = useState(route?.session ?? "fresh");
+      const [session, setSession] = useState(route?.session);
       const [effort, setEffort] = useState(route?.reasoningEffort ?? "");
       const [maxTokens, setMaxTokens] = useState(route?.maxTokens ? String(route.maxTokens) : "");
       const [timeoutSeconds, setTimeoutSeconds] = useState(route?.timeoutSeconds ? String(route.timeoutSeconds) : "");
@@ -622,24 +664,27 @@ window.__ModuleLoader__.load({
         setCli(route?.cli ?? "claude");
         setProvider(route?.provider ?? "");
         setModel(route?.model ?? "");
-        setSession(route?.session ?? "fresh");
+        setSession(route?.session);
         setEffort(route?.reasoningEffort ?? "");
         setMaxTokens(route?.maxTokens ? String(route.maxTokens) : "");
         setTimeoutSeconds(route?.timeoutSeconds ? String(route.timeoutSeconds) : "");
       }, [route, editing]);
 
       const formCli = backend === "local-cli";
+      const continuationSupported = formCli && (cli === "claude" || cli === "antigravity");
       const efforts = LOCAL_CLI_OPTIONS.find((option) => option.id === cli)?.efforts;
       const localEfforts = useMemo(() => (cli === "codex" ? [] : (efforts ?? "").split(" / ").filter(Boolean)).map(id => ({ id, name: id })), [efforts, cli]);
-      const payload = routeEditorPayload(role, { backend, cli, provider, model, effort, maxTokens, timeoutSeconds, session });
-      const save = () => payload ? onApply(payload).then(() => setEditing(false)) : undefined;
+      const payload = routeEditorPayload(role, { backend, cli, provider, model, effort, maxTokens, timeoutSeconds, session: session === "continue" ? "continue" : undefined });
+      const save = () => {
+        if (payload) void onApply(payload).then(() => setEditing(false), () => {});
+      };
       const remove = () => {
         if (!window.confirm(`确认移除“${ROLE_LABELS[role]}”的本地模型映射？`)) return;
-        onApply({ action: "remove", responsibility: role });
+        void onApply({ action: "remove", responsibility: role }).catch(() => {});
       };
       const setDispatch = (value: string) => {
-        if (value === "default") onApply({ action: "reset-dispatch", responsibility: role });
-        else onApply({ action: "set-dispatch", responsibility: role, dispatch: value });
+        if (value === "default") void onApply({ action: "reset-dispatch", responsibility: role }).catch(() => {});
+        else void onApply({ action: "set-dispatch", responsibility: role, dispatch: value }).catch(() => {});
       };
 
       return h("article", { className: "odaiCC__routeRow" },
@@ -657,6 +702,7 @@ window.__ModuleLoader__.load({
             key: value,
             type: "button",
             className: (dispatch ?? "default") === value ? "is-active" : "",
+            "aria-pressed": (dispatch ?? "default") === value,
             onClick: () => setDispatch(value),
             disabled: busy || (childOnly && value === "same-turn"),
           }, dispatchLabel(value)))),
@@ -669,21 +715,28 @@ window.__ModuleLoader__.load({
               key: value,
               type: "button",
               className: backend === value ? "is-active" : "",
-              onClick: () => setBackend(value),
+              "aria-pressed": backend === value,
+              onClick: () => {
+                if (backend === value) return;
+                setBackend(value);
+                setModel("");
+                setEffort("");
+                if (value !== "local-cli" || (cli !== "claude" && cli !== "antigravity")) setSession(undefined);
+              },
               disabled: busy,
             }, label))),
             formCli ? h("small", null, "本机 CLI 只读运行，固定子代理调度，需已安装并登录对应 CLI") : null,
           ) : null,
           formCli
-            ? h("label", null, h("span", null, "本机 CLI"), h("select", { value: cli, onChange: (event: { target: { value: string } }) => { setCli(event.target.value); setModel(""); setEffort(""); }, disabled: busy },
+            ? h("label", null, h("span", null, "本机 CLI"), h("select", { value: cli, onChange: (event: { target: { value: string } }) => { const nextCli = event.target.value; setCli(nextCli); setModel(""); setEffort(""); if (nextCli !== "claude" && nextCli !== "antigravity") setSession(undefined); }, disabled: busy },
               LOCAL_CLI_OPTIONS.map((option) => h("option", { key: option.id, value: option.id }, option.label))))
-            : h("label", null, h("span", null, "Provider"), h(RouteChoice, { connection, value: provider, onChange: (next: string) => { setProvider(next); setModel(""); setEffort(""); }, placeholder: "渠道", disabled: busy })),
-          h("label", null, h("span", null, "模型"), h(RouteChoice, { connection, provider: formCli ? undefined : provider, cli: formCli ? cli : undefined, value: model, onChange: (next: string) => { setModel(next); setEffort(""); }, placeholder: "模型", disabled: busy })),
-          h("label", null, h("span", null, "推理档位"), h(RouteChoice, { connection, provider, model, localChoices: formCli ? localEfforts : undefined, value: effort, onChange: setEffort, placeholder: "推理档位", disabled: busy })),
+            : h("label", null, h("span", null, "Provider"), h(RouteChoice, { key: `provider:${backend}`, connection, value: provider, onChange: (next: string) => { setProvider(next); setModel(""); setEffort(""); }, placeholder: "渠道", disabled: busy })),
+          h("label", null, h("span", null, "模型"), h(RouteChoice, { key: `model:${backend}:${cli}:${provider}`, connection, provider: formCli ? undefined : provider, cli: formCli ? cli : undefined, value: model, onChange: (next: string) => { setModel(next); setEffort(""); }, placeholder: "模型", disabled: busy })),
+          h("label", null, h("span", null, "推理档位"), h(RouteChoice, { key: `effort:${backend}:${cli}:${provider}:${model}`, connection, provider, model, localChoices: formCli ? localEfforts : undefined, value: effort, onChange: setEffort, placeholder: "推理档位", disabled: busy })),
           formCli
             ? h("label", null, h("span", null, "超时（秒）"), h("input", { value: timeoutSeconds, onChange: (event: { target: { value: string } }) => setTimeoutSeconds(event.target.value), inputMode: "numeric", placeholder: "可选，默认 1200", disabled: busy }))
             : h("label", null, h("span", null, "最大 tokens"), h("input", { value: maxTokens, onChange: (event: { target: { value: string } }) => setMaxTokens(event.target.value), inputMode: "numeric", placeholder: "可选", disabled: busy })),
-          h("label", null, h("span", null, "会话续接"), h("select", { value: session, onChange: (event: { target: { value: string } }) => setSession(event.target.value), disabled: busy }, h("option", { value: "fresh" }, "每次新开（默认）"), h("option", { value: "continue" }, "续接（不支持的后端会明确报错）"))),
+          h("label", null, h("span", null, "会话续接"), h("select", { value: session ?? "fresh", onChange: (event: { target: { value: string } }) => setSession(event.target.value === "continue" ? "continue" : undefined), disabled: busy }, h("option", { value: "fresh" }, "每次新开（默认）"), h("option", { value: "continue", disabled: !continuationSupported && session !== "continue" }, continuationSupported ? "续接" : "续接（当前仅 Claude Code / Antigravity 支持）"))),
           h("div", { className: "odaiCC__formActions" },
             route ? h("button", { type: "button", className: "odaiCC__dangerButton", onClick: remove, disabled: busy }, "移除映射") : null,
             h("button", { type: "button", className: "odaiCC__primaryButton", onClick: save, disabled: busy || !payload }, busy ? "正在验证…" : (formCli ? "保存" : "验证并保存")),
@@ -828,8 +881,8 @@ window.__ModuleLoader__.load({
           h("header", { className: "odaiCC__header" },
             h("div", { className: "odaiCC__brand" }, h(GraphIcon), h("div", null, h("h2", null, "Odai 控制中心"), h("span", null, "会话证据 · 路由配置"))),
             h("nav", { className: "odaiCC__tabs", "aria-label": "控制中心视图" },
-              h("button", { type: "button", className: tab === "live" ? "is-active" : "", onClick: () => setTab("live") }, "执行"),
-              h("button", { type: "button", className: tab === "routing" ? "is-active" : "", onClick: () => setTab("routing") }, "路由"),
+              h("button", { type: "button", className: tab === "live" ? "is-active" : "", "aria-pressed": tab === "live", onClick: () => setTab("live") }, "执行"),
+              h("button", { type: "button", className: tab === "routing" ? "is-active" : "", "aria-pressed": tab === "routing", onClick: () => setTab("routing") }, "路由"),
             ),
             h("button", { ref: closeRef, type: "button", className: "odaiCC__close", onClick: onClose, "aria-label": "关闭" }, "×"),
           ),
@@ -856,15 +909,16 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         const controller = new AbortController(); lifetime.current = controller;
         inFlight.current = false; setState(null); setError(""); setBusy(false);
-        void request("show", controller.signal).catch(e => { if (!controller.signal.aborted) setError(String(e)); });
+        if (!sessionId) return () => controller.abort();
+        void request("show", controller.signal).catch(e => { if (!controller.signal.aborted) setError(controlCenterError(e)); });
         return () => controller.abort();
       }, [connection, sessionId]);
       const change = async (mode: string) => {
         const controller = lifetime.current;
-        if (!controller || inFlight.current) return;
+        if (!controller || inFlight.current || !sessionId) return;
         inFlight.current = true; setBusy(true);
         try { await request("set", controller.signal, mode); }
-        catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+        catch (e) { if (!controller.signal.aborted) setError(controlCenterError(e)); }
         finally { if (lifetime.current === controller) { inFlight.current = false; if (!controller.signal.aborted) setBusy(false); } }
       };
       return h("section", {className: "odaiCC__pressure", "aria-label": "自动压缩设置"},
@@ -875,7 +929,7 @@ window.__ModuleLoader__.load({
           onChange: (event: any) => void change(event.target.value),
         }, h("option", {value: "host"}, "宿主默认"), h("option", {value: "window-ratio", disabled: !state?.supported}, "按窗口比例"))),
         h("p", {className: "odaiCC__pressureHint"}, "按窗口比例：达到模型窗口的 80% 时压缩，不扣除输出预留或额外余量。"),
-        state ? h("p", {role: "status"}, `当前会话实际生效：${state.effectiveMode === "window-ratio" ? "按窗口比例" : "宿主默认"}`) : null,
+        state ? h("p", {role: "status"}, `当前会话实际生效：${state.effectiveMode === "window-ratio" ? "按窗口比例" : "宿主默认"}`) : !sessionId ? h("p", {className: "odaiCC__alert", role: "status"}, "打开具体会话后可查看并调整自动压缩触发方式。") : null,
         state?.reason ? h("p", {className: "odaiCC__alert", role: "status"}, state.reason) : null,
         error ? h("p", {className: "odaiCC__alert is-error", role: "alert"}, error) : null);
     }
@@ -898,10 +952,10 @@ window.__ModuleLoader__.load({
         setState(null); setError(""); setBusy(false);
         let pending = false;
         const refresh = async () => {
-          if (!sessionId || pending || mutating.current) return;
+          if (!sessionId || pending || mutating.current || document.hidden === true) return;
           pending = true;
           try { await request({ action: "show" }, controller.signal); }
-          catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+          catch (e) { if (!controller.signal.aborted) setError(controlCenterError(e)); }
           finally { pending = false; }
         };
         void refresh(); const timer = setInterval(refresh, 2500);
@@ -912,16 +966,16 @@ window.__ModuleLoader__.load({
         if (!controller || busy) return;
         mutating.current = true; setBusy(true);
         try { await request(payload, controller.signal); }
-        catch (e) { if (!controller.signal.aborted) setError(String(e)); }
+        catch (e) { if (!controller.signal.aborted) setError(controlCenterError(e)); }
         finally { mutating.current = false; if (!controller.signal.aborted) setBusy(false); }
       };
-      const details = state?.continuation.roles.map((r: any) => `${r.responsibility}：${r.reason || (r.effective === "continue" ? "续接" : "新开")}`).join("；");
+      const details = state?.continuation.roles.map((r: any) => `${ROLE_LABELS[r.responsibility as Role] ?? r.responsibility}：${r.reason || (r.effective === "continue" ? "续接" : "新开")}`).join("；");
       return h("span", { className: "odaiCC__sessionControls", "aria-label": "本会话控制" },
         h("button", { type: "button", className: "odaiCC__leadSwitch", role: "switch", "aria-label": "本会话主导模式", "aria-checked": !!state?.lead.enabled,
-          disabled: busy || !state || (!state.lead.enabled && !state.lead.available), title: state?.lead.reason || "本会话：首次写入前规划，写入后审查；未配置的规划、审查使用当前会话模型；关闭不取消正在运行的调用",
+          disabled: busy || !state || !!state.unmanaged || (!state.lead.enabled && !state.lead.available), title: state?.lead.reason || "本会话：首次写入前规划，写入后审查；未配置的规划、审查使用当前会话模型；关闭不取消正在运行的调用",
           onClick: () => change({ action: "set-lead", enabled: !state.lead.enabled }) }, h("span", null, "主导"), h("span", { className: "odaiCC__switchTrack", "aria-hidden": true })),
         h("label", { className: "odaiCC__continuation", title: state?.continuation.reason || details }, h("span", null, "续接"), h("select", {
-          "aria-label": "本会话职责续接", disabled: busy || !state, value: state?.continuation.override ?? "inherit",
+          "aria-label": "本会话职责续接", disabled: busy || !state || !!state.unmanaged, value: state?.continuation.override ?? "inherit",
           onChange: (event: any) => change({ action: "set-continuation", value: event.target.value }) },
           h("option", { value: "inherit" }, "按映射"), h("option", { value: "fresh" }, "关闭"),
           h("option", { value: "continue", disabled: !state?.continuation.available }, "开启")), h("span", { className: "odaiCC__selectChevron", "aria-hidden": true })),
@@ -930,9 +984,16 @@ window.__ModuleLoader__.load({
 
     function Launcher(props: { sessionId?: string; traceSource: (sessionId: string | undefined) => any; connection: any }) {
       const [open, setOpen] = useState(false);
+      const launcherRef = useRef(null as any);
+      const handleClose = () => {
+        setOpen(false);
+        if (typeof window?.setTimeout === "function") window.setTimeout(() => launcherRef.current?.focus(), 0);
+        else launcherRef.current?.focus();
+      };
       return h(React.Fragment, null,
         h(SessionControls, { key: props.sessionId, sessionId: props.sessionId, connection: props.connection }),
         h("button", {
+          ref: launcherRef,
           type: "button",
           className: "odaiCC__launcher",
           onClick: () => setOpen(true),
@@ -940,7 +1001,7 @@ window.__ModuleLoader__.load({
           "aria-label": "打开 Odai 控制中心",
           "aria-expanded": open,
         }, h(GraphIcon), h("span", null, "控制")),
-        open ? h(ControlCenter, { ...props, onClose: () => setOpen(false) }) : null,
+        open ? h(ControlCenter, { key: props.sessionId ?? "none", ...props, onClose: handleClose }) : null,
       );
     }
 
@@ -972,13 +1033,13 @@ window.__ModuleLoader__.load({
 .odaiCC__sessionControls,.odaiCC__launcher,.odaiCC{--odai-cc-bg:#f5f7fa;--odai-cc-panel:#fff;--odai-cc-surface:#f8fafc;--odai-cc-surface-2:#edf1f5;--odai-cc-text:#151922;--odai-cc-text-2:#4c5665;--odai-cc-text-3:#778190;--odai-cc-border:#d8dee7;--odai-cc-border-strong:#bdc6d2;--odai-cc-hover:#edf3ff;--odai-cc-accent:#2f6feb}
 .odaiCC__launcher{box-sizing:border-box;height:28px;border:1px solid var(--odai-cc-border);border-radius:6px;background:transparent;color:var(--odai-cc-text-2);display:inline-flex;align-items:center;gap:6px;padding:0 8px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;line-height:1;letter-spacing:0}.odaiCC__launcher:hover{background:var(--odai-cc-hover);color:var(--odai-cc-text)}
 .odaiCC__graphIcon{position:relative;width:17px;height:15px;display:inline-block;flex:none}.odaiCC__graphNode{position:absolute;width:5px;height:5px;border:1.5px solid currentColor;border-radius:50%;box-sizing:border-box}.odaiCC__graphNode--a{left:0;top:5px}.odaiCC__graphNode--b{right:0;top:0}.odaiCC__graphNode--c{right:0;bottom:0}.odaiCC__graphLine{position:absolute;left:5px;top:7px;width:7px;height:1px;background:currentColor}.odaiCC__graphLine:before,.odaiCC__graphLine:after{content:"";position:absolute;right:0;width:5px;height:1px;background:currentColor;transform-origin:right center}.odaiCC__graphLine:before{transform:rotate(-38deg)}.odaiCC__graphLine:after{transform:rotate(38deg)}
-.odaiCC{position:fixed;inset:0;z-index:120;color:var(--odai-cc-text);font-family:inherit;letter-spacing:0}.odaiCC *{box-sizing:border-box}.odaiCC__backdrop{position:absolute;inset:0;border:0;background:rgba(0,0,0,.28)}.odaiCC__drawer{position:absolute;inset:14px;max-width:1180px;margin-left:auto;border:1px solid var(--odai-cc-border-strong);border-radius:8px;background:var(--odai-cc-panel);box-shadow:0 24px 80px rgba(0,0,0,.42);display:flex;flex-direction:column;overflow:hidden}.odaiCC__header{min-height:62px;border-bottom:1px solid var(--odai-cc-border);display:grid;grid-template-columns:minmax(230px,1fr) auto minmax(44px,1fr);align-items:center;gap:16px;padding:10px 14px}.odaiCC__brand{display:flex;align-items:center;gap:10px;min-width:0}.odaiCC__brand>.odaiCC__graphIcon{width:22px;height:19px;color:var(--odai-cc-accent)}.odaiCC__brand h2{font-size:16px;line-height:22px;margin:0}.odaiCC__brand span{display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__tabs{display:flex;border:1px solid var(--odai-cc-border);border-radius:6px;padding:2px;background:var(--odai-cc-surface)}.odaiCC__tabs button{height:30px;min-width:72px;border:0;border-radius:4px;background:transparent;color:var(--odai-cc-text-3);cursor:pointer;font:600 12px/1 inherit}.odaiCC__tabs button.is-active{background:var(--odai-cc-panel);color:var(--odai-cc-text);box-shadow:0 1px 4px rgba(0,0,0,.2)}.odaiCC__close{justify-self:end;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--odai-cc-text-2);font-size:22px;line-height:1;cursor:pointer}.odaiCC__close:hover{background:var(--odai-cc-hover)}.odaiCC__body{min-height:0;flex:1;overflow:auto}.odaiCC__live{padding:14px}.odaiCC__kicker{display:block;color:var(--odai-cc-text-3);font:700 9px/14px inherit;letter-spacing:.08em}.odaiCC__sectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}.odaiCC__sectionHead h3{font-size:12px;line-height:18px;margin:0}.odaiCC__eventCount{color:var(--odai-cc-text-3);font-size:10px}.odaiCC__flow{border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:12px}.odaiCC__flowGrid{display:grid;grid-template-columns:minmax(160px,220px) minmax(360px,1fr);gap:22px;align-items:center;min-height:265px}.odaiCC__controllerNode{border:1px solid rgba(119,167,255,.45);border-radius:8px;background:rgba(119,167,255,.08);padding:18px}.odaiCC__controllerNode strong,.odaiCC__roleNode strong{display:block;font-size:12px;line-height:18px}.odaiCC__controllerNode small,.odaiCC__roleNode small{display:block;color:var(--odai-cc-text-3);font-size:10px;line-height:15px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.odaiCC__nodeEyebrow{color:#2f6feb;font-size:9px;font-weight:700}.odaiCC__roleStack{display:flex;flex-direction:column;gap:8px}.odaiCC__flowRole{display:grid;grid-template-columns:92px minmax(0,1fr);align-items:center;border:0;background:transparent;color:inherit;padding:0;text-align:left}.odaiCC__flowRole:not(:disabled){cursor:pointer}.odaiCC__flowRole:disabled{opacity:1}.odaiCC__edge{position:relative;height:1px;background:var(--odai-cc-border-strong);margin-right:12px}.odaiCC__edge i{position:absolute;right:-1px;top:-3px;width:7px;height:7px;border-top:1px solid currentColor;border-right:1px solid currentColor;transform:rotate(45deg)}.odaiCC__edge em{position:absolute;left:5px;top:-17px;color:var(--odai-cc-text-3);font:500 9px/12px inherit;font-style:normal}.odaiCC__edge[data-state=proposal],.odaiCC__edge[data-state=decision]{background:repeating-linear-gradient(90deg,#65c6b8 0 5px,transparent 5px 9px);color:#65c6b8}.odaiCC__edge[data-state=same-turn]{background:#b99cff;color:#b99cff}.odaiCC__edge[data-state=child]{background:var(--odai-cc-accent);color:var(--odai-cc-accent)}.odaiCC__edge[data-state=handback]{background:#f1bb61;color:#f1bb61}.odaiCC__edge[data-state=blocked],.odaiCC__edge[data-state=interrupted]{background:#ef7e78;color:#ef7e78}.odaiCC__roleNode{border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);padding:8px 10px;min-width:0}.odaiCC__flowRole:not(:disabled):hover .odaiCC__roleNode{border-color:var(--odai-cc-accent)}.odaiCC__role{display:inline-flex;align-items:center;gap:5px;color:var(--odai-cc-text-2);font-size:9px;line-height:14px}.odaiCC__role i{width:6px;height:6px;border-radius:50%;background:#8f969e}.odaiCC__role--controller i{background:var(--odai-cc-accent)}.odaiCC__role--researcher i{background:#65c6b8}.odaiCC__role--planner i{background:#b99cff}.odaiCC__role--reviewer i{background:#f1bb61}.odaiCC__role--frontend i{background:#ef8fbd}.odaiCC__evidenceGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:12px;margin-top:12px}.odaiCC__timeline,.odaiCC__inspector{min-width:0;border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:10px}.odaiCC__turn{border-top:1px solid var(--odai-cc-border);padding:8px 0}.odaiCC__turn:first-child{border-top:0;padding-top:0}.odaiCC__turn summary{display:flex;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;font-size:10px}.odaiCC__turn summary::-webkit-details-marker{display:none}.odaiCC__turn summary span{color:var(--odai-cc-text-3)}.odaiCC__events{display:flex;flex-direction:column;gap:6px;margin-top:8px}.odaiCC__event{width:100%;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:inherit;padding:8px;text-align:left;cursor:pointer}.odaiCC__event:hover,.odaiCC__event.is-selected{border-color:var(--odai-cc-accent);background:var(--odai-cc-hover)}.odaiCC__eventTop{display:flex;align-items:center;gap:6px;color:var(--odai-cc-text-3);font-size:9px}.odaiCC__eventTop time{margin-left:auto}.odaiCC__eventTop code{font-size:9px}.odaiCC__event>strong{display:block;margin-top:5px;font-size:11px;line-height:16px}.odaiCC__eventDetail{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--odai-cc-text-2);font-size:10px;line-height:15px;margin-top:2px}.odaiCC__eventBottom{display:flex;gap:8px;align-items:center;color:var(--odai-cc-text-3);font-size:9px;margin-top:6px}.odaiCC__state{display:inline-flex;border-radius:999px;background:var(--odai-cc-surface-2);color:var(--odai-cc-text-2);padding:1px 6px;font-size:9px;line-height:13px}.odaiCC__state--proposal{background:rgba(101,198,184,.15);color:#18756b}.odaiCC__state--same-turn{background:rgba(185,156,255,.15);color:#6f42c1}.odaiCC__state--child{background:rgba(119,167,255,.15);color:#245ec7}.odaiCC__state--handback{background:rgba(241,187,97,.15);color:#946000}.odaiCC__state--blocked,.odaiCC__state--interrupted{background:rgba(239,126,120,.15);color:#b42318}.odaiCC__facts{margin:0;display:flex;flex-direction:column;gap:7px}.odaiCC__facts>div{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;font-size:10px}.odaiCC__facts dt{color:var(--odai-cc-text-3)}.odaiCC__facts dd{margin:0;overflow-wrap:anywhere}.odaiCC__facts code{font-size:9px}.odaiCC__raw{max-height:360px;overflow:auto;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:var(--odai-cc-text-2);font:9px/14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px;margin:10px 0 0}.odaiCC__empty{border:1px dashed var(--odai-cc-border-strong);border-radius:7px;color:var(--odai-cc-text-3);font-size:10px;line-height:16px;padding:18px;text-align:center}
+.odaiCC{position:fixed;inset:0;z-index:120;color:var(--odai-cc-text);font-family:inherit;letter-spacing:0}.odaiCC *{box-sizing:border-box}.odaiCC__backdrop{position:absolute;inset:0;border:0;background:rgba(0,0,0,.28)}.odaiCC__drawer{position:absolute;inset:14px;max-width:1180px;margin-left:auto;border:1px solid var(--odai-cc-border-strong);border-radius:8px;background:var(--odai-cc-panel);box-shadow:0 24px 80px rgba(0,0,0,.42);display:flex;flex-direction:column;overflow:hidden}.odaiCC__header{min-height:62px;border-bottom:1px solid var(--odai-cc-border);display:grid;grid-template-columns:minmax(230px,1fr) auto minmax(44px,1fr);align-items:center;gap:16px;padding:10px 14px}.odaiCC__brand{display:flex;align-items:center;gap:10px;min-width:0}.odaiCC__brand>.odaiCC__graphIcon{width:22px;height:19px;color:var(--odai-cc-accent)}.odaiCC__brand h2{font-size:16px;line-height:22px;margin:0}.odaiCC__brand span{display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__tabs{display:flex;border:1px solid var(--odai-cc-border);border-radius:6px;padding:2px;background:var(--odai-cc-surface)}.odaiCC__tabs button{height:30px;min-width:72px;border:0;border-radius:4px;background:transparent;color:var(--odai-cc-text-3);cursor:pointer;font:600 12px/1 inherit}.odaiCC__tabs button.is-active{background:var(--odai-cc-panel);color:var(--odai-cc-text);box-shadow:0 1px 4px rgba(0,0,0,.2)}.odaiCC__close{justify-self:end;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--odai-cc-text-2);font-size:22px;line-height:1;cursor:pointer}.odaiCC__close:hover{background:var(--odai-cc-hover)}.odaiCC__body{min-height:0;flex:1;overflow:auto}.odaiCC__live{padding:14px}.odaiCC__kicker{display:block;color:var(--odai-cc-text-3);font:700 9px/14px inherit;letter-spacing:.08em}.odaiCC__sectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}.odaiCC__sectionHead h3{font-size:12px;line-height:18px;margin:0}.odaiCC__eventCount{color:var(--odai-cc-text-3);font-size:10px}.odaiCC__flow{border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:12px}.odaiCC__flowGrid{display:grid;grid-template-columns:minmax(160px,220px) minmax(360px,1fr);gap:22px;align-items:center;min-height:265px}.odaiCC__controllerNode{border:1px solid rgba(119,167,255,.45);border-radius:8px;background:rgba(119,167,255,.08);padding:18px}.odaiCC__controllerNode strong,.odaiCC__roleNode strong{display:block;font-size:12px;line-height:18px}.odaiCC__controllerNode small,.odaiCC__roleNode small{display:block;color:var(--odai-cc-text-3);font-size:10px;line-height:15px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.odaiCC__nodeEyebrow{color:#2f6feb;font-size:9px;font-weight:700}.odaiCC__roleStack{display:flex;flex-direction:column;gap:8px}.odaiCC__flowRole{display:grid;grid-template-columns:92px minmax(0,1fr);align-items:center;border:0;background:transparent;color:inherit;padding:0;text-align:left}.odaiCC__flowRole:not(:disabled){cursor:pointer}.odaiCC__flowRole:disabled{opacity:1}.odaiCC__edge{position:relative;height:1px;background:var(--odai-cc-border-strong);margin-right:12px}.odaiCC__edge i{position:absolute;right:-1px;top:-3px;width:7px;height:7px;border-top:1px solid currentColor;border-right:1px solid currentColor;transform:rotate(45deg)}.odaiCC__edge em{position:absolute;left:5px;top:-17px;color:var(--odai-cc-text-3);font:500 9px/12px inherit;font-style:normal}.odaiCC__edge[data-state=proposal],.odaiCC__edge[data-state=decision]{background:repeating-linear-gradient(90deg,#65c6b8 0 5px,transparent 5px 9px);color:#65c6b8}.odaiCC__edge[data-state=same-turn]{background:#b99cff;color:#b99cff}.odaiCC__edge[data-state=child]{background:var(--odai-cc-accent);color:var(--odai-cc-accent)}.odaiCC__edge[data-state=handback]{background:#f1bb61;color:#f1bb61}.odaiCC__edge[data-state=blocked],.odaiCC__edge[data-state=interrupted]{background:#ef7e78;color:#ef7e78}.odaiCC__roleNode{border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);padding:8px 10px;min-width:0}.odaiCC__flowRole:not(:disabled):hover .odaiCC__roleNode{border-color:var(--odai-cc-accent)}.odaiCC__role{display:inline-flex;align-items:center;gap:5px;color:var(--odai-cc-text-2);font-size:9px;line-height:14px}.odaiCC__role i{width:6px;height:6px;border-radius:50%;background:#8f969e}.odaiCC__role--controller i{background:var(--odai-cc-accent)}.odaiCC__role--researcher i{background:#65c6b8}.odaiCC__role--planner i{background:#b99cff}.odaiCC__role--reviewer i{background:#f1bb61}.odaiCC__role--frontend i{background:#ef8fbd}.odaiCC__role--creative i{background:#46a758}.odaiCC__role--writer i{background:#d97706}.odaiCC__evidenceGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:12px;margin-top:12px}.odaiCC__timeline,.odaiCC__inspector{min-width:0;border:1px solid var(--odai-cc-border);border-radius:8px;background:var(--odai-cc-surface);padding:10px}.odaiCC__turn{border-top:1px solid var(--odai-cc-border);padding:8px 0}.odaiCC__turn:first-child{border-top:0;padding-top:0}.odaiCC__turn summary{display:flex;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;font-size:10px}.odaiCC__turn summary::-webkit-details-marker{display:none}.odaiCC__turn summary span{color:var(--odai-cc-text-3)}.odaiCC__events{display:flex;flex-direction:column;gap:6px;margin-top:8px}.odaiCC__event{width:100%;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:inherit;padding:8px;text-align:left;cursor:pointer}.odaiCC__event:hover,.odaiCC__event.is-selected{border-color:var(--odai-cc-accent);background:var(--odai-cc-hover)}.odaiCC__eventTop{display:flex;align-items:center;gap:6px;color:var(--odai-cc-text-3);font-size:9px}.odaiCC__eventTop time{margin-left:auto}.odaiCC__eventTop code{font-size:9px}.odaiCC__event>strong{display:block;margin-top:5px;font-size:11px;line-height:16px}.odaiCC__eventDetail{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--odai-cc-text-2);font-size:10px;line-height:15px;margin-top:2px}.odaiCC__eventBottom{display:flex;gap:8px;align-items:center;color:var(--odai-cc-text-3);font-size:9px;margin-top:6px}.odaiCC__state{display:inline-flex;border-radius:999px;background:var(--odai-cc-surface-2);color:var(--odai-cc-text-2);padding:1px 6px;font-size:9px;line-height:13px}.odaiCC__state--proposal{background:rgba(101,198,184,.15);color:#18756b}.odaiCC__state--same-turn{background:rgba(185,156,255,.15);color:#6f42c1}.odaiCC__state--child{background:rgba(119,167,255,.15);color:#245ec7}.odaiCC__state--handback{background:rgba(241,187,97,.15);color:#946000}.odaiCC__state--blocked,.odaiCC__state--interrupted{background:rgba(239,126,120,.15);color:#b42318}.odaiCC__facts{margin:0;display:flex;flex-direction:column;gap:7px}.odaiCC__facts>div{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;font-size:10px}.odaiCC__facts dt{color:var(--odai-cc-text-3)}.odaiCC__facts dd{margin:0;overflow-wrap:anywhere}.odaiCC__facts code{font-size:9px}.odaiCC__raw{max-height:360px;overflow:auto;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-panel);color:var(--odai-cc-text-2);font:9px/14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px;margin:10px 0 0}.odaiCC__empty{border:1px dashed var(--odai-cc-border-strong);border-radius:7px;color:var(--odai-cc-text-3);font-size:10px;line-height:16px;padding:18px;text-align:center}
 .odaiCC__nativeCalls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:8px;min-width:0}.odaiCC__flowRole.odaiCC__nativeCall{grid-template-columns:minmax(0,1fr);width:100%;min-width:0}.odaiCC__nativeCall .odaiCC__roleNode{min-width:0;height:100%}.odaiCC__nativeNote{margin:6px 0 0;color:var(--odai-cc-text-3);font-size:12px;line-height:1.5}
 .odaiCC__routing{max-width:1000px;margin:0 auto;padding:16px 18px}.odaiCC__routingHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.odaiCC__routingHead h3{font-size:16px;line-height:22px;margin:0}.odaiCC__quietButton,.odaiCC__primaryButton,.odaiCC__dangerButton{height:30px;border-radius:6px;padding:0 11px;font:600 12px/1 inherit;cursor:pointer}.odaiCC__quietButton{border:1px solid var(--odai-cc-border);background:transparent;color:var(--odai-cc-text-2)}.odaiCC__primaryButton{border:1px solid var(--odai-cc-accent);background:var(--odai-cc-accent);color:#fff}.odaiCC__dangerButton{border:1px solid rgba(239,126,120,.45);background:transparent;color:#b42318}.odaiCC button:disabled:not(.odaiCC__flowRole){opacity:.45;cursor:default}.odaiCC__flowRole:disabled{opacity:1;cursor:default}.odaiCC__alert{border:1px solid var(--odai-cc-border);border-radius:7px;padding:8px 10px;font-size:12px;line-height:18px;margin-bottom:10px}.odaiCC__alert.is-error{border-color:rgba(239,126,120,.4);background:rgba(239,126,120,.08);color:#b42318}.odaiCC__alert.is-success{border-color:rgba(101,198,184,.4);background:rgba(101,198,184,.08);color:#18756b}.odaiCC__controllerLock,.odaiCC__routeRow{border-top:1px solid var(--odai-cc-border);padding:9px 0}.odaiCC__controllerLock{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:center}.odaiCC__controllerLock strong{display:block;font-size:13px;line-height:18px}.odaiCC__controllerLock span:not(.odaiCC__role):not(.odaiCC__lock){display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__lock{border:1px solid var(--odai-cc-border);border-radius:999px;color:var(--odai-cc-text-3);font-size:10px;padding:3px 7px}.odaiCC__routeRow{display:grid;grid-template-columns:minmax(300px,1fr) minmax(410px,1.15fr);gap:8px 20px;align-items:center}.odaiCC__routeSummary{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:10px;align-items:center}.odaiCC__routeValue strong{display:block;font-size:13px;line-height:18px;overflow-wrap:anywhere}.odaiCC__routeValue span{display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__dispatch{display:grid;grid-template-columns:70px auto minmax(0,1fr);gap:10px;align-items:center}.odaiCC__dispatch>span,.odaiCC__dispatch small{color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__segments{display:flex;border:1px solid var(--odai-cc-border);border-radius:6px;overflow:hidden}.odaiCC__segments button{height:28px;border:0;border-right:1px solid var(--odai-cc-border);background:transparent;color:var(--odai-cc-text-3);padding:0 9px;font:500 11px/1 inherit;cursor:pointer}.odaiCC__segments button:last-child{border-right:0}.odaiCC__segments button.is-active{background:var(--odai-cc-hover);color:var(--odai-cc-text)}.odaiCC__routeForm{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:10px;border:1px solid var(--odai-cc-border);border-radius:7px;background:var(--odai-cc-surface)}.odaiCC__routeForm label span{display:block;color:var(--odai-cc-text-3);font-size:11px;line-height:16px;margin-bottom:4px}.odaiCC__routeForm input,.odaiCC__routeForm select{width:100%;min-width:0;height:32px;border:1px solid var(--odai-cc-border);border-radius:5px;background:var(--odai-cc-panel);color:var(--odai-cc-text);padding:0 8px;font:12px/1 inherit;outline:none}.odaiCC__routeForm input:focus,.odaiCC__routeForm select:focus{border-color:var(--odai-cc-accent)}.odaiCC__routeBackend{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px}.odaiCC__routeBackend>span,.odaiCC__routeBackend small{color:var(--odai-cc-text-3);font-size:11px;line-height:16px}.odaiCC__formActions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
-.odaiCC__body{overflow:hidden}.odaiCC__live{height:100%;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:hidden;padding:14px}.odaiCC__live>.odaiCC__alert{flex:none;margin-bottom:0}.odaiCC__flow{flex:none;max-height:38vh;overflow:auto;scrollbar-gutter:stable}.odaiCC__evidenceGrid{flex:1;min-height:0;overflow:hidden;margin-top:0}.odaiCC__timeline{display:flex;flex-direction:column;min-height:0;overflow:hidden}.odaiCC__timeline>.odaiCC__sectionHead{flex:none}.odaiCC__turns{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.odaiCC__inspector{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.odaiCC__inspector>.odaiCC__sectionHead{position:sticky;top:0;z-index:1;background:var(--odai-cc-panel);padding-bottom:8px}.odaiCC__sectionHead h3{font-size:13px;line-height:20px}.odaiCC__kicker{font:700 11px/16px inherit;letter-spacing:0}.odaiCC__role,.odaiCC__state,.odaiCC__nodeEyebrow{font-size:11px}.odaiCC__controllerNode strong,.odaiCC__roleNode strong{font-size:13px;line-height:18px}.odaiCC__controllerNode small,.odaiCC__roleNode small,.odaiCC__edge em{font-size:11px;line-height:16px}.odaiCC__eventCount{font-size:11px;line-height:16px}.odaiCC__turn summary{font-size:12px;line-height:18px}.odaiCC__eventTop code,.odaiCC__eventTop time{font-size:11px;line-height:16px}.odaiCC__event>strong{font-size:13px;line-height:18px}.odaiCC__eventDetail,.odaiCC__eventBottom{font-size:11px;line-height:16px}.odaiCC__eventTop .odaiCC__state,.odaiCC__eventBottom .odaiCC__role,.odaiCC__facts .odaiCC__state,.odaiCC__facts .odaiCC__role{font-size:10px}.odaiCC__facts dt{font-size:11px;line-height:18px}.odaiCC__facts dd{font-size:12px;line-height:18px}.odaiCC__facts code{font-size:11px;line-height:18px}.odaiCC__raw{font:12px/18px ui-monospace,SFMono-Regular,Consolas,monospace}.odaiCC__loadEarlier{width:100%;height:30px;border:0;border-bottom:1px solid var(--odai-cc-border);background:var(--odai-cc-surface);color:var(--odai-cc-text-2);font:600 10px/1 inherit;cursor:pointer}.odaiCC__loadEarlier:hover{background:var(--odai-cc-hover);color:var(--odai-cc-text)}.odaiCC__routing{height:100%;overflow-y:auto}
+.odaiCC__body{overflow:hidden}.odaiCC__live{height:100%;min-height:0;display:flex;flex-direction:column;gap:14px;overflow:hidden;padding:14px}.odaiCC__live>.odaiCC__alert{flex:none;margin-bottom:0}.odaiCC__flow{flex:none;max-height:38vh;overflow:auto;scrollbar-gutter:stable}.odaiCC__evidenceGrid{flex:1;min-height:0;overflow:hidden;margin-top:0}.odaiCC__timeline{display:flex;flex-direction:column;min-height:0;overflow:hidden}.odaiCC__timeline>.odaiCC__sectionHead{flex:none}.odaiCC__turns{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.odaiCC__inspector{min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.odaiCC__inspector>.odaiCC__sectionHead{position:sticky;top:0;z-index:1;background:var(--odai-cc-surface);padding-bottom:8px}.odaiCC__sectionHead h3{font-size:13px;line-height:20px}.odaiCC__kicker{font:700 11px/16px inherit;letter-spacing:0}.odaiCC__role,.odaiCC__state,.odaiCC__nodeEyebrow{font-size:11px}.odaiCC__controllerNode strong,.odaiCC__roleNode strong{font-size:13px;line-height:18px}.odaiCC__controllerNode small,.odaiCC__roleNode small,.odaiCC__edge em{font-size:11px;line-height:16px}.odaiCC__eventCount{font-size:11px;line-height:16px}.odaiCC__turn summary{font-size:12px;line-height:18px}.odaiCC__eventTop code,.odaiCC__eventTop time{font-size:11px;line-height:16px}.odaiCC__event>strong{font-size:13px;line-height:18px}.odaiCC__eventDetail,.odaiCC__eventBottom{font-size:11px;line-height:16px}.odaiCC__eventTop .odaiCC__state,.odaiCC__eventBottom .odaiCC__role,.odaiCC__facts .odaiCC__state,.odaiCC__facts .odaiCC__role{font-size:10px}.odaiCC__facts dt{font-size:11px;line-height:18px}.odaiCC__facts dd{font-size:12px;line-height:18px}.odaiCC__facts code{font-size:11px;line-height:18px}.odaiCC__raw{font:12px/18px ui-monospace,SFMono-Regular,Consolas,monospace}.odaiCC__loadEarlier{width:100%;height:30px;border:0;border-bottom:1px solid var(--odai-cc-border);background:var(--odai-cc-surface);color:var(--odai-cc-text-2);font:600 10px/1 inherit;cursor:pointer}.odaiCC__loadEarlier:hover{background:var(--odai-cc-hover);color:var(--odai-cc-text)}.odaiCC__routing{height:100%;overflow-y:auto}
 @media(max-width:900px){.odaiCC__routeRow{display:block}.odaiCC__dispatch{margin-top:7px}}
 @media(max-width:760px){.odaiCC__launcher span:last-child{display:none}.odaiCC__drawer{inset:6px}.odaiCC__header{grid-template-columns:minmax(0,1fr) auto auto;gap:7px;padding:8px}.odaiCC__brand span{display:none}.odaiCC__tabs button{min-width:56px}.odaiCC__live{padding:8px}.odaiCC__flowGrid{grid-template-columns:1fr;gap:10px;min-height:0}.odaiCC__controllerNode{padding:10px}.odaiCC__flowRole{grid-template-columns:65px minmax(0,1fr)}.odaiCC__evidenceGrid{grid-template-columns:1fr}.odaiCC__inspector{max-height:none}.odaiCC__routing{padding:10px}.odaiCC__controllerLock,.odaiCC__routeSummary{grid-template-columns:92px minmax(0,1fr) auto}.odaiCC__dispatch{grid-template-columns:92px 1fr}.odaiCC__dispatch small{grid-column:2}.odaiCC__routeForm{grid-template-columns:1fr 1fr;margin-left:0}.odaiCC__raw{max-height:240px}}
-@media(max-width:760px){.odaiCC__body{overflow:hidden}.odaiCC__live{gap:8px}.odaiCC__flow{max-height:30vh}.odaiCC__evidenceGrid{grid-template-rows:minmax(180px,1fr) minmax(120px,35vh);overflow:hidden}.odaiCC__timeline,.odaiCC__inspector{min-height:0;max-height:none}}
+@media(max-width:760px){.odaiCC__body{overflow-y:auto}.odaiCC__live{height:auto;overflow:visible;gap:8px}.odaiCC__flow{max-height:36vh}.odaiCC__evidenceGrid{grid-template-rows:minmax(220px,1fr) minmax(160px,auto);overflow:visible}.odaiCC__timeline,.odaiCC__inspector{min-height:0;max-height:42vh}}
 
 .odaiCC__routingPage{height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .odaiCC__routingPage>.odaiCC__routing{height:auto;overflow:visible}

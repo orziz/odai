@@ -190,10 +190,14 @@ export function sameRequestModelRoute(left?: Partial<ModelRoute>, right?: Partia
 }
 
 export function currentAgentStep(agent: DshAgent): number | undefined {
+  const phaseStep = agent?.phase?.step;
+  if (Number.isSafeInteger(phaseStep)) return phaseStep;
   const events = sessionEvents(agent?.session);
   if (events.length === 0) return undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === "step/start" && Number.isSafeInteger(events[index].data?.step)) return events[index].data.step;
+    const type = events[index]?.type;
+    if (type === "turn/start" || type === "turn/end") return undefined;
+    if (type === "step/start" && Number.isSafeInteger(events[index].data?.step)) return events[index].data.step;
   }
   return undefined;
 }

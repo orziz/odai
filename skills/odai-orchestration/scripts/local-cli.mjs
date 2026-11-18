@@ -138,11 +138,14 @@ function parseClaudeResult(stdout, requestedModel) {
   const outputTokens = (usage) => typeof usage.outputTokens === "number" && Number.isFinite(usage.outputTokens)
     && usage.outputTokens >= 0 ? usage.outputTokens : 0;
   const requested = typeof requestedModel === "string" ? requestedModel.trim() : "";
+  const requestedLower = requested.toLowerCase();
   const matches = ([model, usage]) => {
     const canonical = typeof usage.canonicalModel === "string" ? usage.canonicalModel : "";
-    return requested.length > 0 && (ALIASES.has(requested)
-      ? model.includes(requested) || canonical.includes(requested)
-      : model === requested || canonical === requested || model.startsWith(`${requested}-`));
+    const modelLower = model.toLowerCase();
+    const canonicalLower = canonical.toLowerCase();
+    return requested.length > 0 && (ALIASES.has(requestedLower)
+      ? modelLower.includes(requestedLower) || canonicalLower.includes(requestedLower)
+      : modelLower === requestedLower || canonicalLower === requestedLower || modelLower.startsWith(`${requestedLower}-`));
   };
   // Claude Code records its own helper calls (e.g. a short haiku request) in modelUsage too, and on
   // short answers they can out-produce the routed model. The requested model having run verifies the
@@ -402,8 +405,7 @@ export async function executeLocalCli({
         exitCode = Number.isInteger(code) ? code : null;
         closed = true;
         if (stopResult) {
-          // Do not clear the escalation timer merely because the group leader closed
-          // its pipes: descendants may still be running with independent stdio.
+          // Do not clear the escalation timer merely because the group leader closed its pipes.
           if (!processGroup || groupKillSent) finish(stopResult);
           return;
         }

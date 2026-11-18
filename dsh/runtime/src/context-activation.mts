@@ -37,17 +37,25 @@ export interface ActivationOptions {
   responsibilityRouting?: boolean;
 }
 
-const CARE_CUE = /(?:疲惫|心累|焦虑|紧张|自我怀疑|怀疑自己|否定自己|内耗|反刍|反复纠结|羞耻|丢脸|害怕犯错|怕犯错|持续消极|提不起劲|失去行动感|阿岱|欧黛|fatigue|burn(?:ed|t) out|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|shame|fear of mistakes?|persistent negativity|cannot get started|companionship style|practical support style)/iu;
-const CRISIS_CUE = /(?:持续低落|越来越低落|绝望|无望|撑不住|活不下去|不想活|想死|结束生命|成为负担|自伤|自残|轻生|自杀|伤害自己|immediate danger|persistent low mood|hopeless|cannot go on|burden|self[- ]harm|suicid(?:e|al)|want to die|kill myself|end my life)/iu;
+const CARE_CUE = /(?:疲惫|心累|焦虑|紧张|自我怀疑|怀疑自己|否定自己|内耗|反刍|反复纠结|羞耻|丢脸|害怕犯错|怕犯错|持续消极|提不起劲|失去行动感|陪伴风格|行动支撑|fatigue|burn(?:ed|t) out|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|shame|fear of mistakes?|persistent negativity|cannot get started|companionship style|practical support style)/iu;
+const CRISIS_CUE = /(?:持续低落|越来越低落|绝望|无望|撑不住|活不下去|不想活|想死|结束生命|成为负担|自伤|自残|轻生|自杀|伤害自己|immediate danger|persistent low mood|hopeless|cannot go on|(?:(?:i\s*(?:'m|’m|am)|feel(?:ing)?\s+like(?:\s+i\s*(?:'m|’m|am))?|being|becom(?:e|ing))\s+(?:such\s+|just\s+|only\s+)?a\s+burden|\bburden\s+(?:to|on)\s+(?:everyone|my\s+family|my\s+friends|others|people|you)\b)|self[- ]harm|suicid(?:e|al)|want to die|kill myself|end my life)/iu;
 const ROUTING_CONFIG_CUE = /(?:(?:研究|调查|规划|计划|审查|验收|前端|创意|写作|researcher|planner|reviewer|frontend|creative|writer).{0,24}(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理)|(?:模型|路由|映射|调度|派发|provider|model|route|mapping|dispatch|same-turn|child|同轮|子代理).{0,24}(?:研究|调查|规划|计划|审查|验收|前端|创意|写作|researcher|planner|reviewer|frontend|creative|writer)|(?:所有|当前|职责|责任)?(?:模型|路由|调度|派发)(?:配置|映射)|routing config)/iu;
-const SKILL_SOURCE_CUE = /(?:(?:odai|阿岱|欧黛).{0,20}(?:skill|治理).{0,20}(?:来源|source|bundled|auto|user)|(?:skill|治理).{0,20}(?:来源|source).{0,20}(?:odai|阿岱|欧黛))/iu;
+const SKILL_SOURCE_CUE = /(?:odai.{0,20}(?:skill|治理).{0,20}(?:来源|source|bundled|auto|user)|(?:skill|治理).{0,20}(?:来源|source).{0,20}odai)/iu;
 const OUTPUT_CONFIG_CUE = /(?:(?:输出|回复|回答).{0,20}(?:normal|正常|简洁|精简|concise|economy|经济|token|上限)|(?:maxTokens|token 上限|output mode|输出模式)|(?:(?:这个|当前|本次|本)(?:会话|对话)|\b(?:this|current)\s+(?:chat|conversation|session)\b).{0,24}(?:上限|限制|limit|cap|ceiling)|(?:\b(?:output|token)?\s*(?:limit|cap|ceiling)\b).{0,24}\b(?:this|current)\s+(?:chat|conversation|session)\b)/iu;
 const COMPACTION_CONFIG_CUE = /(?:(?:压缩|compaction).{0,32}(?:模型|provider|model|推理|reasoning|配置|设置|查看|重置)|(?:模型|provider|model).{0,20}(?:压缩摘要|compaction summary))/iu;
 const MEMORY_CUE = /(?:记住|记忆|忘记|以后默认|今后默认|从现在起|所有项目|每个项目|长期使用|一直使用|偏好|remember|memory|forget|from now on|going forward|by default|all projects|always use|never use)/iu;
 const CONTINUITY_CUE = /(?:(?:跨会话|安全|关怀|照护|支持).{0,24}(?:档案|记录|连续性|记住|保存|查看|显示|导出|更正|删除|清空)|(?:continuity|safety|care|support).{0,24}(?:record|remember|save|show|export|correct|remove|clear))/iu;
 
+function stripCodeAndBlockquotes(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/gu, " ")
+    .replace(/^\s*>.*$/gmu, " ")
+    .replace(/`[^`\n]*`/gu, " ");
+}
+
 export function classifyContextActivation(text: unknown): Readonly<ContextActivation> {
-  const value = typeof text === "string" ? text : "";
+  const raw = typeof text === "string" ? text : "";
+  const value = stripCodeAndBlockquotes(raw);
   const safety = CRISIS_CUE.test(value);
   return Object.freeze({
     care: !safety && CARE_CUE.test(value),

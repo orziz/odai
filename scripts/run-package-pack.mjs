@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function runPackagePack(options) {
@@ -24,7 +25,7 @@ function resolveCleanRoot(packageRoot, value) {
   }
   const target = resolve(packageRoot, value);
   const fromRoot = relative(packageRoot, target);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
     throw new Error("--clean paths must stay below the package root");
   }
   return target;
@@ -68,7 +69,14 @@ function parseArgs(argv) {
   return { cleanRoots, packArgs };
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+})();
 if (isMain) {
   const code = await runPackagePack({ ...parseArgs(process.argv.slice(2)), packageRoot: process.cwd() });
   if (code !== 0) process.exitCode = code;

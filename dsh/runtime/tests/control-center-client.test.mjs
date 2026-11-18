@@ -500,4 +500,13 @@ test("Control Center projects writer API and local CLI children with the writer 
     assert.equal(trace.currentRoles.writer.route.provider, route.provider);
     assert.equal(trace.currentRoles.writer.route.cli, route.cli);
   }
+  const systemTrace = client.projectTrace([
+    { seq: 1, type: "odai/compaction-route", data: { status: "fallback" } },
+    { seq: 2, type: "odai/memory-changed", data: { action: "forget" } },
+    { seq: 3, type: "odai/human-safety-continuity-changed", data: { action: "add" } },
+  ]);
+  assert.equal(systemTrace.items[0]?.state, "blocked");
+  assert.equal(systemTrace.items[0]?.title, "压缩模型已回退");
+  assert.equal(systemTrace.items[1]?.title, "长期记忆已清理");
+  assert.equal(systemTrace.items[2]?.title, "关怀连续性记录已更新");
 });

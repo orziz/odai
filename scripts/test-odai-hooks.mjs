@@ -218,6 +218,27 @@ assert.ok(codexHooks.hooks.PreToolUse && codexHooks.hooks.Stop);
 assert.ok(claudeHooks.hooks.PreToolUse && claudeHooks.hooks.Stop);
 assert.ok(claudeHooks.hooks.PreToolUse.some(entry => new RegExp(`^(?:${entry.matcher})$`).test("NotebookEdit")),
   "generated Claude adapter must dispatch NotebookEdit to the pre-tool hook");
+assert.ok(claudeHooks.hooks.PreToolUse.some(entry => new RegExp(`^(?:${entry.matcher})$`).test("MultiEdit")),
+  "generated Claude adapter must dispatch MultiEdit to the pre-tool hook");
+
+// Non-git symlinked project root must still enforce protectedPaths.
+const symlinkContainer = temporaryRoot("odai-hook-symlink-root-");
+const realNonGitProject = path.join(symlinkContainer, "real-project");
+const linkedNonGitProject = path.join(symlinkContainer, "linked-project");
+mkdirSync(path.join(realNonGitProject, ".odai"), { recursive: true });
+mkdirSync(path.join(realNonGitProject, "docs"), { recursive: true });
+writeFileSync(path.join(realNonGitProject, "docs/spec.md"), "readonly\n", "utf8");
+writeFileSync(path.join(realNonGitProject, ".odai/hooks.json"), JSON.stringify({
+  version: 1, protectedPaths: ["docs/**"], checks: [],
+}), "utf8");
+if (symlinkAvailable) {
+  symlinkSync(realNonGitProject, linkedNonGitProject, process.platform === "win32" ? "junction" : "dir");
+  const symlinkPreTool = run(process.execPath, [hook, "pre-tool", "--host", "claude"], {
+    cwd: linkedNonGitProject,
+    input: JSON.stringify({ cwd: linkedNonGitProject, hook_event_name: "PreToolUse", tool_name: "MultiEdit", tool_input: { file_path: "docs/spec.md" } }),
+  });
+  assert.equal(symlinkPreTool.status, 2, "symlinked project root must not bypass protectedPaths");
+}
 assert.ok(copilotHooks.hooks.preToolUse && copilotHooks.hooks.agentStop);
 assert.ok(geminiHooks.hooks.BeforeTool && geminiHooks.hooks.AfterAgent);
 assert.ok(grokHooks.hooks.PreToolUse);

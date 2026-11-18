@@ -202,6 +202,9 @@ async function resolvedPackage(target: string): Promise<ResolvedPackage | undefi
     "preset/odai/skills/odai-orchestration/manifest.json",
     "preset/odai/skills/odai-orchestration/scripts/compose-contracts.mjs",
     "preset/odai/skills/odai-orchestration/scripts/local-cli.mjs",
+    "preset/odai/skills/odai-orchestration/scripts/recognize-routing.mjs",
+    "preset/odai/runtime/bootstrap.mjs",
+    "preset/odai/runtime/compaction-engine.mjs",
     "preset/odai/runtime/index.mjs",
     "preset/odai/skills/odai/SKILL.md",
     "control-center.cordis.patch.yml",
@@ -227,6 +230,10 @@ async function resolvedPackage(target: string): Promise<ResolvedPackage | undefi
     if (!isRecord(presetMetadata) || !isRecord(presetMetadata.imports)
       || presetMetadata.imports["#odai-local-cli"] !== "./skills/odai-orchestration/scripts/local-cli.mjs") {
       issues.push("resolved preset package has an invalid #odai-local-cli import map");
+    }
+    if (!isRecord(presetMetadata) || !isRecord(presetMetadata.imports)
+      || presetMetadata.imports["#odai-recognize-routing"] !== "./skills/odai-orchestration/scripts/recognize-routing.mjs") {
+      issues.push("resolved preset package has an invalid #odai-recognize-routing import map");
     }
   } catch (error) {
     issues.push(`resolved preset package metadata is unavailable: ${errorMessage(error)}`);
@@ -336,20 +343,20 @@ async function retainRollbackEvidence(
 ): Promise<string> {
   await assertNoSymlinkDescendants(dshHome, "odai/control-center-backups");
   const root = resolve(dshHome, "odai", "control-center-backups", `${Date.now()}-${randomUUID()}`);
-  await mkdir(root, { recursive: true });
+  await mkdir(root, { recursive: true, mode: 0o700 });
   await assertNoSymlinkDescendants(dshHome, "odai/control-center-backups");
   for (const [name, snapshot] of [["before", before], ["after", after]] as const) {
     const snapshotRoot = resolve(root, name);
-    await mkdir(snapshotRoot, { recursive: true });
+    await mkdir(snapshotRoot, { recursive: true, mode: 0o700 });
     const states: Record<string, "present" | "missing"> = {};
     for (const file of snapshot.files) {
       const filename = file.path.split(/[\\/]/u).at(-1) ?? "state";
       states[filename] = file.content === undefined ? "missing" : "present";
-      if (file.content !== undefined) await writeFile(resolve(snapshotRoot, filename), file.content);
+      if (file.content !== undefined) await writeFile(resolve(snapshotRoot, filename), file.content, { mode: 0o600 });
     }
-    await writeFile(resolve(snapshotRoot, "snapshot.json"), `${JSON.stringify({ revision: snapshot.revision, files: states }, null, 2)}\n`, "utf8");
+    await writeFile(resolve(snapshotRoot, "snapshot.json"), `${JSON.stringify({ revision: snapshot.revision, files: states }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   }
-  await writeFile(resolve(root, "failure.txt"), `${failure}\n`, "utf8");
+  await writeFile(resolve(root, "failure.txt"), `${failure}\n`, { encoding: "utf8", mode: 0o600 });
   return root;
 }
 

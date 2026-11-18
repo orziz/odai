@@ -15,15 +15,16 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { readDshVersion, spawnDsh } from "../dsh/agent/build/src/dsh-version.mjs";
 import { dshWebRpc, waitForDshWeb } from "./dsh-web-rpc.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const pluginRoot = resolve(repoRoot, "dsh/plugin");
-const agentRoot = resolve(repoRoot, "dsh/agent");
-const runtimeRoot = resolve(repoRoot, "dsh/runtime/build");
-const canonicalSkillRoot = resolve(repoRoot, "skills/odai");
+const pluginRoot = resolve(process.env.ODAI_PLUGIN_PACKAGE_ROOT ?? resolve(repoRoot, "dsh/plugin"));
+const agentRoot = resolve(process.env.ODAI_AGENT_PACKAGE_ROOT ?? resolve(repoRoot, "dsh/agent"));
+const compiledPlugin = process.env.ODAI_PLUGIN_PACKAGE_ROOT !== undefined;
+const runtimeRoot = compiledPlugin ? resolve(pluginRoot, "runtime") : resolve(repoRoot, "dsh/runtime/build");
+const canonicalSkillRoot = compiledPlugin ? resolve(pluginRoot, "skills/odai") : resolve(repoRoot, "skills/odai");
 const sharedStateModule = resolve(runtimeRoot, "skill-selection-state.mjs");
+const { readDshVersion, spawnDsh } = await import(pathToFileURL(resolve(agentRoot, "build/src/dsh-version.mjs")).href);
 const dsh = process.env.DSH_BIN ?? (process.platform === "win32" ? "dsh.cmd" : "dsh");
 const targetDshVersion = readDshVersion({ dsh });
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -113,7 +114,9 @@ async function prepareProjectSkill() {
   const version = String(manifest.skillVersion).match(/^(\d+)\.(\d+)\.(\d+)$/u);
   if (!version) throw new Error(`canonical skillVersion is not a stable SemVer: ${String(manifest.skillVersion)}`);
   bundledSkillVersion = manifest.skillVersion;
-  projectSkillVersion = `${version[1]}.${version[2]}.${Number(version[3]) + 1}`;
+  let nextPatch = Number(version[3]) + 1;
+  while (String(nextPatch).includes("4")) nextPatch += 1;
+  projectSkillVersion = `${version[1]}.${version[2]}.${nextPatch}`;
   manifest.skillVersion = projectSkillVersion;
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   const skillPath = resolve(target, "SKILL.md");
@@ -131,10 +134,13 @@ async function prepareProjectSkill() {
 }
 
 async function installPlugin() {
-  run(npm, ["pack", "--pack-destination", scratch], { cwd: pluginRoot });
-  const tarballs = (await readdir(scratch)).filter((entry) => /^odai-dsh-plugin-.*\.tgz$/u.test(entry));
-  if (tarballs.length !== 1) throw new Error(`expected one Plugin tarball, found: ${tarballs.join(", ")}`);
-  const tarball = resolve(scratch, tarballs[0]);
+  let tarball = process.env.ODAI_PLUGIN_TGZ ? resolve(process.env.ODAI_PLUGIN_TGZ) : undefined;
+  if (!tarball) {
+    run(npm, ["pack", "--pack-destination", scratch], { cwd: pluginRoot });
+    const tarballs = (await readdir(scratch)).filter((entry) => /^odai-dsh-plugin-.*\.tgz$/u.test(entry));
+    if (tarballs.length !== 1) throw new Error(`expected one Plugin tarball, found: ${tarballs.join(", ")}`);
+    tarball = resolve(scratch, tarballs[0]);
+  }
   run(dsh, ["plugin", "--profile", profileName, "add", tarball], { cwd: workspace });
 
   const profilePath = resolve(home, "profiles", profileName, "package.json");
@@ -145,10 +151,14 @@ async function installPlugin() {
 }
 
 async function installAgentControlCenterPackage() {
-  run(npm, ["pack", "--pack-destination", scratch], { cwd: agentRoot });
-  const tarballs = (await readdir(scratch)).filter((entry) => /^odai-dsh-agent-.*\.tgz$/u.test(entry));
-  if (tarballs.length !== 1) throw new Error(`expected one Agent tarball, found: ${tarballs.join(", ")}`);
-  run(dsh, ["plugin", "--profile", profileName, "add", resolve(scratch, tarballs[0])], { cwd: workspace });
+  let tarball = process.env.ODAI_AGENT_TGZ ? resolve(process.env.ODAI_AGENT_TGZ) : undefined;
+  if (!tarball) {
+    run(npm, ["pack", "--pack-destination", scratch], { cwd: agentRoot });
+    const tarballs = (await readdir(scratch)).filter((entry) => /^odai-dsh-agent-.*\.tgz$/u.test(entry));
+    if (tarballs.length !== 1) throw new Error(`expected one Agent tarball, found: ${tarballs.join(", ")}`);
+    tarball = resolve(scratch, tarballs[0]);
+  }
+  run(dsh, ["plugin", "--profile", profileName, "add", tarball], { cwd: workspace });
 
   const profilePath = resolve(home, "profiles", profileName, "package.json");
   const profile = JSON.parse(await readFile(profilePath, "utf8"));

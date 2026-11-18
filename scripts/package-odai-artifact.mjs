@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const skillSource = resolve(repoRoot, "skills/odai");
 const runtimeSource = resolve(repoRoot, "dsh/runtime/build");
 const clientSource = resolve(repoRoot, "dsh/client/build/client.js");
+const IGNORED_OS_FILES = new Set([".DS_Store", "Thumbs.db"]);
 const [command, ...argv] = process.argv.slice(2);
 const options = parseOptions(argv);
 const packageRoot = process.cwd();
@@ -65,27 +66,49 @@ function resolveTarget(root, value, label) {
   }
   const target = resolve(root, value);
   const fromRoot = relative(root, target);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
     throw new Error(`${label} must stay below the package root`);
   }
   return target;
+}
+
+async function normalizePermissions(target) {
+  const info = await stat(target);
+  if (info.isDirectory()) {
+    await chmod(target, 0o755);
+    const entries = await readdir(target, { withFileTypes: true });
+    await Promise.all(entries.map(async (entry) => {
+      const child = resolve(target, entry.name);
+      if (IGNORED_OS_FILES.has(entry.name)) {
+        await rm(child, { force: true });
+        return;
+      }
+      await normalizePermissions(child);
+    }));
+    return;
+  }
+  const executable = (info.mode & 0o111) !== 0;
+  await chmod(target, executable ? 0o755 : 0o644);
 }
 
 async function prepareSkills() {
   await rm(skillRoot, { recursive: true, force: true });
   await mkdir(skillRoot, { recursive: true });
   await Promise.all(["odai", "odai-orchestration"].map(name => cp(resolve(repoRoot, "skills", name), resolve(skillRoot, name), { recursive: true })));
+  await normalizePermissions(skillRoot);
 }
 
 async function prepareCopy(source, target, cleanRoot) {
   await rm(cleanRoot, { recursive: true, force: true });
   await mkdir(dirname(target), { recursive: true });
   await cp(source, target, { recursive: true });
+  await normalizePermissions(target);
 }
 
 async function prepareClient(target, packageName) {
-  if (typeof packageName !== "string" || packageName.trim() === "") {
-    throw new Error("--client-package must be a non-empty package name");
+  const trimmed = typeof packageName === "string" ? packageName.trim() : "";
+  if (!trimmed || !/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u.test(trimmed)) {
+    throw new Error("--client-package must be a valid npm package name");
   }
   await rm(target, { recursive: true, force: true });
   await mkdir(target, { recursive: true });
@@ -96,9 +119,10 @@ async function prepareClient(target, packageName) {
   if (!source.includes(marker)) {
     throw new Error(`expected at least one ${marker} marker in ${entry}`);
   }
-  const rendered = source.replaceAll(marker, packageName.trim());
+  const rendered = source.split(marker).join(trimmed);
   if (rendered.includes(marker)) throw new Error(`failed to render ${marker} in ${entry}`);
-  await writeFile(entry, rendered, "utf8");
+  await writeFile(entry, rendered, { encoding: "utf8", mode: 0o644 });
+  await normalizePermissions(target);
 }
 
 async function assertCanonicalSkill() {

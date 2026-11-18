@@ -155,8 +155,8 @@ const SENSITIVE_PATTERNS = [
   /(?:\+?\d[\d ()-]{7,}\d)/u,
   /\b(?:\d[ -]*?){13,19}\b/u,
   /(?:我|我的).{0,20}(?:身份证|护照号|银行卡|信用卡|住址|家庭地址|病历|诊断|疾病|收入|工资|债务|性取向)/u,
-  /(?:阿岱|欧黛|陪伴风格|行动支撑|疲惫|心累|焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|反复纠结|持续消极|提不起劲|失去行动感|持续低落|绝望|抑郁|躁郁|双相|精神疾病|心理疾病|自残|自杀|轻生|不想活|活不下去|想死|结束生命)/u,
-  /\b(?:companionship style|practical support style|fatigue|burn(?:ed|t) out|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|internal conflict|persistent negativity|cannot get started|persistent low mood|hopeless|depress(?:ed|ion)|bipolar|mental illness|self[- ]?harm|suicid(?:e|al)|want to die|kill myself|end my life)\b/iu,
+  /(?:阿岱|欧黛|陪伴风格|行动支撑|疲惫|心累|焦虑|怀疑自己|否定自己|自我怀疑|内耗|反刍|反复纠结|羞耻|丢脸|害怕犯错|怕犯错|持续消极|提不起劲|失去行动感|持续低落|绝望|无望|成为负担|崩溃|撑不住|抑郁|躁郁|双相|精神疾病|心理疾病|自伤|自残|自杀|轻生|伤害自己|不想活|活不下去|想死|结束生命)/u,
+  /\b(?:companionship style|practical support style|fatigue|burn(?:ed|t) out|anxi(?:ous|ety)|self[- ]doubt|doubt myself|ruminat(?:e|ing|ion)|shame|fear of mistakes?|internal conflict|persistent negativity|cannot get started|persistent low mood|hopeless|(?:(?:i\s*(?:'m|’m|am)|feel(?:ing)?\s+like(?:\s+i\s*(?:'m|’m|am))?|being|becom(?:e|ing))\s+(?:such\s+|just\s+|only\s+)?a\s+burden|burden\s+(?:to|on)\s+(?:everyone|my\s+family|my\s+friends|others|people|you))|depress(?:ed|ion)|bipolar|mental illness|self[- ]?harm|hurt myself|suicid(?:e|al)|want to die|kill myself|end my life)\b/iu,
 ];
 const GLOBAL_SCOPE_PATTERNS = [
   /(?:所有项目|每个项目|全局|我一直|我通常|我的项目都)/u,
@@ -234,11 +234,12 @@ function exactCorrectionCommand(excerpt: string): RegExp {
 }
 
 function exactModeCommand(mode: MemoryMode, excerpt: string): RegExp {
-  const direction = mode === "auto"
+  const core = mode === "auto"
     ? "(?:(?:开启|启用)(?:长期|语义)?记忆|(?:长期|语义)?记忆(?:开启|启用)|(?:enable|turn on)\\s+(?:long-term\\s+|semantic\\s+)?memory)"
     : "(?:(?:关闭|停用|禁用)(?:长期|语义)?记忆|(?:长期|语义)?记忆(?:关闭|停用|禁用)|(?:disable|turn off)\\s+(?:long-term\\s+|semantic\\s+)?memory)";
+  const direction = `(?:请\\s*|please\\s+)?${core}`;
   const literal = escapedPattern(normalizeWhitespace(excerpt));
-  return new RegExp(`^(?:请\\s*|please\\s+)?(?=${direction}${COMMAND_END}$)${literal}${COMMAND_END}$`, "iu");
+  return new RegExp(`^(?=${direction}${COMMAND_END}$)(?:请\\s*|please\\s+)?${literal}${COMMAND_END}$`, "iu");
 }
 
 export const MEMORY_PROMPT = [

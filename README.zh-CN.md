@@ -66,7 +66,7 @@ npx skills add https://github.com/orziz/odai --skill odai
 npx skills add https://github.com/orziz/odai --skill odai-orchestration
 ```
 
-`odai-orchestration` 单向依赖 `odai`，提供职责预设和宿主路由适配器；安装技能不会自动修改宿主配置。候选 DSH 包内置两者，未启用编排时治理仍独立工作。使用尚未发布的本地源码时，将仓库 URL 换为本地仓库路径。
+`odai-orchestration` 单向依赖 `odai`，提供职责预设和宿主路由适配器；安装技能不会自动修改宿主配置。候选 DSH 包内置两者，未启用编排时治理仍独立工作。需要阿岱 / 欧黛双搭档陪伴交互风格、结构化汇报或去 AI 味表现工艺时，可分别按需安装独立技能 `odai-companion`、`ribao`、`renwei`。使用尚未发布的本地源码时，将仓库 URL 换为本地仓库路径。
 
 然后用 `/odai` 交任务。支持 slash command 的客户端里，常规就是这种写法：
 
@@ -96,11 +96,11 @@ dsh plugin --profile web add odai-dsh-plugin
 npx odai-dsh-agent install
 ```
 
-当前 `0.3.5` 源码候选只面向 DSH `0.2.2-rc.1`，双包 npm peer 均固定为该版本。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
+当前 `0.3.7` 源码候选只面向 DSH `0.2.2-rc.1`，双包 npm peer 均固定为该版本。Odai 自行维护 preset，保留现有能力，不要求照搬 Standard，也不自动添加其新增工具。Control Center 使用 Web 传输，非 Web 环境的治理仍独立可用。
 
 正常安装、更新、卸载与 runtime 不检查或改写旧会话。DSH 会拒绝包含未知 Odai 事件的历史 v0 日志，即使事件带有 `ignorable` 标记；旧版仅补标记的 `legacy-session-repair` 入口已退役，不修改文件。新版支持不代表这些历史会话已经完成迁移。
 
-Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；Agent 的交互式 `install` 会说明现有 profile 的来源和版本，并在 `[Y/n]` 询问；直接回车、`y` 或 `yes` 确认，EOF、`n`、`no` 或其他文本不修改 Web profile。非交互安装必须显式传 `--with-control-center` 才会修改 profile。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
+Plugin 安装命令要求 `pnpm` 已在 `PATH` 中。两个包都已经包含 canonical Odai skill、共享 DSH runtime 与同一份中文 Control Center，不存在第三个包。Plugin 安装后直接提供 Control Center；`npx odai-dsh-agent install` 将 Odai bundle 安装到目标 DSH profile（默认 `web`），同时注册 `odai` 预设与 Control Center，后者可在 DSH 的 Plugins 页面单独关闭。Plugin 与 Agent 可以独立安装，也允许同时安装；共存时由 Plugin 拥有唯一 Control Center 界面，两套 runtime 共享并去重治理、路由与 evidence 状态。现有 provider-neutral `odai-cli` 继续作为独立产品。
 
 两个 DSH 包都默认使用**软精简**输出。用户可以显式切换到正常模式，或启用可选的**经济模式**：它在软精简基础上增加可调的 provider 输出 ceiling；用户只说“经济模式”而未给其他值时默认使用 `500`。该 ceiling 不会影响子代理、compaction、checkpoint 或内部上下文预算，provider 仍可能超过或忽略它。完整三档契约见 [`dsh/README.md`](dsh/README.md#install-and-use)。
 
@@ -189,7 +189,7 @@ odai 的完整能力不只是入口文本，而是“内核 + 内置基本工艺
 | 层级 | 职责 |
 | --- | --- |
 | 根内核 | 总纲，按事、实、法、成、界组织的规则，交付与按缺口取用 |
-| `care.md` | 非危机日常关怀、降低行动负担与用户可控的回应风格 |
+| `care.md` | 非危机日常关怀、降低认知与行动负担、用户可控的陪伴倾听或行动支撑风格 |
 | `human-safety.md` | 人身与心理危机的早期识别、自然干预、二次伤害防止与授权安全连续性 |
 | `dao.md` | 事的所有权、事实校准、授权、参考只读与高影响边界 |
 | `craft.md` | 已决定结果的实施与排障、设计、UI / 实时交互、文档与审查工艺 |
@@ -256,7 +256,7 @@ canonical source 都在 `skills/` 下。分发走 [skills.sh](https://skills.sh)
 | [阿岱（`dai`）](pets/dai/) | 黑青行事官与执行搭档 | 沉着、可靠、克制 | 推进任务、执行、验收并收尾 |
 | [欧黛（`odai`）](pets/odai/) | 银白蓝紫吉祥物与陪伴搭档 | 活泼、亲近、好奇 | 陪伴、卖萌、回应进展、打气并庆祝完成 |
 
-阿岱负责把事做成，欧黛负责让做事的过程有人陪；欧黛不是行事官。两者都包含 9 组标准动画和 16 个观察方向。安装 `odai` skill 不会自动安装桌宠。
+阿岱负责把事做成，欧黛负责让做事的过程有人陪；欧黛不是行事官。两者都包含 9 组标准动画和 16 个观察方向。安装 `odai` skill 不会自动安装桌宠，也不绑定人物扮演；如果希望在对话中启用阿岱 / 欧黛双搭档陪伴交互风格，可按需安装可选技能 `odai-companion`（`npx skills add https://github.com/orziz/odai --skill odai-companion`）。
 
 完整人物资料分别见 [阿岱设定档案](docs/阿岱%20设定档案.md) 与 [欧黛设定档案](docs/欧黛%20设定档案.md)。
 
@@ -285,7 +285,7 @@ cp "pets/$pet_name/pet.json" "pets/$pet_name/spritesheet.webp" "$HOME/.codex/pet
 
 skill 负责判断，Hooks 只把项目已经明确的边界变成机械护栏。它们默认不安装、不启用，也不改变 `odai` 的主流程；只有项目创建 `.odai/hooks.json` 后，才会针对受支持的结构化写工具（含 Claude Code 的 `NotebookEdit`）保护显式只读路径，并在收口时运行显式声明且与当前变更相关的验收命令。没有策略文件时完全静默。
 
-项目护栏与显式开启 `--named-dispatch` 的路由 Hook 独立管理配置，可以共存，互不替代。
+项目护栏与显式开启 `--named-dispatch`、`--lead-mode` 的路由 Hook 独立管理配置，可以共存，互不替代。
 
 仓库维护一份无依赖运行时，按需生成宿主原生适配，不常驻六套平台镜像：
 
@@ -308,7 +308,7 @@ Grok Build 当前只有 `PreToolUse` 是可阻断边界，因此适配器不会�
 
 ## 评测
 
-当前源码候选为 DSH `0.3.5` / 治理 `0.7.1`（runtime contract `9`）/ 编排 `0.2.3`，最新已发布 Odai DSH 双包为 `0.3.3`（已修复会话格式缺陷；`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
+当前源码候选为 DSH `0.3.7` / 治理 `0.7.2`（runtime contract `9`）/ 编排 `0.2.5`，最新已发布 Odai DSH 双包为 `0.3.6`（面向 DSH `0.2.2-rc.1`，含持久化自动压缩压力模式；`0.2.39` 修复 DSH `0.1.7` v4 会话消息来源，`0.2.50` 增加 DSH `0.2.0-rc.1` 的 goal / todo 适配），面向 DSH `0.1.5-rc.2` 的已发布版本为 `0.2.37`（治理 `0.7.0`）。当前证据与限制见[模型评测](docs/evaluation-results.md)及[运行时验证](docs/routing-results.md)，历史模型分数不作为后续源码的质量证明。
 
 当前分数、重试状态和限制见 [`docs/evaluation-results.md`](docs/evaluation-results.md)，真实协作证据见 [`docs/routing-results.md`](docs/routing-results.md)，运行契约见 [`docs/evaluation.md`](docs/evaluation.md)。这些有限样本不证明全量验收、稳定提质或节省费用。
 

@@ -88,8 +88,13 @@ function registerControlCenter(connection: HostConnection,
   return async () => { for (const dispose of disposers) await dispose(); };
 }
 
+interface RegisteredOwner {
+  ctx: DshRuntimeContext;
+  options: ControlCenterRuntimeOptions;
+}
+
 interface SharedRegistration {
-  owners: Map<symbol, ControlCenterRuntimeOptions>;
+  owners: Map<symbol, RegisteredOwner>;
   dispose: () => Promise<void>;
 }
 
@@ -103,6 +108,7 @@ type ControlCenterGlobal = typeof globalThis & {
 
 export interface ControlCenterRuntimeOptions {
   pressure?: (payload: unknown, signal: AbortSignal) => Promise<CompactionPressureControl>;
+  scope?: "profile" | "preset";
   configPath: string;
   routingMode?: string;
   evidenceRoot?: string;
@@ -111,20 +117,44 @@ export interface ControlCenterRuntimeOptions {
   logger?: RuntimeLogger;
 }
 
-function effectiveOptions(owners: ReadonlyMap<symbol, ControlCenterRuntimeOptions>): ControlCenterRuntimeOptions {
-  let selected: ControlCenterRuntimeOptions | undefined;
+function effectiveOwner(owners: ReadonlyMap<symbol, RegisteredOwner>): RegisteredOwner {
+  let selected: RegisteredOwner | undefined;
   let selectedWeight = -1;
-  for (const options of owners.values()) {
+  for (const entry of owners.values()) {
+    const { options } = entry;
     const weight = Object.keys(options.configuredRoles ?? {}).length
       + Object.keys(options.configuredDispatch ?? {}).length;
     if (selected === undefined || weight > selectedWeight
-      || (weight === selectedWeight && selected.routingMode === undefined && options.routingMode !== undefined)) {
-      selected = options;
+      || (weight === selectedWeight && selected.options.routingMode === undefined && options.routingMode !== undefined)) {
+      selected = entry;
       selectedWeight = weight;
     }
   }
   if (!selected) throw new Error("Control Center RPC has no active runtime owner");
   return selected;
+}
+
+function activeLlm(owners: ReadonlyMap<symbol, RegisteredOwner>, preferred: DshRuntimeContext): DshRuntimeContext["llm"] | undefined {
+  if (preferred.llm) return preferred.llm;
+  for (const entry of owners.values()) {
+    if (entry.ctx.llm) return entry.ctx.llm;
+  }
+  return undefined;
+}
+
+function unmanagedSessionReason(owners: ReadonlyMap<symbol, RegisteredOwner>, payload: unknown): string | undefined {
+  if (!isUnknownRecord(payload) || typeof payload.sessionId !== "string" || !payload.sessionId) return undefined;
+  const entries = [...owners.values()];
+  if (entries.some((entry) => entry.options.scope === "profile")) return undefined;
+  if (!entries.some((entry) => entry.options.scope === "preset")) return undefined;
+  for (const entry of entries) {
+    const session = entry.ctx.sessions?.get(payload.sessionId);
+    const preset = session?.header?.agentPreset;
+    if (typeof preset === "string" && preset.trim() !== "") {
+      return preset === "odai" ? undefined : "当前会话未启用 Odai 预设";
+    }
+  }
+  return undefined;
 }
 
 function connectionFrom(ctx: DshRuntimeContext): HostConnection | undefined {
@@ -156,12 +186,18 @@ function evidenceRequest(payload: unknown): { sessionId: string; revision?: stri
   };
 }
 
+const SYSTEM_ERROR_CODES = new Set([
+  "ABORT_ERR", "EACCES", "EEXIST", "EISDIR", "EMFILE", "ENAMETOOLONG", "ENFILE",
+  "ENOENT", "ENOSPC", "ENOTDIR", "ENOTEMPTY", "EPERM", "EROFS", "ERR_ABORTED", "EXDEV",
+]);
+
 function failureFor(error: unknown): RpcFailure {
   const message = error instanceof Error ? error.message : String(error);
   const code = isUnknownRecord(error) && typeof error.code === "string"
     ? error.code.toUpperCase()
     : "";
-  if (code || /responsibility route rejected/iu.test(message)) {
+  if (/responsibility route rejected/iu.test(message)
+    || (code !== "" && !SYSTEM_ERROR_CODES.has(code) && !code.startsWith("ERR_FS_"))) {
     return { code: "route-rejected", message };
   }
   if (error instanceof TypeError) return { code: "bad-request", message };
@@ -229,7 +265,7 @@ export function installControlCenterRuntime(
   };
   const existing = shared.registration;
   if (existing) {
-    existing.owners.set(owner, options);
+    existing.owners.set(owner, { ctx, options });
     let released = false;
     return async () => {
       if (released) return;
@@ -238,41 +274,55 @@ export function installControlCenterRuntime(
     };
   }
 
-  const owners = new Map<symbol, ControlCenterRuntimeOptions>([[owner, options]]);
+  const owners = new Map<symbol, RegisteredOwner>([[owner, { ctx, options }]]);
   const dispose = registerControlCenter(connection, async (endpoint, payload, signal) => {
     if (endpoint !== CONTROL_CENTER_ENDPOINT && endpoint !== CONTROL_CENTER_EVIDENCE_ENDPOINT && endpoint !== CONTROL_CENTER_SESSION_ENDPOINT && endpoint !== CONTROL_CENTER_PRESSURE_ENDPOINT) {
       return { ok: true, value: { ok: false, error: { code: "unavailable", message: "unknown Odai Control Center endpoint" } } };
     }
-    const active = effectiveOptions(owners);
+    const activeOwner = effectiveOwner(owners);
+    const active = activeOwner.options;
+    const llm = activeLlm(owners, activeOwner.ctx);
     try {
       if (endpoint === CONTROL_CENTER_PRESSURE_ENDPOINT) {
-        const handlers = [...new Set([...owners.values()].flatMap(owner => owner.pressure ? [owner.pressure] : []))];
+        const handlers = [...new Set([...owners.values()].flatMap(entry => entry.options.pressure ? [entry.options.pressure] : []))];
         if (handlers.length !== 1) return { ok: true, value: { ok: false, error: { code: "unavailable", message: handlers.length === 0 ? "自动压缩设置尚未连接到运行时" : "存在多个自动压缩配置所有者，无法确定设置作用域" } } };
         signal.throwIfAborted();
         return { ok: true, value: { ok: true, pressure: await handlers[0]!(payload, signal) } };
       }
       if (endpoint === CONTROL_CENTER_ENDPOINT && isUnknownRecord(payload) && payload.action === "choices") {
         if (typeof payload.cli === "string") return { ok: true, value: { ok: true, choices: await discoverCliModels(payload.cli, signal) } };
-        const llm = ctx.llm as unknown as {
+        const catalog = llm as unknown as {
           listProviders?(): Array<{ id: string; name: string }>;
           listModels?(provider: string): Promise<Array<{ id: string; name: string }>>;
           resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<{ reasoning?: { efforts: Array<{ id: string; name: string }> } }>;
-        };
-        if (!llm?.listProviders) throw new TypeError("宿主未提供模型目录，请手动输入");
+        } | undefined;
+        if (!catalog?.listProviders) throw new TypeError("宿主未提供模型目录，请手动输入");
         if (payload.provider !== undefined && typeof payload.provider !== "string") throw new TypeError("invalid provider");
         if (payload.model !== undefined && typeof payload.model !== "string") throw new TypeError("invalid model");
         let choices;
-        if (typeof payload.provider !== "string" || !payload.provider) choices = llm.listProviders();
+        if (typeof payload.provider !== "string" || !payload.provider) choices = catalog.listProviders();
         else if (typeof payload.model !== "string" || !payload.model) {
-          if (!llm.listModels) throw new TypeError("宿主未提供模型列表，请手动输入");
-          choices = await llm.listModels(payload.provider);
+          if (!catalog.listModels) throw new TypeError("宿主未提供模型列表，请手动输入");
+          choices = await catalog.listModels(payload.provider);
         } else {
-          if (!llm.resolveModelInfo) throw new TypeError("宿主未提供推理档位，请手动输入");
-          choices = (await llm.resolveModelInfo(payload.provider, payload.model, signal)).reasoning?.efforts ?? [];
+          if (!catalog.resolveModelInfo) throw new TypeError("宿主未提供推理档位，请手动输入");
+          choices = (await catalog.resolveModelInfo(payload.provider, payload.model, signal)).reasoning?.efforts ?? [];
         }
         return { ok: true, value: { ok: true, choices: choices.map(({ id, name }) => ({ id, name })) } };
       }
-      if (endpoint === CONTROL_CENTER_SESSION_ENDPOINT) return { ok: true, value: { ok: true, session: applySessionControl(payload, { ...active, evidenceRoot: active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath) }) } };
+      if (endpoint === CONTROL_CENTER_SESSION_ENDPOINT) {
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            session: applySessionControl(payload, {
+              ...active,
+              evidenceRoot: active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath),
+              unmanagedReason: unmanagedSessionReason(owners, payload),
+            }),
+          },
+        };
+      }
       if (endpoint === CONTROL_CENTER_EVIDENCE_ENDPOINT) {
         const request = evidenceRequest(payload);
         const evidenceRoot = active.evidenceRoot ?? resolveSessionEvidenceRoot(active.configPath);
@@ -290,7 +340,7 @@ export function installControlCenterRuntime(
       const config = await applyRoutingConfigAction(active.configPath, payload, {
         configuredRoles: active.configuredRoles,
         configuredDispatch: active.configuredDispatch,
-        resolveCallConfig: (route, callSignal) => ctx.llm.resolveCallConfig(route as UnknownRecord, callSignal),
+        resolveCallConfig: llm ? (route, callSignal) => llm.resolveCallConfig(route as UnknownRecord, callSignal) : undefined,
         signal,
       });
       return { ok: true, value: { ok: true, config: publicResult(config) } };

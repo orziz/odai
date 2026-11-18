@@ -176,9 +176,11 @@ function requireCleanPublishedCommit(): string {
     "CHANGELOG.md",
     "package.json",
     "package-lock.json",
+    "version-policy.json",
     "dsh",
     "scripts",
     "skills/odai",
+    "skills/odai-orchestration",
   ], { capture: true });
   const status = capturedStdout(statusResult).trim();
   if (status) throw new Error("Release-owned files are not clean. Commit and push them before publishing.");
