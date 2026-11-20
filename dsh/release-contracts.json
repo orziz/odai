@@ -13,7 +13,7 @@
     {
       "version": "0.2.2-rc.5",
       "publishedBefore": "2026-11-18T13:30:00.000Z",
-      "expectedDshPackages": 328,
+      "expectedDshPackages": { "darwin": 328, "linux": 327, "win32": 327 },
       "standardCompositionPath": "@deepseek-ai/dsh-web-app/presets/standard.patch.yml",
       "standardCompositionSha256": "e40bb192ed3b835312c2acd2ccd64d3bc4b85f80a7bc95b132cb18fbee190b5d"
     }

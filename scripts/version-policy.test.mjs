@@ -4,6 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertRepositoryVersionPolicy, validateOwnedVersion } from "./version-policy.mjs";
+import { expectedDshPackageCount } from "./dsh-release-contract.mjs";
+import { readFileSync } from "node:fs";
 import { assertDshReleaseNotes } from "./verify-dsh-package-versions.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,5 +51,20 @@ test("release notes bind a unique candidate and preserve descending historical v
   ]) assert.throws(() => assertDshReleaseNotes({ ...fixture, changelog }), /Unreleased owner/);
   for (const versions of [["0.2.30", "0.2.31"], ["0.2.31", "0.2.31"], ["0.2.31", "0.2.29", "0.2.30"]]) {
     assert.throws(() => assertDshReleaseNotes({ ...fixture, compatibility: versions.map(row).join("\n") }), /package pair first|descending version order/);
+  }
+});
+
+test("DSH graph counts account for macOS optional packages without accepting other counts", () => {
+  const { releases } = JSON.parse(readFileSync(resolve(repoRoot, "dsh/release-contracts.json"), "utf8"));
+  const baseline = releases.find(({ version }) => version === "0.2.2-rc.1");
+  const current = releases.find(({ version }) => version === "0.2.2-rc.5");
+  for (const platform of ["darwin", "linux"]) {
+    assert.equal(expectedDshPackageCount(baseline, platform), 320);
+  }
+  assert.equal(expectedDshPackageCount(current, "darwin"), 328);
+  assert.equal(expectedDshPackageCount(current, "linux"), 327);
+  assert.throws(() => expectedDshPackageCount(current, "unknown"), /no package count contract/);
+  for (const expectedDshPackages of [0, [], {}, { linux: 327, darwin: -1 }, { linux: "327" }]) {
+    assert.throws(() => expectedDshPackageCount({ expectedDshPackages }, "linux"), /invalid DSH package count/);
   }
 });

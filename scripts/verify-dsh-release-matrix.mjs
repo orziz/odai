@@ -8,6 +8,7 @@ import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { satisfies, validRange } from "semver";
+import { expectedDshPackageCount } from "./dsh-release-contract.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contractsPath = resolve(repoRoot, "dsh/release-contracts.json");
@@ -74,8 +75,9 @@ try {
     if (mismatched.length > 0) {
       throw new Error(`mixed DSH graph for ${release.version}: ${mismatched.map((entry) => `${entry.name}@${entry.version}`).join(", ")}`);
     }
-    if (packages.length !== release.expectedDshPackages) {
-      throw new Error(`DSH ${release.version} graph has ${packages.length} packages, expected ${release.expectedDshPackages}`);
+    const expectedPackages = expectedDshPackageCount(release);
+    if (packages.length !== expectedPackages) {
+      throw new Error(`DSH ${release.version} graph has ${packages.length} packages on ${process.platform}, expected ${expectedPackages}`);
     }
     const standardPath = resolve(root, "node_modules", release.standardCompositionPath);
     const standardDigest = createHash("sha256").update(await readFile(standardPath)).digest("hex");
@@ -152,11 +154,10 @@ function requiredValue(arguments_, index, option) {
 }
 
 function validateRelease(release) {
+  if (release) expectedDshPackageCount(release);
   if (!release || typeof release.version !== "string"
     || !satisfies(release.version, document.dshRange, { includePrerelease: true })
     || typeof release.publishedBefore !== "string"
-    || !Number.isSafeInteger(release.expectedDshPackages)
-    || release.expectedDshPackages <= 0
     || typeof release.standardCompositionPath !== "string"
     || release.standardCompositionPath.startsWith("/")
     || release.standardCompositionPath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")

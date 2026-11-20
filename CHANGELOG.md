@@ -8,6 +8,8 @@
 
 - 适配 DSH `0.2.2-rc.5` 的扁平 `startActivation` 参数，同时保留 rc.1 嵌套请求与旧 `start` 入口；模型路由、只读权限、取消和清理保持。Agent 宿主探针按实际 schema 选择 `send_message` 的 `agent` / `agent_id` 字段。rc.1 与 rc.5 的 Plugin / Agent 加载、真实子代理路由及权限探针通过；rc.5 另通过 Web 会话新建、历史读取、重启与自动压缩设置恢复，以及真实双包安装共存与 Control Center RPC。隔离验证未调用外部模型，也未使用真实用户历史。
 
+- 发布矩阵修复 rc.5 跨平台依赖计数误报：macOS 可选组件使其 DSH 包数为 328，Linux 为 327。统一计数解析供元数据校验和矩阵执行复用，继续严格核对版本与 Standard 摘要。
+
 ## DSH 0.3.8 / canonical 0.7.2
 
 - npm registry 确认双包于 2026-11-18 发布：Plugin `09:53:35.120Z`，Agent `09:58:04.392Z`；该版本号已消耗。双包仍精确依赖 DSH `0.2.2-rc.1`。

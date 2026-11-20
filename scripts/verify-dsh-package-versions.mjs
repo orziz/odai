@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { gt, satisfies, valid, validRange } from "semver";
 
 import { assertRepositoryVersionPolicy } from "./version-policy.mjs";
+import { expectedDshPackageCount } from "./dsh-release-contract.mjs";
 
 // Offline consistency only: registry publication facts still require a registry
 // lookup. Historical releases keep their original versions and attribution.
@@ -108,8 +109,6 @@ function readReleaseContracts() {
     if (!release || !VERSION_PATTERN.test(release.version)
       || !satisfies(release.version, document.dshRange, { includePrerelease: true })
       || typeof release.publishedBefore !== "string"
-      || !Number.isSafeInteger(release.expectedDshPackages)
-      || release.expectedDshPackages <= 0
       || typeof release.standardCompositionPath !== "string"
       || release.standardCompositionPath.startsWith("/")
       || release.standardCompositionPath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
@@ -117,6 +116,7 @@ function readReleaseContracts() {
       || !/^[a-f0-9]{64}$/u.test(release.standardCompositionSha256)) {
       throw new Error(`${label} is invalid or outside ${document.dshRange}`);
     }
+    expectedDshPackageCount(release);
     return release.version;
   });
   if (new Set(versions).size !== versions.length) throw new Error(`${relativePath} must list unique releases`);

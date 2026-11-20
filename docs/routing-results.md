@@ -4,7 +4,7 @@
 
 ## DSH 0.2.2-rc.5 兼容验证（双包 0.3.9 候选）
 
-支持范围为 `>=0.2.2-rc.1 <0.3.0-0`，Agent 安装准入包含预发布；实测目标独立记录为 rc.1 与 rc.5。rc.5 隔离安装使用发布时间截止 `2026-11-18T13:30:00.000Z`，核对 328 个 DSH 包均为 rc.5，Standard composition SHA-256 为 `e40bb192ed3b835312c2acd2ccd64d3bc4b85f80a7bc95b132cb18fbee190b5d`；rc.1 继续作为 composition source。
+支持范围为 `>=0.2.2-rc.1 <0.3.0-0`，Agent 安装准入包含预发布；实测目标独立记录为 rc.1 与 rc.5。rc.5 隔离安装使用发布时间截止 `2026-11-18T13:30:00.000Z`，macOS 核对 328 个 DSH 包均为 rc.5；Linux CI 为 327 个，差异是仅限 macOS 的可选 `dsh-experimental-cua-macos`。发布契约按平台核对数量，Standard composition SHA-256 为 `e40bb192ed3b835312c2acd2ccd64d3bc4b85f80a7bc95b132cb18fbee190b5d`；rc.1 继续作为 composition source。
 
 rc.5 将 `startActivation` 的任务、父会话与模型字段从 `request` 移至顶层，原调用在创建子会话前失败。适配同时传入两种形态，不依赖失败重试或替换模型。新旧形态的模型回执、取消与清理共 10 项回归通过；安装器、版本探针、安装恢复与版本策略共 25 项回归通过，完整 DSH 构建通过。
 
