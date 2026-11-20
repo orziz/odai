@@ -182,13 +182,14 @@ export const inject = ["systemPrompt", "tools", "agentPresets"];\n\nexport funct
         const orchestration = assembly.sections.find((section) => section.name === "odai:orchestration")?.text ?? "";
         assert.match(orchestration, /odai_reference/);
         assert.doesNotMatch(orchestration, /build-routing|install-routing/);
-        if (!sendProperties?.agent_id || sendProperties.subagent_id) {
-          throw new Error(\`modern Odai preset did not expose bidirectional send_message: \${JSON.stringify(sendMessage)}\`);
+        const targetParameter = sendProperties?.agent ? "agent" : "agent_id";
+        if (!sendProperties?.[targetParameter] || sendProperties.subagent_id) {
+          throw new Error(\`modern Odai preset did not expose tree messaging: \${JSON.stringify(sendMessage)}\`);
         }
         const invalidTarget = await runProbeTool(ctx, {
           callId: "scope-probe-invalid-continuable-child",
           name: "send_message",
-          arguments: { agent_id: "00000000-0000-0000-0000-000000000000", message: "must fail" },
+          arguments: { [targetParameter]: "00000000-0000-0000-0000-000000000000", message: "must fail" },
           agent,
           signal: new AbortController().signal,
         });

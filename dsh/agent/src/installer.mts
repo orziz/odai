@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { valid } from "semver";
+import { minVersion, satisfies, valid, validRange } from "semver";
 
 import { acquireAgentOperationLock } from "./operation-lock.mjs";
 
@@ -92,17 +92,18 @@ const packageMetadata: PackageMetadata = {
   version: parsedPackageMetadata.version,
   peerDependencies,
 };
-const peerVersion = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
-if (typeof peerVersion !== "string" || valid(peerVersion) !== peerVersion) {
-  throw new Error("odai-dsh-agent must declare one exact DSH peer version");
+const peerRange = packageMetadata.peerDependencies["@deepseek-ai/dsh"];
+if (typeof peerRange !== "string" || validRange(peerRange) === null) {
+  throw new Error("odai-dsh-agent must declare a valid DSH peer range");
 }
-export const SUPPORTED_DSH_VERSION = peerVersion;
-export const SUPPORTED_DSH_RANGE = SUPPORTED_DSH_VERSION;
-export const SUPPORTED_DSH_VERSIONS = Object.freeze([SUPPORTED_DSH_VERSION]);
-export const MINIMUM_DSH_VERSION = SUPPORTED_DSH_VERSION;
+export const SUPPORTED_DSH_RANGE = peerRange;
+export const MINIMUM_DSH_VERSION = minVersion(peerRange)!.version;
+// Legacy exports identify the baseline, not an exhaustive support whitelist.
+export const SUPPORTED_DSH_VERSION = MINIMUM_DSH_VERSION;
+export const SUPPORTED_DSH_VERSIONS = Object.freeze([MINIMUM_DSH_VERSION]);
 
 export function supportsDshVersion(version: string): boolean {
-  return version === SUPPORTED_DSH_VERSION;
+  return satisfies(version, SUPPORTED_DSH_RANGE, { includePrerelease: true });
 }
 
 export function resolveDshHome(configured?: string, env: NodeJS.ProcessEnv = process.env): string {

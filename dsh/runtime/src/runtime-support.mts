@@ -322,8 +322,9 @@ export async function runRoutedRole({
       maxDepth: 1,
       ...(roleRoute ? { agentOptions: roleAgentOptions(roleRoute) } : {}),
     };
+    // rc.5 flattens the request into the activation spec; retain rc.1's envelope.
     run = subagents.startActivation
-      ? await subagents.startActivation({ provider, label, request, signal, delivery: "caller" })
+      ? await subagents.startActivation({ provider, label, ...request, request, signal, delivery: "caller" })
       : await subagents.start!(provider, { ...request, label, signal });
     const cancelled = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
     signal.addEventListener("abort", abort, { once: true });

@@ -1,6 +1,16 @@
 # Odai DSH 路由验证
 
-最新已发布双包为 `0.3.7`。源码候选 `0.3.8` 暂无功能变更，只面向 DSH `0.2.2-rc.1`，治理为 `0.7.2`（runtime contract `9` 不变），编排为 `0.2.5`。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果属于对应发布线。
+最新已发布双包为 `0.3.8`。源码候选 `0.3.9` 恢复 DSH `>=0.2.2-rc.1 <0.3.0-0` 范围准入，治理为 `0.7.2`（runtime contract `9` 不变），编排为 `0.2.5`。使用与配置合同以 [`dsh/README.md`](../dsh/README.md) 为准，模型评分见 [`evaluation-results.md`](evaluation-results.md)。下方旧宿主结果属于对应发布线。
+
+## DSH 0.2.2-rc.5 兼容验证（双包 0.3.9 候选）
+
+支持范围为 `>=0.2.2-rc.1 <0.3.0-0`，Agent 安装准入包含预发布；实测目标独立记录为 rc.1 与 rc.5。rc.5 隔离安装使用发布时间截止 `2026-11-18T13:30:00.000Z`，核对 328 个 DSH 包均为 rc.5，Standard composition SHA-256 为 `e40bb192ed3b835312c2acd2ccd64d3bc4b85f80a7bc95b132cb18fbee190b5d`；rc.1 继续作为 composition source。
+
+rc.5 将 `startActivation` 的任务、父会话与模型字段从 `request` 移至顶层，原调用在创建子会话前失败。适配同时传入两种形态，不依赖失败重试或替换模型。新旧形态的模型回执、取消与清理共 10 项回归通过；安装器、版本探针、安装恢复与版本策略共 25 项回归通过，完整 DSH 构建通过。
+
+实际宿主探针通过：rc.1 / rc.5 的 Plugin 与 Agent 加载、真实本机职责子会话激活、请求模型回执、只读写入拦截与工具暴露同步；rc.5 的会话 v4 消息落盘、自动压缩阈值与取消恢复、Web 会话新建、历史读取、重启后打开及压力模式持久化。rc.5 上真实双包 tgz 安装共存、预设登记、Control Center RPC、项目治理作用域也通过。Agent 的原生消息探针依实际工具 schema 使用 rc.5 的 `agent` 参数或 rc.1 的 `agent_id`，继续确认无效目标被拒绝。
+
+上述检查使用隔离 home、模拟模型流与临时 profile；没有调用外部模型、修改已安装 DSH 或触碰真实用户历史。未逐个实测范围内其他版本，不据此宣称未来版本均已验证。
 
 ## DSH 0.2.2-rc.1 会话验证（双包 0.3.5 候选）
 

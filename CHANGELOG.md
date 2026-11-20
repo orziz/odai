@@ -2,9 +2,15 @@
 
 本文只记当前发布线与历史已发布版本的对外能力、架构、迁移和评测口径；registry 时间戳与 `gitHead` 只在事实产生后记录。试跑、复跑、中间分和临时输出不进入本日志；原始证据由临时运行目录与 Git 历史承担。
 
-## Unreleased — DSH 0.3.8 / canonical 0.7.2
+## Unreleased — DSH 0.3.9 / canonical 0.7.2
 
-- 暂无功能变更；双包下一候选为 `0.3.8`，治理 `0.7.2`、runtime contract `9`、编排 `0.2.5` 保持。
+- 恢复 DSH `0.2.x` 系列范围准入：双包 peer 与发布契约改为 `>=0.2.2-rc.1 <0.3.0-0`，Agent 使用 SemVer 范围并允许预发布，保留 `0.2.2-rc.1` 最低门槛并排除 `0.3` 系列。支持范围与实测矩阵分开维护；治理 `0.7.2`、runtime contract `9`、编排 `0.2.5` 保持。
+
+- 适配 DSH `0.2.2-rc.5` 的扁平 `startActivation` 参数，同时保留 rc.1 嵌套请求与旧 `start` 入口；模型路由、只读权限、取消和清理保持。Agent 宿主探针按实际 schema 选择 `send_message` 的 `agent` / `agent_id` 字段。rc.1 与 rc.5 的 Plugin / Agent 加载、真实子代理路由及权限探针通过；rc.5 另通过 Web 会话新建、历史读取、重启与自动压缩设置恢复，以及真实双包安装共存与 Control Center RPC。隔离验证未调用外部模型，也未使用真实用户历史。
+
+## DSH 0.3.8 / canonical 0.7.2
+
+- npm registry 确认双包于 2026-11-18 发布：Plugin `09:53:35.120Z`，Agent `09:58:04.392Z`；该版本号已消耗。双包仍精确依赖 DSH `0.2.2-rc.1`。
 
 ## DSH 0.3.7 / canonical 0.7.2
 

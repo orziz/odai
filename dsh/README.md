@@ -10,7 +10,7 @@ The DSH integration has two independently installable user surfaces, released to
 
 The provider-neutral `cli/` remains a separate product and is not part of this subtree.
 
-The `0.3.8` source candidate bundles independent governance (`skills/odai`, version `0.7.2`, schema `5`, runtime contract `9`) and optional orchestration (`skills/odai-orchestration`, version `0.2.5`, schema `1`). The latest published pair is `0.3.7` with the same governance and orchestration versions; `0.3.8` has no functional changes yet. Published `0.3.6` bundles governance `0.7.1`, runtime contract `9`, and orchestration `0.2.3`. Published `0.2.56` bundles governance `0.7.1`, runtime contract `9`, and orchestration `0.2.2`. Published `0.2.38` bundles orchestration `0.2.0`. The published `0.2.37` packages bundle governance `0.7.0` with the same schemas and runtime contract, and orchestration `0.2.0`. Governance loads without the orchestration compiler; the DSH adapter combines both immutable identities for a turn and its children. Setting routing mode to `off` omits orchestration instructions while retaining governance and host execution boundaries. External governance never supplies executable routing code. Incompatible older sources fall back visibly without rewriting user data. Other hosts can install the orchestration skill separately and supply `--governance-root` when the skills are not siblings.
+The `0.3.9` source candidate bundles independent governance (`skills/odai`, version `0.7.2`, schema `5`, runtime contract `9`) and optional orchestration (`skills/odai-orchestration`, version `0.2.5`, schema `1`). The latest published pair is `0.3.8` with the same governance and orchestration versions. Candidate `0.3.9` restores range-based DSH admission. Published `0.3.6` bundles governance `0.7.1`, runtime contract `9`, and orchestration `0.2.3`. Published `0.2.56` bundles governance `0.7.1`, runtime contract `9`, and orchestration `0.2.2`. Published `0.2.38` bundles orchestration `0.2.0`. The published `0.2.37` packages bundle governance `0.7.0` with the same schemas and runtime contract, and orchestration `0.2.0`. Governance loads without the orchestration compiler; the DSH adapter combines both immutable identities for a turn and its children. Setting routing mode to `off` omits orchestration instructions while retaining governance and host execution boundaries. External governance never supplies executable routing code. Incompatible older sources fall back visibly without rewriting user data. Other hosts can install the orchestration skill separately and supply `--governance-root` when the skills are not siblings.
 
 Optional writer (写作) handles drafting, rewriting, translation, and localization once direction is settled. Creative owns direction, ideation, and taste review; without a writer mapping, creative continues to handle writing as before. Writer is read-only and child-only on API and local CLI routes, returning drafts or replacement text for the controller to verify and apply.
 
@@ -74,7 +74,7 @@ Local CLI session files are stored and managed by each CLI. Odai neither reads t
 
 ## Install and use
 
-Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`. The `0.3.8` candidate targets DSH `0.2.2-rc.1` only. Earlier releases retain their historical compatibility entries.
+Choose one surface for the scope you need. The Plugin manager requires `pnpm` on `PATH`. The `0.3.9` candidate supports DSH `>=0.2.2-rc.1 <0.3.0-0`. Earlier releases retain their historical compatibility entries.
 
 ```sh
 # Profile-wide: every agent preset in this DSH profile
@@ -107,7 +107,7 @@ An independently installed complete Odai skill bundle can update faster than eit
 
 ### Migrating retired skill evolution
 
-Releases before `0.2.37` could refine both governance and orchestration Markdown under `$DSH_HOME/odai/skill-evolution`. Published `0.2.37` retired the overlay, and later releases, including published `0.3.7` and candidate `0.3.8`, preserve that behavior. The runtime no longer reads that store, no package install, update, repair, or removal deletes it, and a leftover `governance.evolutionRoot` in deployment configuration is ignored. Previously active refinements stop taking effect after upgrading and restarting DSH; retaining the data does not preserve their behavior.
+Releases before `0.2.37` could refine both governance and orchestration Markdown under `$DSH_HOME/odai/skill-evolution`. Published `0.2.37` retired the overlay, and later releases, including published `0.3.7` and candidate `0.3.9`, preserve that behavior. The runtime no longer reads that store, no package install, update, repair, or removal deletes it, and a leftover `governance.evolutionRoot` in deployment configuration is ignored. Previously active refinements stop taking effect after upgrading and restarting DSH; retaining the data does not preserve their behavior.
 
 For governance customizations, use the independent skill-source mechanism:
 
@@ -224,9 +224,11 @@ The two platform launchers compile the shared `npm-publish.mts` release core and
 
 ## DSH compatibility
 
-See [`COMPATIBILITY.md`](./COMPATIBILITY.md) for the human-readable, version-by-version Plugin/Agent/DSH comparison table. [`compatibility.json`](./compatibility.json) is its package compatibility source of truth; [`release-contracts.json`](./release-contracts.json) pins each supported DSH release's publication boundary, pure-graph package count, and Standard composition digest for reproducible source and tgz probes.
+DSH `0.2.2-rc.1` and `0.2.2-rc.5` passed the current candidate's host-load and permission probes. rc.5 also passed isolated Web session/history/restart, compaction, and real-tarball coexistence checks; see [`../docs/routing-results.md`](../docs/routing-results.md) for scope and limits.
 
-The package version verifier requires the current Plugin and Agent peer ranges to match the matrix's exact DSH version list, so a future release may intentionally narrow support to one DSH version without leaving stale package metadata. These mappings describe install/runtime compatibility, not migration compatibility for DSH-owned storage. Starting with Odai `0.0.10`, Plugin and Agent are one synchronized release unit; every new release must add one matrix entry, update both exact peer declarations, refresh the Agent composition contract when required, and verify every listed DSH release.
+See [`COMPATIBILITY.md`](./COMPATIBILITY.md) for the human-readable, version-by-version Plugin/Agent/DSH comparison table. [`compatibility.json`](./compatibility.json) is its package compatibility source of truth; [`release-contracts.json`](./release-contracts.json) pins each tested DSH release's publication boundary, pure-graph package count, and Standard composition digest for reproducible source and tgz probes.
+
+The package version verifier requires the Plugin and Agent peer ranges to match the declared support range and every exact matrix target to fall within it. The support range and tested targets are separate contracts; admitting a future version does not claim it has been tested. These mappings describe install/runtime compatibility, not migration compatibility for DSH-owned storage. Starting with Odai `0.0.10`, Plugin and Agent are one synchronized release unit; every new release must add one matrix entry, update both peer range declarations, refresh the Agent composition contract when required, and verify every listed DSH release.
 
 ## Verification
 
@@ -248,6 +250,6 @@ The release-matrix runner defaults to every contract in `release-contracts.json`
 
 The coexistence probe uses a temporary `DSH_HOME`: it packs and installs both real packages into one temporary Web profile, installs the Agent preset into the same home, verifies both client entries plus one working Control Center RPC surface, and proves an Agent-scoped non-bundled project skill atomically supplies both prompt governance and routing role contracts while the profile-wide Plugin remains bundled for Standard sessions.
 
-The `0.3.8` release matrix pins the DSH `0.2.2-rc.1` dependency graph, publication cutoff and Standard artifact digest. The digest identifies the upstream artifact. Odai owns its composition. Working-directory context comes from the host service. Runtime history uses the public immutable `snapshotEvents()` API, and Odai session messages use `plugin:odai-dsh-runtime`. Loading the integration does not establish migration compatibility for old host data.
+The `0.3.9` release matrix pins separate dependency graphs, publication cutoffs and Standard artifact digests for DSH `0.2.2-rc.1` and `0.2.2-rc.5`. The digest identifies the upstream artifact. Odai owns its composition. Working-directory context comes from the host service. Runtime history uses the public immutable `snapshotEvents()` API, and Odai session messages use `plugin:odai-dsh-runtime`. Loading the integration does not establish migration compatibility for old host data.
 
 The upstream [rc.8 release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8) declares its SQLite storage format incompatible with earlier releases. Odai's release matrix uses isolated homes and neither claims nor performs cross-release migration of DSH-owned SQLite data; back up that host data and follow upstream guidance when changing the installed DSH release.

@@ -6,16 +6,19 @@ const route = { provider: 'test', model: 'test-model' };
 function options(signal = new AbortController().signal) {
   return { provider: 'spawn', decision: { role: 'planner' }, taskText: 'inspect', roleContract: 'read only', agent: { session: { header: { id: 'parent' } } }, signal, roleRoute: route };
 }
-for (const receipt of ['applied', 'mismatch', 'unverified']) {
-  test(`activation authenticates retained child route: ${receipt}`, async () => {
+for (const shape of ['nested', 'flat']) for (const receipt of ['applied', 'mismatch', 'unverified']) {
+  test(`${shape} activation authenticates retained child route: ${receipt}`, async () => {
     let cleanups = 0;
     const args = options();
     const outcome = await runRoutedRole({ ...args, subagents: { async startActivation(spec) {
       assert.equal(spec.delivery, 'caller');
       assert.equal(spec.provider, 'spawn');
       assert.equal(spec.signal, args.signal);
-      assert.equal(spec.request.parent, args.agent);
-      assert.equal(spec.request.maxDepth, 1);
+      const request = shape === 'flat' ? spec : spec.request;
+      assert.equal(request.parent, args.agent);
+      assert.equal(request.maxDepth, 1);
+      assert.deepEqual(request.agentOptions, { provider: route.provider, model: route.model });
+      assert.match(request.prompt[0].text, /inspect/);
       assert.equal(spec.request.signal, undefined);
       const session = { header: { id: 'child', parentSession: 'parent', origin: 'subagent' }, snapshotEvents: () => [
         { type: 'subagent/descriptor', data: { label: spec.label } },
