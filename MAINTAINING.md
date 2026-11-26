@@ -35,8 +35,9 @@ skills/ribao/                     独立结构化汇报技能
   references/                    各类汇报模板与口径
   agents/openai.yaml              宿主 UI 元数据
 skills/renwei/                    独立的去 AI 味表现工艺技能
-  SKILL.md                        诊断、原则、做法与边界
+  SKILL.md                        原则、生成前后的做法与边界
   references/                    文案（copy.md）与图像、视频（visual.md）工艺
+  scripts/                        无模型的图像测量、去噪、对比图与元数据工具（clean-image.mjs、png.mjs、metadata.mjs，只用 Node 内置模块）
   agents/openai.yaml              宿主 UI 元数据
 integrations/hooks/              可选 Hooks 运行时、生成器和策略示例
 docs/rule-ledger.md               有来源的操作规则、唯一 owner、细则位置与核对版本
@@ -126,6 +127,12 @@ node scripts/test-odai-hooks.mjs
 
 ```bash
 node scripts/test-odai-routing.mjs
+```
+
+改 renwei 图像脚本时补充（只用合成图，不放项目素材）：
+
+```bash
+node --test scripts/renwei-image.test.mjs
 ```
 
 Codex 自定义角色必须由 `config.toml` 的 `[agents.<name>]` 与 `config_file` 显式注册；仅复制角色 TOML 不算可用。用户只在安装或更新时确认一次模型映射，正常任务不得要求用户指定角色、内部策略或运行命令。安装器默认 `auto`，注册 controller、planner、reviewer 以及显式提供的 researcher/frontend/creative/writer，不制造每轮前置流程。单一充分 controller 直接闭环，其他责任按真实缺口调用。宿主执行器通过 `-c features.multi_agent=false`、只读工具白名单与受管子进程环境防止递归。

@@ -42,6 +42,8 @@ jobs:
         run: |
           node scripts/test-odai-hooks.mjs
           node scripts/test-odai-routing.mjs
+      - name: Test renwei image tools
+        run: node --test scripts/renwei-image.test.mjs
       - name: Test package lifecycle and release guards
         run: node --test scripts/run-package-pack.test.mjs scripts/dsh-publish-entrypoint.test.mjs
       - name: Test built DSH runtime, Plugin, and Agent
